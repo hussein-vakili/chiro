@@ -7,19 +7,49 @@
     <div>
       <div class="auth-eyebrow">Client dashboard</div>
       <h1>{{ g.user["first_name"] }}, your onboarding is ready.</h1>
-      <p>Start your intake, save a draft anytime, and return to view your baseline results after submission.</p>
+      <p>This dashboard is your home screen. Start here, then open intake, appointments, or results as needed.</p>
     </div>
     <div class="status-card">
       <span>Account email</span>
       <strong>{{ g.user["email"] }}</strong>
       <small>Secure local portal session</small>
-      {% if invitation and invitation["appointment_at"] %}
-        <small>Appointment scheduled: {{ invitation["appointment_at"].replace("T", " ") }}</small>
+      {% if next_appointment %}
+        <small>Next appointment: {{ next_appointment["type_label"] }} · {{ next_appointment["starts_label"] }}</small>
+        {% if next_appointment["location_name"] %}
+          <small>{{ next_appointment["location_name"] }}</small>
+        {% endif %}
+        {% if next_appointment["reminder_label"] %}
+          <small>{{ next_appointment["reminder_label"] }}</small>
+        {% endif %}
       {% endif %}
     </div>
   </section>
 
+  <section class="dashboard-nav-grid">
+    <a class="portal-link-card" href="{{ url_for('main.intake') }}">
+      <span class="portal-link-label">Intake</span>
+      <strong>{{ "Review your intake" if submission and submission["status"] == "submitted" else "Open intake" }}</strong>
+      <small>{{ "Check what you submitted and update anything the clinic asks for." if submission and submission["status"] == "submitted" else "Start or continue your onboarding form from your dashboard." }}</small>
+    </a>
+    <a class="portal-link-card" href="{{ url_for('main.appointments') }}">
+      <span class="portal-link-label">Appointments</span>
+      <strong>Open calendar</strong>
+      <small>See your upcoming visits, future appointments, and available booking options.</small>
+    </a>
+    <a class="portal-link-card" href="{{ url_for('main.results') }}">
+      <span class="portal-link-label">Results</span>
+      <strong>View your results</strong>
+      <small>Return to your published findings and care recommendations when they are ready.</small>
+    </a>
+  </section>
+
   <section class="dashboard-grid">
+    <article class="panel">
+      <div class="panel-label">Progress</div>
+      <h2>Your dashboard is the home screen</h2>
+      <p>Open the part of the portal you need, then come back here for your current status and next steps.</p>
+    </article>
+
     <article class="panel">
       <div class="panel-label">Intake status</div>
       {% if submission %}
@@ -40,24 +70,79 @@
         </div>
       {% endif %}
     </article>
+  </section>
 
+  <section class="dashboard-grid">
     <article class="panel">
-      {% if invitation %}
-        <div class="panel-label">Appointment link</div>
-        <h2>{{ invitation["first_name"] }} {{ invitation["last_name"] }}</h2>
-        <p>Your account was linked to a clinic invitation{% if invitation["appointment_at"] %} for {{ invitation["appointment_at"].replace("T", " ") }}{% endif %}.</p>
-        {% if invitation["note"] %}
-          <div class="info-box">{{ invitation["note"] }}</div>
+      <div class="panel-label">Appointments</div>
+      {% if next_appointment %}
+        <h2>{{ next_appointment["type_label"] }}</h2>
+        <p>{{ next_appointment["starts_label"] }}</p>
+        {% if next_appointment["location_name"] %}
+          <div class="info-box">{{ next_appointment["location_name"] }}</div>
         {% endif %}
+        {% if next_appointment["note"] %}
+          <div class="info-box">{{ next_appointment["note"] }}</div>
+        {% endif %}
+        <div class="panel-actions">
+          <a class="primary-button" href="{{ url_for('main.appointments') }}">Open calendar</a>
+        </div>
       {% else %}
-        <div class="panel-label">What this portal includes</div>
-        <ul class="check-list">
-          <li>Secure email/password client sign-in</li>
-          <li>Multi-step intake form with local persistence</li>
-          <li>Consent capture and digital signature</li>
-          <li>Initial consultation and physical exam results after publication</li>
-        </ul>
+        <h2>No appointments scheduled</h2>
+        <p>Once the clinic books your visits, they will appear in a calendar with clear visit types and future dates.</p>
+      {% endif %}
+      {% if invitation and invitation["note"] and not next_appointment %}
+        <div class="info-box">{{ invitation["note"] }}</div>
       {% endif %}
     </article>
   </section>
+
+  <section class="dashboard-grid" style="grid-template-columns:1fr">
+    <article class="panel">
+      <div class="panel-label">Future visits</div>
+      {% if schedule["upcoming"] %}
+        <div class="invite-stack">
+          {% for appointment in schedule["upcoming"][:6] %}
+            <div class="mini-card">
+              <strong>{{ appointment["type_label"] }}</strong>
+              <small>{{ appointment["starts_label"] }}</small>
+              {% if appointment["location_name"] %}
+                <small>{{ appointment["location_name"] }}</small>
+              {% endif %}
+              {% if appointment["note"] %}
+                <small>{{ appointment["note"] }}</small>
+              {% endif %}
+            </div>
+          {% endfor %}
+        </div>
+        <div class="panel-actions">
+          <a class="secondary-button" href="{{ url_for('main.appointments') }}">View full calendar</a>
+        </div>
+      {% else %}
+        <p>No future appointments are on the calendar yet.</p>
+        <div class="panel-actions">
+          <a class="primary-button" href="{{ url_for('main.appointments') }}">Book from portal</a>
+        </div>
+      {% endif %}
+    </article>
+  </section>
+
+  {% if schedule["reminders"] %}
+    <section class="dashboard-grid" style="grid-template-columns:1fr">
+      <article class="panel">
+        <div class="panel-label">Appointment reminders</div>
+        <div class="invite-stack">
+          {% for appointment in schedule["reminders"] %}
+            <div class="reminder-card">
+              <strong>{{ appointment["type_label"] }} · {{ appointment["starts_label"] }}</strong>
+              <small>{{ appointment["reminder_label"] }}</small>
+              {% if appointment["note"] %}
+                <small>{{ appointment["note"] }}</small>
+              {% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      </article>
+    </section>
+  {% endif %}
 {% endblock %}

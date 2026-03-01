@@ -1,5 +1,95 @@
 {% extends "base.html" %}
 
+{% macro appointment_editor(patient_id, appointment, appointment_type_options, appointment_status_options, location_options, clinician_options, billing_status_options) -%}
+  <details class="appointment-edit">
+    <summary>Edit appointment</summary>
+    <form method="post" action="{{ url_for('main.update_staff_patient_appointment', user_id=patient_id, appointment_id=appointment['id']) }}" class="auth-form">
+      <div class="appointment-form-grid">
+        <label>
+          <span>Visit type</span>
+          <select name="appointment_type" required>
+            {% for option in appointment_type_options %}
+              <option value="{{ option['value'] }}" {% if option['value'] == appointment['type'] %}selected{% endif %}>{{ option["label"] }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          <span>Status</span>
+          <select name="status" required>
+            {% for option in appointment_status_options %}
+              <option value="{{ option['value'] }}" {% if option['value'] == appointment['status'] %}selected{% endif %}>{{ option["label"] }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          <span>Location</span>
+          <select name="location_id" required>
+            {% for option in location_options %}
+              <option value="{{ option['value'] }}" {% if option['value'] == appointment['location_id'] %}selected{% endif %}>{{ option["label"] }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          <span>Chiropractor</span>
+          <select name="clinician_user_id" required>
+            {% for option in clinician_options %}
+              <option value="{{ option['value'] }}" {% if option['value'] == appointment['clinician_user_id'] %}selected{% endif %}>{{ option["label"] }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          <span>Start time</span>
+          <input type="datetime-local" name="starts_at" value="{{ appointment['starts_input'] }}" required>
+        </label>
+        <label>
+          <span>End time</span>
+          <input type="datetime-local" name="ends_at" value="{{ appointment['ends_input'] }}">
+        </label>
+        <label class="full">
+          <span>Patient-facing details</span>
+          <textarea name="patient_details" rows="3" placeholder="Visit details the patient can see in their portal.">{{ appointment["patient_details"] }}</textarea>
+        </label>
+        <label class="full">
+          <span>Scheduling note</span>
+          <textarea name="note" rows="4" placeholder="Preparation note, visit objective, or handoff details.">{{ appointment["note"] }}</textarea>
+        </label>
+        <label class="full">
+          <span>Clinical note</span>
+          <textarea name="clinical_note" rows="4" placeholder="Clinical note tied directly to this appointment.">{{ appointment["clinical_note"] }}</textarea>
+        </label>
+        <label>
+          <span>Billing status</span>
+          <select name="billing_status" required>
+            {% for option in billing_status_options %}
+              <option value="{{ option['value'] }}" {% if option['value'] == appointment['billing_status'] %}selected{% endif %}>{{ option["label"] }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          <span>Billing code</span>
+          <input type="text" name="billing_code" value="{{ appointment['billing_code'] }}" placeholder="98941, exam-01, care-plan-visit...">
+        </label>
+        <label>
+          <span>Billing amount</span>
+          <input type="number" step="0.01" min="0" name="billing_amount" value="{{ appointment['billing_amount'] if appointment['billing_amount'] is not none else '' }}" placeholder="85.00">
+        </label>
+      </div>
+      <div class="tiny-actions">
+        <button type="submit" name="action" value="save" class="tiny-button sky">Save changes</button>
+        {% if appointment["status"] != "completed" %}
+          <button type="submit" name="action" value="complete" class="tiny-button life">Mark completed</button>
+        {% endif %}
+        {% if appointment["status"] != "cancelled" %}
+          <button type="submit" name="action" value="cancel" class="tiny-button rose">Cancel</button>
+        {% endif %}
+        {% if appointment["status"] != "scheduled" %}
+          <button type="submit" name="action" value="reopen" class="tiny-button">Reopen</button>
+        {% endif %}
+      </div>
+    </form>
+  </details>
+{%- endmacro %}
+
 {% block title %}Patient Detail · Life Chiropractic{% endblock %}
 
 {% block content %}
@@ -165,9 +255,275 @@
       <div class="panel-actions">
         <a class="primary-button" href="{{ url_for('main.staff_patient_assessment', user_id=patient['id']) }}">Open Summit Assessment</a>
         {% if summary.visit_report and summary.visit_report.status == "published" %}
-          <span class="secondary-button" style="cursor:default;opacity:.7">Published in patient portal</span>
+          <a class="secondary-button" href="{{ url_for('main.staff_patient_results_preview', user_id=patient['id']) }}">Preview patient results</a>
         {% endif %}
       </div>
+    </article>
+  </section>
+
+  <section class="dashboard-grid" style="grid-template-columns:1fr">
+    <article class="panel">
+      <div class="panel-label">Patient schedule</div>
+      <div class="dashboard-grid">
+        <div class="stack-section">
+          {% if schedule["next_appointment"] %}
+            <div class="agenda-item">
+              <div class="agenda-item-head">
+                <div>
+                  <span class="appointment-chip {{ schedule['next_appointment']['type_tone'] }}">{{ schedule["next_appointment"]["type_label"] }}</span>
+                  <h3>{{ schedule["next_appointment"]["starts_label"] }}</h3>
+                </div>
+                <span class="status-dot {{ schedule['next_appointment']['status'] }}">{{ schedule["next_appointment"]["status_label"] }}</span>
+              </div>
+              {% if schedule["next_appointment"]["reminder_label"] %}
+                <div class="agenda-meta">
+                  <span class="legend-chip {{ schedule['next_appointment']['reminder_tone'] }}">{{ schedule["next_appointment"]["reminder_label"] }}</span>
+                </div>
+              {% endif %}
+              <div class="agenda-meta">
+                {% if schedule["next_appointment"]["location_name"] %}
+                  <span class="availability-chip life">{{ schedule["next_appointment"]["location_name"] }}</span>
+                {% endif %}
+                <span class="status-dot {{ schedule['next_appointment']['billing_status_tone'] }}">{{ schedule["next_appointment"]["billing_status_label"] }}</span>
+              </div>
+              {% if schedule["next_appointment"]["note"] %}
+                <p>{{ schedule["next_appointment"]["note"] }}</p>
+              {% endif %}
+            </div>
+          {% else %}
+            <p>No appointments are scheduled for this patient yet.</p>
+          {% endif %}
+
+          {% if schedule["reminders"] %}
+            <div class="section-block">
+              <h3>Reminder queue</h3>
+              <div class="invite-stack">
+                {% for appointment in schedule["reminders"] %}
+                  <div class="reminder-card">
+                    <strong>{{ appointment["type_label"] }}</strong>
+                    <small>{{ appointment["starts_label"] }}</small>
+                    <small>{{ appointment["reminder_label"] }}</small>
+                    <div class="tiny-actions">
+                      <form method="post" action="{{ url_for('main.send_staff_appointment_reminder', appointment_id=appointment['id']) }}">
+                        <input type="hidden" name="channel" value="email">
+                        <input type="hidden" name="next_url" value="{{ request.path }}">
+                        <button type="submit" class="tiny-button sky" {% if not appointment["can_email"] %}disabled{% endif %}>Send email</button>
+                      </form>
+                      <form method="post" action="{{ url_for('main.send_staff_appointment_reminder', appointment_id=appointment['id']) }}">
+                        <input type="hidden" name="channel" value="sms">
+                        <input type="hidden" name="next_url" value="{{ request.path }}">
+                        <button type="submit" class="tiny-button warm" {% if not appointment["can_sms"] %}disabled{% endif %}>Send SMS</button>
+                      </form>
+                      <a class="table-link" href="{{ url_for('main.staff_reminders') }}">Open reminder center</a>
+                    </div>
+                  </div>
+                {% endfor %}
+              </div>
+            </div>
+          {% endif %}
+
+          <div class="section-block">
+            <h3>Upcoming visits</h3>
+            {% if schedule["upcoming"] %}
+              <div class="appointment-controls">
+                {% for appointment in schedule["upcoming"] %}
+                  <div class="agenda-item">
+                    <div class="agenda-item-head">
+                      <div>
+                        <span class="appointment-chip {{ appointment['type_tone'] }}">{{ appointment["type_label"] }}</span>
+                        <h3>{{ appointment["date_label"] }}</h3>
+                      </div>
+                      <span class="status-dot {{ appointment['status'] }}">{{ appointment["status_label"] }}</span>
+                    </div>
+                    <p>{{ appointment["time_label"] }}{% if appointment["end_time_label"] %} - {{ appointment["end_time_label"] }}{% endif %}</p>
+                    <div class="agenda-meta">
+                      {% if appointment["reminder_label"] %}
+                        <span class="legend-chip {{ appointment['reminder_tone'] }}">{{ appointment["reminder_label"] }}</span>
+                      {% endif %}
+                      {% if appointment["location_name"] %}
+                        <span class="availability-chip life">{{ appointment["location_name"] }}</span>
+                      {% endif %}
+                      <span class="status-dot {{ appointment['billing_status_tone'] }}">{{ appointment["billing_status_label"] }}</span>
+                      {% if appointment["clinician_name"] %}
+                        <span class="muted-copy">Assigned to {{ appointment["clinician_name"] }}</span>
+                      {% endif %}
+                    </div>
+                    {% if appointment["note"] %}
+                      <p>{{ appointment["note"] }}</p>
+                    {% endif %}
+                    {% if appointment["patient_details"] %}
+                      <p>{{ appointment["patient_details"] }}</p>
+                    {% endif %}
+                    <div class="tiny-actions">
+                      {% if g.user["role"] == "admin" or appointment["clinician_user_id"] == g.user["id"] %}
+                        <a class="tiny-button sky" href="{{ url_for('main.practitioner_appointment_soap_note', appointment_id=appointment['id']) }}">{{ appointment["soap_note_action_label"] }}</a>
+                      {% endif %}
+                      {% if appointment["soap_note_updated_label"] %}
+                        <span class="muted-copy">Last SOAP update {{ appointment["soap_note_updated_label"] }}</span>
+                      {% endif %}
+                    </div>
+                    {{ appointment_editor(patient['id'], appointment, appointment_type_options, appointment_status_options, location_options, clinician_options, billing_status_options) }}
+                  </div>
+                {% endfor %}
+              </div>
+            {% else %}
+              <p>No future appointments are booked.</p>
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="stack-section">
+          <div>
+            <h3 style="font-family:var(--serif);font-size:24px;margin-bottom:10px">Schedule new visit</h3>
+            <p>Select a date first, then book from the chiropractor's live shift slots while respecting clinic downtime and already-booked visits.</p>
+          </div>
+          <form method="post" action="{{ url_for('main.create_staff_patient_appointment', user_id=patient['id']) }}" class="auth-form">
+            <div class="appointment-form-grid">
+              <label>
+                <span>Visit type</span>
+                <select name="appointment_type" id="bookingAppointmentType" required>
+                  {% for option in appointment_type_options %}
+                    <option value="{{ option['value'] }}" data-default-duration="{{ 60 if option['value'] == 'initial_consult' else 30 if option['value'] == 'report_of_findings' else 20 }}" {% if option['value'] == selected_appointment_type %}selected{% endif %}>{{ option["label"] }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <label>
+                <span>Chiropractor</span>
+                <select name="clinician_user_id" id="bookingClinician" required>
+                  {% for option in clinician_options %}
+                    <option value="{{ option['value'] }}" {% if option['value'] == selected_clinician_id %}selected{% endif %}>{{ option["label"] }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <label>
+                <span>Location</span>
+                <select name="location_id" id="bookingLocation" required>
+                  {% for option in location_options %}
+                    <option value="{{ option['value'] }}" {% if option['value'] == selected_location_id %}selected{% endif %}>{{ option["label"] }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <label>
+                <span>Date</span>
+                <input type="date" name="appointment_date" id="bookingDate" value="{{ booking_date }}" required>
+              </label>
+              <label>
+                <span>Length</span>
+                <select name="duration_minutes" id="bookingDuration" required>
+                  {% for option in duration_options %}
+                    <option value="{{ option['value'] }}" {% if option['value'] == selected_duration_minutes %}selected{% endif %}>{{ option["label"] }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <label>
+                <span>Available time slot</span>
+                <select name="slot_start" id="bookingSlot" required {% if not clinician_options %}disabled{% endif %}>
+                  {% for slot in booking_availability["available_slots"] %}
+                    <option value="{{ slot['value'] }}">{{ slot["label"] }}</option>
+                  {% endfor %}
+                </select>
+                <small class="field-hint" id="bookingSlotHint">
+                  {% if booking_availability["available_slots"] %}
+                    {{ booking_availability["available_slots"]|length }} slots available for {{ booking_availability["date_label"] }}.
+                  {% else %}
+                    No slots are available for the selected day.
+                  {% endif %}
+                </small>
+              </label>
+              <label>
+                <span>Repeat count</span>
+                <input type="number" name="repeat_count" min="1" max="24" value="1">
+              </label>
+              <label>
+                <span>Repeat every (days)</span>
+                <input type="number" name="repeat_every_days" min="1" max="30" value="7">
+              </label>
+              <label class="full">
+                <span>Appointment details</span>
+                <textarea name="patient_details" rows="4" placeholder="What the patient will see in their portal for this booking."></textarea>
+              </label>
+              <label class="full">
+                <span>Internal scheduling note</span>
+                <textarea name="note" rows="3" placeholder="Private admin note, preparation checklist, or handoff details."></textarea>
+              </label>
+            </div>
+            <div class="availability-board" id="bookingAvailabilityBoard">
+              <div class="availability-group">
+                <strong>Shift windows</strong>
+                <div class="availability-chip-list" id="bookingShiftWindows">
+                  {% for item in booking_availability["shift_windows"] %}
+                    <span class="availability-chip {{ item['window_tone'] }}">{{ item["label"] }} · {{ item["time_label"] }}</span>
+                  {% else %}
+                    <span class="muted-copy">No shift is configured for this day.</span>
+                  {% endfor %}
+                </div>
+              </div>
+              <div class="availability-group">
+                <strong>Downtime</strong>
+                <div class="availability-chip-list" id="bookingDowntimeWindows">
+                  {% for item in booking_availability["downtime_windows"] %}
+                    <span class="availability-chip {{ item['window_tone'] }}">{{ item["label"] }} · {{ item["time_label"] }}</span>
+                  {% else %}
+                    <span class="muted-copy">No downtime blocks are set for this day.</span>
+                  {% endfor %}
+                </div>
+              </div>
+              <div class="availability-group">
+                <strong>Already booked</strong>
+                <div class="availability-chip-list" id="bookingBookedWindows">
+                  {% for item in booking_availability["booked_windows"] %}
+                    <span class="availability-chip sky">{{ item["label"] }} · {{ item["time_label"] }}</span>
+                  {% else %}
+                    <span class="muted-copy">No scheduled visits are blocking this date yet.</span>
+                  {% endfor %}
+                </div>
+              </div>
+            </div>
+            <button type="submit" class="primary-button">Schedule appointment</button>
+          </form>
+        </div>
+      </div>
+
+      {% if schedule["history"] %}
+        <div class="section-block">
+          <h3>Previous or inactive appointments</h3>
+          <div class="appointment-controls">
+            {% for appointment in schedule["history"][:6] %}
+              <div class="agenda-item">
+                <div class="agenda-item-head">
+                  <div>
+                    <span class="appointment-chip {{ appointment['type_tone'] }}">{{ appointment["type_label"] }}</span>
+                    <h3>{{ appointment["date_label"] }}</h3>
+                  </div>
+                  <span class="status-dot {{ appointment['status'] }}">{{ appointment["status_label"] }}</span>
+                </div>
+                <p>{{ appointment["time_label"] }}{% if appointment["end_time_label"] %} - {{ appointment["end_time_label"] }}{% endif %}</p>
+                <div class="agenda-meta">
+                  {% if appointment["location_name"] %}
+                    <span class="availability-chip life">{{ appointment["location_name"] }}</span>
+                  {% endif %}
+                  <span class="status-dot {{ appointment['billing_status_tone'] }}">{{ appointment["billing_status_label"] }}</span>
+                </div>
+                {% if appointment["note"] %}
+                  <p>{{ appointment["note"] }}</p>
+                {% endif %}
+                {% if appointment["patient_details"] %}
+                  <p>{{ appointment["patient_details"] }}</p>
+                {% endif %}
+                <div class="tiny-actions">
+                  {% if g.user["role"] == "admin" or appointment["clinician_user_id"] == g.user["id"] %}
+                    <a class="tiny-button sky" href="{{ url_for('main.practitioner_appointment_soap_note', appointment_id=appointment['id']) }}">{{ appointment["soap_note_action_label"] }}</a>
+                  {% endif %}
+                  {% if appointment["soap_note_updated_label"] %}
+                    <span class="muted-copy">Last SOAP update {{ appointment["soap_note_updated_label"] }}</span>
+                  {% endif %}
+                </div>
+                {{ appointment_editor(patient['id'], appointment, appointment_type_options, appointment_status_options, location_options, clinician_options, billing_status_options) }}
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      {% endif %}
     </article>
   </section>
 
@@ -199,4 +555,87 @@
       </form>
     </article>
   </section>
+{% endblock %}
+
+{% block scripts %}
+  <script>
+    (() => {
+      const clinicianInput = document.getElementById("bookingClinician");
+      const locationInput = document.getElementById("bookingLocation");
+      const dateInput = document.getElementById("bookingDate");
+      const durationInput = document.getElementById("bookingDuration");
+      const typeInput = document.getElementById("bookingAppointmentType");
+      const slotInput = document.getElementById("bookingSlot");
+      const slotHint = document.getElementById("bookingSlotHint");
+      const shiftWrap = document.getElementById("bookingShiftWindows");
+      const downtimeWrap = document.getElementById("bookingDowntimeWindows");
+      const bookedWrap = document.getElementById("bookingBookedWindows");
+      const availabilityUrl = "{{ url_for('main.staff_schedule_availability') }}";
+
+      if (!clinicianInput || !locationInput || !dateInput || !durationInput || !typeInput || !slotInput) {
+        return;
+      }
+
+      function renderChips(container, items, emptyMessage, toneClass = "") {
+        if (!container) return;
+        if (!items.length) {
+          container.innerHTML = `<span class="muted-copy">${emptyMessage}</span>`;
+          return;
+        }
+        container.innerHTML = items
+          .map((item) => {
+            const tone = item.window_tone || toneClass;
+            return `<span class="availability-chip ${tone}">${item.label} · ${item.time_label}</span>`;
+          })
+          .join("");
+      }
+
+      async function loadAvailability() {
+        const params = new URLSearchParams({
+          clinician_user_id: clinicianInput.value,
+          location_id: locationInput.value,
+          date: dateInput.value,
+          duration_minutes: durationInput.value,
+        });
+        const response = await fetch(`${availabilityUrl}?${params.toString()}`, {
+          headers: { "X-Requested-With": "fetch" },
+        });
+        if (!response.ok) {
+          slotInput.innerHTML = "";
+          slotInput.disabled = true;
+          slotHint.textContent = "Could not load slots for this date.";
+          return;
+        }
+
+        const payload = await response.json();
+        slotInput.innerHTML = "";
+        for (const item of payload.available_slots) {
+          const option = document.createElement("option");
+          option.value = item.value;
+          option.textContent = item.label;
+          slotInput.appendChild(option);
+        }
+        slotInput.disabled = payload.available_slots.length === 0;
+        slotHint.textContent = payload.available_slots.length
+          ? `${payload.available_slots.length} slots available for ${payload.date_label}.`
+          : "No slots are available for the selected day.";
+
+        renderChips(shiftWrap, payload.shift_windows, "No shift is configured for this day.");
+        renderChips(downtimeWrap, payload.downtime_windows, "No downtime blocks are set for this day.");
+        renderChips(bookedWrap, payload.booked_windows, "No scheduled visits are blocking this date yet.", "sky");
+      }
+
+      typeInput.addEventListener("change", () => {
+        const option = typeInput.options[typeInput.selectedIndex];
+        if (option && option.dataset.defaultDuration) {
+          durationInput.value = option.dataset.defaultDuration;
+        }
+        loadAvailability();
+      });
+      clinicianInput.addEventListener("change", loadAvailability);
+      locationInput.addEventListener("change", loadAvailability);
+      dateInput.addEventListener("change", loadAvailability);
+      durationInput.addEventListener("change", loadAvailability);
+    })();
+  </script>
 {% endblock %}

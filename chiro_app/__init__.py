@@ -23,6 +23,15 @@ def create_app() -> Flask:
         DATABASE=str(Path(app.instance_path) / "chiro.sqlite3"),
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
+        REMINDER_EMAIL_MODE=os.environ.get("REMINDER_EMAIL_MODE", "outbox"),
+        REMINDER_SMS_MODE=os.environ.get("REMINDER_SMS_MODE", "outbox"),
+        REMINDER_EMAIL_FROM=os.environ.get("REMINDER_EMAIL_FROM", "appointments@lifechiro.local"),
+        SMTP_HOST=os.environ.get("SMTP_HOST", ""),
+        SMTP_PORT=int(os.environ.get("SMTP_PORT", "587")),
+        SMTP_USERNAME=os.environ.get("SMTP_USERNAME", ""),
+        SMTP_PASSWORD=os.environ.get("SMTP_PASSWORD", ""),
+        SMTP_USE_TLS=os.environ.get("SMTP_USE_TLS", "1") not in {"0", "false", "False"},
+        SMTP_USE_SSL=os.environ.get("SMTP_USE_SSL", "0") in {"1", "true", "True"},
     )
 
     Path(app.instance_path).mkdir(parents=True, exist_ok=True)

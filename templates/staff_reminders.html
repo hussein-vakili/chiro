@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+
+{% block title %}Reminder Center · Life Chiropractic{% endblock %}
+
+{% block content %}
+  <section class="hero-panel">
+    <div>
+      <div class="auth-eyebrow">Reminder center</div>
+      <h1>Appointment reminders.</h1>
+      <p>Send and track email or SMS reminders for upcoming Reports of Findings and care-plan visits.</p>
+    </div>
+    <div class="status-card">
+      <span>Delivery modes</span>
+      <strong>{{ due_reminders|length }} due now</strong>
+      <small>Email mode: {{ email_mode }}</small>
+      <small>SMS mode: {{ sms_mode }}</small>
+    </div>
+  </section>
+
+  <section class="dashboard-grid">
+    <article class="panel">
+      <div class="panel-label">Due reminders</div>
+      <p style="margin-top:10px">
+        The local build defaults to an outbox workflow. If SMTP is configured, email reminders can be sent directly from the app.
+      </p>
+      {% if due_reminders %}
+        <div class="invite-stack">
+          {% for appointment in due_reminders %}
+            <div class="reminder-card reminder-card-strong">
+              <strong>{{ appointment["patient_name"] }} · {{ appointment["type_label"] }}</strong>
+              <small>{{ appointment["starts_label"] }}</small>
+              <small>{{ appointment["reminder_label"] }}</small>
+              <div class="reminder-meta">
+                {% if appointment["patient_email"] %}
+                  <span>{{ appointment["patient_email"] }}</span>
+                {% else %}
+                  <span>No email on file</span>
+                {% endif %}
+                {% if appointment["patient_phone"] %}
+                  <span>{{ appointment["patient_phone"] }}</span>
+                {% else %}
+                  <span>No phone on file</span>
+                {% endif %}
+              </div>
+              <div class="tiny-actions">
+                <form method="post" action="{{ url_for('main.send_staff_appointment_reminder', appointment_id=appointment['id']) }}">
+                  <input type="hidden" name="channel" value="email">
+                  <input type="hidden" name="next_url" value="{{ request.path }}">
+                  <button type="submit" class="tiny-button sky" {% if not appointment["can_email"] %}disabled{% endif %}>Send email</button>
+                </form>
+                <form method="post" action="{{ url_for('main.send_staff_appointment_reminder', appointment_id=appointment['id']) }}">
+                  <input type="hidden" name="channel" value="sms">
+                  <input type="hidden" name="next_url" value="{{ request.path }}">
+                  <button type="submit" class="tiny-button warm" {% if not appointment["can_sms"] %}disabled{% endif %}>Send SMS</button>
+                </form>
+                <form method="post" action="{{ url_for('main.send_staff_appointment_reminder', appointment_id=appointment['id']) }}">
+                  <input type="hidden" name="channel" value="both">
+                  <input type="hidden" name="next_url" value="{{ request.path }}">
+                  <button type="submit" class="tiny-button life" {% if not appointment["can_email"] and not appointment["can_sms"] %}disabled{% endif %}>Send both</button>
+                </form>
+                <a class="table-link" href="{{ url_for('main.staff_patient_detail', user_id=appointment['patient_user_id']) }}">Open patient chart</a>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p style="margin-top:12px">No Report of Findings or care-plan reminders are due right now.</p>
+      {% endif %}
+    </article>
+
+    <article class="panel">
+      <div class="panel-label">Delivery summary</div>
+      <div class="metric-grid" style="margin-top:18px">
+        <div class="metric-card">
+          <span>Logged</span>
+          <strong>{{ delivery_counts["logged"] }}</strong>
+          <small>Reminders recorded to the outbox.</small>
+        </div>
+        <div class="metric-card">
+          <span>Sent</span>
+          <strong>{{ delivery_counts["sent"] }}</strong>
+          <small>Direct provider deliveries completed.</small>
+        </div>
+        <div class="metric-card">
+          <span>Failed</span>
+          <strong>{{ delivery_counts["failed"] }}</strong>
+          <small>Provider attempts that need review.</small>
+        </div>
+      </div>
+    </article>
+  </section>
+
+  <section class="dashboard-grid" style="grid-template-columns:1fr">
+    <article class="panel">
+      <div class="panel-label">Recent delivery history</div>
+      {% if recent_deliveries %}
+        <div class="invite-stack" style="margin-top:16px">
+          {% for delivery in recent_deliveries %}
+            <details class="appointment-edit">
+              <summary>
+                {{ delivery["patient_name"] }} · {{ delivery["appointment_type_label"] }} · {{ delivery["channel_label"] }} · {{ delivery["status_label"] }}
+              </summary>
+              <div class="delivery-card">
+                <div class="agenda-meta">
+                  <span class="appointment-chip {{ delivery['channel_tone'] }}">{{ delivery["channel_label"] }}</span>
+                  <span class="status-dot {{ delivery['status_tone'] }}">{{ delivery["status_label"] }}</span>
+                </div>
+                <p><strong>Visit:</strong> {{ delivery["starts_label"] }}</p>
+                <p><strong>Recipient:</strong> {{ delivery["recipient"] or "Missing contact details" }}</p>
+                <p><strong>Mode:</strong> {{ delivery["delivery_mode"] }}</p>
+                {% if delivery["subject"] %}
+                  <p><strong>Subject:</strong> {{ delivery["subject"] }}</p>
+                {% endif %}
+                <div class="message-preview">{{ delivery["message"] }}</div>
+                {% if delivery["error_message"] %}
+                  <div class="danger-chip">{{ delivery["error_message"] }}</div>
+                {% endif %}
+                <div class="tiny-actions">
+                  {% if delivery["launch_link"] %}
+                    <a class="tiny-button sky" href="{{ delivery['launch_link'] }}">Open in device app</a>
+                  {% endif %}
+                  <a class="table-link" href="{{ url_for('main.staff_patient_detail', user_id=delivery['patient_user_id']) }}">Open patient chart</a>
+                </div>
+              </div>
+            </details>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p style="margin-top:12px">No reminder deliveries have been recorded yet.</p>
+      {% endif %}
+    </article>
+  </section>
+{% endblock %}

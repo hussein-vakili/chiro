@@ -1,0 +1,336 @@
+{% extends "base.html" %}
+
+{% block title %}Appointments · Life Chiropractic{% endblock %}
+
+{% block content %}
+  <section class="hero-panel">
+    <div>
+      <div class="auth-eyebrow">Appointments</div>
+      <h1>Your visit calendar.</h1>
+      <p>Track your booked appointments and see exactly whether each visit is your initial consultation, your Report of Findings, or part of your care plan.</p>
+    </div>
+    <div class="status-card">
+      <span>Next visit</span>
+      {% if schedule["next_appointment"] %}
+        <strong>{{ schedule["next_appointment"]["type_label"] }}</strong>
+        <small>{{ schedule["next_appointment"]["starts_label"] }}</small>
+        {% if schedule["next_appointment"]["location_name"] %}
+          <small>{{ schedule["next_appointment"]["location_name"] }}</small>
+        {% endif %}
+        <small>{{ schedule["next_appointment"]["status_label"] }}</small>
+        {% if schedule["next_appointment"]["reminder_label"] %}
+          <small>{{ schedule["next_appointment"]["reminder_label"] }}</small>
+        {% endif %}
+      {% else %}
+        <strong>No visits booked</strong>
+        <small>The clinic has not scheduled an appointment yet.</small>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="panel" style="margin-top:18px">
+    <div class="panel-label">Visit types</div>
+    <div class="legend-list" style="margin-top:14px">
+      <span class="legend-chip life">{{ schedule["counts"]["initial_consult"] }} Initial Consultation</span>
+      <span class="legend-chip sky">{{ schedule["counts"]["report_of_findings"] }} Report of Findings</span>
+      <span class="legend-chip warm">{{ schedule["counts"]["care_plan"] }} Care Plan Visit</span>
+    </div>
+  </section>
+
+  <section class="dashboard-grid">
+    <article class="panel">
+      <div class="panel-label">Calendar</div>
+      <div class="calendar-toolbar">
+        <div class="calendar-nav">
+          <a class="calendar-navlink" href="{{ url_for('main.appointments', month=schedule['calendar']['previous_month']) }}">Previous</a>
+          <strong>{{ schedule["calendar"]["month_label"] }}</strong>
+          <a class="calendar-navlink" href="{{ url_for('main.appointments', month=schedule['calendar']['next_month']) }}">Next</a>
+        </div>
+      </div>
+      <div class="calendar-grid">
+        {% for day in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] %}
+          <div class="calendar-head">{{ day }}</div>
+        {% endfor %}
+        {% for week in schedule["calendar"]["weeks"] %}
+          {% for day in week %}
+            <div class="calendar-cell {% if not day['in_month'] %}outside{% endif %} {% if day['is_today'] %}today{% endif %}">
+              <div class="calendar-date">
+                <span>{{ day["day"] }}</span>
+                {% if day["appointments"] %}
+                  <small>{{ day["appointments"]|length }}</small>
+                {% endif %}
+              </div>
+              <div class="calendar-items">
+                {% for appointment in day["appointments"][:3] %}
+                  <div class="calendar-item {{ appointment['type_tone'] }}">
+                    <strong>{{ appointment["type_short_label"] }}</strong>
+                    <small>{{ appointment["time_label"] }}{% if appointment["end_time_label"] %} - {{ appointment["end_time_label"] }}{% endif %}</small>
+                  </div>
+                {% endfor %}
+              </div>
+            </div>
+          {% endfor %}
+        {% endfor %}
+      </div>
+    </article>
+
+    <article class="panel">
+      <div class="panel-label">Self-service booking</div>
+      <p style="margin-top:10px">Book available appointments 24/7 from your portal. Choose a clinic location, chiropractor, and available slot.</p>
+      <form method="post" action="{{ url_for('main.self_book_appointment') }}" class="auth-form">
+        <div class="appointment-form-grid">
+          <label>
+            <span>Visit type</span>
+            <select name="appointment_type" id="patientBookingType" required>
+              {% for option in [
+                {'value': 'initial_consult', 'label': 'Initial Consultation', 'default_duration': 60},
+                {'value': 'report_of_findings', 'label': 'Report of Findings', 'default_duration': 30},
+                {'value': 'care_plan', 'label': 'Care Plan Visit', 'default_duration': 20}
+              ] %}
+                <option value="{{ option['value'] }}" data-default-duration="{{ option['default_duration'] }}" {% if option['value'] == selected_appointment_type %}selected{% endif %}>{{ option['label'] }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>
+            <span>Location</span>
+            <select name="location_id" id="patientBookingLocation" required>
+              {% for option in location_options %}
+                <option value="{{ option['value'] }}" {% if option['value'] == selected_location_id %}selected{% endif %}>{{ option["label"] }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>
+            <span>Chiropractor</span>
+            <select name="clinician_user_id" id="patientBookingClinician" required>
+              {% for option in clinician_options %}
+                <option value="{{ option['value'] }}" {% if option['value'] == selected_clinician_id %}selected{% endif %}>{{ option["label"] }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>
+            <span>Date</span>
+            <input type="date" name="appointment_date" id="patientBookingDate" value="{{ booking_date }}" required>
+          </label>
+          <label>
+            <span>Length</span>
+            <select name="duration_minutes" id="patientBookingDuration" required>
+              {% for option in duration_options %}
+                <option value="{{ option['value'] }}" {% if option['value'] == selected_duration_minutes %}selected{% endif %}>{{ option["label"] }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>
+            <span>Available time slot</span>
+            <select name="slot_start" id="patientBookingSlot" required>
+              {% for slot in booking_availability["available_slots"] %}
+                <option value="{{ slot['value'] }}">{{ slot["label"] }}</option>
+              {% endfor %}
+            </select>
+            <small class="field-hint" id="patientBookingSlotHint">
+              {% if booking_availability["available_slots"] %}
+                {{ booking_availability["available_slots"]|length }} slots available for {{ booking_availability["date_label"] }}.
+              {% else %}
+                No slots are available for the selected filters.
+              {% endif %}
+            </small>
+          </label>
+          <label class="full">
+            <span>Appointment details</span>
+            <textarea name="patient_details" rows="4" placeholder="Tell the clinic anything important for this booking, or what you want covered."></textarea>
+          </label>
+        </div>
+        <div class="availability-board">
+          <div class="availability-group">
+            <strong>Shift windows</strong>
+            <div class="availability-chip-list" id="patientShiftWindows">
+              {% for item in booking_availability["shift_windows"] %}
+                <span class="availability-chip {{ item['window_tone'] }}">{{ item["label"] }} · {{ item["time_label"] }}</span>
+              {% else %}
+                <span class="muted-copy">No shift is configured for this day.</span>
+              {% endfor %}
+            </div>
+          </div>
+          <div class="availability-group">
+            <strong>Downtime</strong>
+            <div class="availability-chip-list" id="patientDowntimeWindows">
+              {% for item in booking_availability["downtime_windows"] %}
+                <span class="availability-chip {{ item['window_tone'] }}">{{ item["label"] }} · {{ item["time_label"] }}</span>
+              {% else %}
+                <span class="muted-copy">No downtime blocks are set for this day.</span>
+              {% endfor %}
+            </div>
+          </div>
+          <div class="availability-group">
+            <strong>Already booked</strong>
+            <div class="availability-chip-list" id="patientBookedWindows">
+              {% for item in booking_availability["booked_windows"] %}
+                <span class="availability-chip sky">{{ item["label"] }} · {{ item["time_label"] }}</span>
+              {% else %}
+                <span class="muted-copy">No scheduled visits are blocking this date yet.</span>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+        <button type="submit" class="primary-button">Book appointment</button>
+      </form>
+    </article>
+  </section>
+
+  <section class="dashboard-grid">
+    <article class="panel">
+      <div class="panel-label">Upcoming visits</div>
+      {% if schedule["upcoming"] %}
+        <div class="agenda-list" style="margin-top:16px">
+          {% for appointment in schedule["upcoming"] %}
+            <div class="agenda-item">
+              <div class="agenda-item-head">
+                <div>
+                  <span class="appointment-chip {{ appointment['type_tone'] }}">{{ appointment["type_label"] }}</span>
+                  <h3>{{ appointment["date_label"] }}</h3>
+                </div>
+                <span class="status-dot {{ appointment['status'] }}">{{ appointment["status_label"] }}</span>
+              </div>
+              <div class="agenda-meta">
+                {% if appointment["location_name"] %}
+                  <span class="availability-chip life">{{ appointment["location_name"] }}</span>
+                {% endif %}
+                <span class="status-dot {{ appointment['billing_status_tone'] }}">{{ appointment["billing_status_label"] }}</span>
+              </div>
+              <p>{{ appointment["time_label"] }}{% if appointment["end_time_label"] %} - {{ appointment["end_time_label"] }}{% endif %}</p>
+              {% if appointment["reminder_label"] %}
+                <div class="legend-chip {{ appointment['reminder_tone'] }}">{{ appointment["reminder_label"] }}</div>
+              {% endif %}
+              {% if appointment["note"] %}
+                <p>{{ appointment["note"] }}</p>
+              {% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p style="margin-top:12px">No future appointments are scheduled yet.</p>
+      {% endif %}
+    </article>
+  </section>
+
+  {% if schedule["reminders"] %}
+    <section class="dashboard-grid" style="grid-template-columns:1fr">
+      <article class="panel">
+        <div class="panel-label">Reminders due soon</div>
+        <div class="invite-stack" style="margin-top:16px">
+          {% for appointment in schedule["reminders"] %}
+            <div class="reminder-card">
+              <strong>{{ appointment["type_label"] }}</strong>
+              <small>{{ appointment["starts_label"] }}</small>
+              <small>{{ appointment["reminder_label"] }}</small>
+            </div>
+          {% endfor %}
+        </div>
+      </article>
+    </section>
+  {% endif %}
+
+  <section class="dashboard-grid" style="grid-template-columns:1fr">
+    <article class="panel">
+      <div class="panel-label">Appointment history</div>
+      {% if schedule["history"] %}
+        <div class="invite-stack" style="margin-top:16px">
+          {% for appointment in schedule["history"] %}
+            <div class="mini-card">
+              <strong>{{ appointment["type_label"] }}</strong>
+              <small>{{ appointment["starts_label"] }}</small>
+              {% if appointment["location_name"] %}
+                <small>{{ appointment["location_name"] }}</small>
+              {% endif %}
+              <small>{{ appointment["status_label"] }}</small>
+              {% if appointment["note"] %}
+                <small>{{ appointment["note"] }}</small>
+              {% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p>No past or inactive appointments have been recorded yet.</p>
+      {% endif %}
+    </article>
+  </section>
+{% endblock %}
+
+{% block scripts %}
+  <script>
+    (() => {
+      const typeInput = document.getElementById("patientBookingType");
+      const locationInput = document.getElementById("patientBookingLocation");
+      const clinicianInput = document.getElementById("patientBookingClinician");
+      const dateInput = document.getElementById("patientBookingDate");
+      const durationInput = document.getElementById("patientBookingDuration");
+      const slotInput = document.getElementById("patientBookingSlot");
+      const slotHint = document.getElementById("patientBookingSlotHint");
+      const shiftWrap = document.getElementById("patientShiftWindows");
+      const downtimeWrap = document.getElementById("patientDowntimeWindows");
+      const bookedWrap = document.getElementById("patientBookedWindows");
+      const availabilityUrl = "{{ url_for('main.api_availability') }}";
+
+      if (!typeInput || !locationInput || !clinicianInput || !dateInput || !durationInput || !slotInput) {
+        return;
+      }
+
+      function render(container, items, emptyMessage, fallbackTone = "") {
+        if (!container) return;
+        if (!items.length) {
+          container.innerHTML = `<span class="muted-copy">${emptyMessage}</span>`;
+          return;
+        }
+        container.innerHTML = items.map((item) => {
+          const tone = item.window_tone || fallbackTone;
+          return `<span class="availability-chip ${tone}">${item.label} · ${item.time_label}</span>`;
+        }).join("");
+      }
+
+      async function loadAvailability() {
+        const params = new URLSearchParams({
+          clinician_user_id: clinicianInput.value,
+          location_id: locationInput.value,
+          date: dateInput.value,
+          duration_minutes: durationInput.value,
+        });
+        const response = await fetch(`${availabilityUrl}?${params.toString()}`, {
+          headers: { "X-Requested-With": "fetch" },
+        });
+        if (!response.ok) {
+          slotInput.innerHTML = "";
+          slotInput.disabled = true;
+          slotHint.textContent = "Could not load availability.";
+          return;
+        }
+        const payload = await response.json();
+        const availability = payload.availability;
+        slotInput.innerHTML = "";
+        for (const item of availability.available_slots) {
+          const option = document.createElement("option");
+          option.value = item.value;
+          option.textContent = item.label;
+          slotInput.appendChild(option);
+        }
+        slotInput.disabled = availability.available_slots.length === 0;
+        slotHint.textContent = availability.available_slots.length
+          ? `${availability.available_slots.length} slots available for ${availability.date_label}.`
+          : "No slots are available for the selected filters.";
+        render(shiftWrap, availability.shift_windows, "No shift is configured for this day.");
+        render(downtimeWrap, availability.downtime_windows, "No downtime blocks are set for this day.");
+        render(bookedWrap, availability.booked_windows, "No scheduled visits are blocking this date yet.", "sky");
+      }
+
+      typeInput.addEventListener("change", () => {
+        const option = typeInput.options[typeInput.selectedIndex];
+        if (option && option.dataset.defaultDuration) {
+          durationInput.value = option.dataset.defaultDuration;
+        }
+        loadAvailability();
+      });
+      locationInput.addEventListener("change", loadAvailability);
+      clinicianInput.addEventListener("change", loadAvailability);
+      dateInput.addEventListener("change", loadAvailability);
+      durationInput.addEventListener("change", loadAvailability);
+    })();
+  </script>
+{% endblock %}

@@ -1,3 +1,9 @@
+{% set preview_mode = preview_mode if preview_mode is defined else False %}
+{% set home_url = home_url if home_url is defined else url_for('main.dashboard') %}
+{% set home_label = home_label if home_label is defined else 'Dashboard' %}
+{% set secondary_url = secondary_url if secondary_url is defined else url_for('main.intake') %}
+{% set secondary_label = secondary_label if secondary_label is defined else 'Edit intake' %}
+{% set show_logout = show_logout if show_logout is defined else True %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -135,25 +141,38 @@ a{text-decoration:none;color:inherit}
   .tab-bar{top:103px}
   .hero-stats,.grid-2,.grid-3{grid-template-columns:1fr}
 }
+@media print{
+  body{background:#fff}
+  .portal-bar,.tab-bar,.actions,.no-print{display:none!important}
+  .shell{max-width:none;padding:0}
+  .sec{display:block!important;page-break-before:always}
+  .sec:first-of-type{page-break-before:auto}
+  .card,.hero{box-shadow:none}
+}
 </style>
 </head>
 <body>
 
 <div class="portal-bar">
   <div class="portal-in">
-    <a class="portal-brand" href="{{ url_for('main.dashboard') }}">
+    <a class="portal-brand" href="{{ home_url }}">
       <span class="portal-mark">LC</span>
       <span class="portal-copy">
         <strong>Life Chiropractic</strong>
-        <small>Client Results</small>
+        <small>{{ "Results Preview" if preview_mode else "Client Results" }}</small>
       </span>
     </a>
     <div class="portal-nav">
-      <a href="{{ url_for('main.dashboard') }}">Dashboard</a>
-      <a href="{{ url_for('main.intake') }}">Edit intake</a>
-      <form method="post" action="{{ url_for('main.logout') }}">
-        <button type="submit">Log out</button>
-      </form>
+      <a href="{{ home_url }}">{{ home_label }}</a>
+      {% if secondary_url and secondary_label %}
+        <a href="{{ secondary_url }}">{{ secondary_label }}</a>
+      {% endif %}
+      <button type="button" onclick="window.print()">Print report</button>
+      {% if show_logout %}
+        <form method="post" action="{{ url_for('main.logout') }}">
+          <button type="submit">Log out</button>
+        </form>
+      {% endif %}
     </div>
   </div>
 </div>
@@ -171,6 +190,12 @@ a{text-decoration:none;color:inherit}
 <div class="shell">
 
 <div class="sec on" id="t0">
+  {% if preview_mode %}
+    <div class="card no-print">
+      <div class="card-t">Patient Portal Preview</div>
+      <div class="card-sub">You are previewing the results portal exactly as {{ summary.full_name }} would see it after publication.</div>
+    </div>
+  {% endif %}
   <div class="hero">
     <div class="hero-top">
       <div class="hero-avatar">{{ summary.initials }}</div>
@@ -710,8 +735,10 @@ a{text-decoration:none;color:inherit}
       {% endfor %}
     </div>
     <div class="actions">
-      <a class="btn btn-pri" href="{{ url_for('main.intake') }}">Edit my intake</a>
-      <a class="btn btn-sec" href="{{ url_for('main.dashboard') }}">Back to dashboard</a>
+      {% if secondary_url and secondary_label %}
+        <a class="btn btn-pri" href="{{ secondary_url }}">{{ secondary_label }}</a>
+      {% endif %}
+      <a class="btn btn-sec" href="{{ home_url }}">{{ home_label }}</a>
     </div>
   </div>
 </div>

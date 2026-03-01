@@ -75,6 +75,108 @@ CREATE TABLE IF NOT EXISTS clinician_notes (
     FOREIGN KEY (clinician_user_id) REFERENCES users(id) ON DELETE SET NULL
 );
 
+CREATE TABLE IF NOT EXISTS locations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    slug TEXT NOT NULL UNIQUE,
+    address TEXT NOT NULL DEFAULT '',
+    phone TEXT NOT NULL DEFAULT '',
+    timezone TEXT NOT NULL DEFAULT 'Europe/London',
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_locations_slug ON locations(slug);
+
+CREATE TABLE IF NOT EXISTS appointments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    patient_user_id INTEGER NOT NULL,
+    clinician_user_id INTEGER,
+    location_id INTEGER,
+    appointment_type TEXT NOT NULL DEFAULT 'initial_consult',
+    status TEXT NOT NULL DEFAULT 'scheduled',
+    starts_at TEXT NOT NULL,
+    ends_at TEXT,
+    source_invitation_id INTEGER,
+    note TEXT NOT NULL DEFAULT '',
+    patient_details TEXT NOT NULL DEFAULT '',
+    clinical_note TEXT NOT NULL DEFAULT '',
+    billing_status TEXT NOT NULL DEFAULT 'pending',
+    billing_code TEXT NOT NULL DEFAULT '',
+    billing_amount REAL,
+    booking_source TEXT NOT NULL DEFAULT 'staff_portal',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (patient_user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (clinician_user_id) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (location_id) REFERENCES locations(id) ON DELETE SET NULL,
+    FOREIGN KEY (source_invitation_id) REFERENCES invitations(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_appointments_patient ON appointments(patient_user_id);
+CREATE INDEX IF NOT EXISTS idx_appointments_starts_at ON appointments(starts_at);
+
+CREATE TABLE IF NOT EXISTS appointment_reminders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    appointment_id INTEGER NOT NULL,
+    patient_user_id INTEGER NOT NULL,
+    clinician_user_id INTEGER,
+    channel TEXT NOT NULL,
+    delivery_mode TEXT NOT NULL DEFAULT 'outbox',
+    reminder_bucket TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'logged',
+    recipient TEXT NOT NULL DEFAULT '',
+    subject TEXT NOT NULL DEFAULT '',
+    message TEXT NOT NULL DEFAULT '',
+    error_message TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    sent_at TEXT,
+    FOREIGN KEY (appointment_id) REFERENCES appointments(id) ON DELETE CASCADE,
+    FOREIGN KEY (patient_user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (clinician_user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_appointment_reminders_appointment ON appointment_reminders(appointment_id);
+CREATE INDEX IF NOT EXISTS idx_appointment_reminders_sent_at ON appointment_reminders(sent_at);
+
+CREATE TABLE IF NOT EXISTS appointment_soap_notes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    appointment_id INTEGER NOT NULL UNIQUE,
+    patient_user_id INTEGER NOT NULL,
+    clinician_user_id INTEGER,
+    subjective TEXT NOT NULL DEFAULT '',
+    objective TEXT NOT NULL DEFAULT '',
+    assessment TEXT NOT NULL DEFAULT '',
+    plan TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (appointment_id) REFERENCES appointments(id) ON DELETE CASCADE,
+    FOREIGN KEY (patient_user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (clinician_user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_appointment_soap_notes_appointment ON appointment_soap_notes(appointment_id);
+CREATE INDEX IF NOT EXISTS idx_appointment_soap_notes_clinician ON appointment_soap_notes(clinician_user_id);
+
+CREATE TABLE IF NOT EXISTS schedule_windows (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    clinician_user_id INTEGER,
+    location_id INTEGER,
+    weekday INTEGER NOT NULL,
+    window_type TEXT NOT NULL DEFAULT 'shift',
+    starts_time TEXT NOT NULL,
+    ends_time TEXT NOT NULL,
+    label TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (clinician_user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (location_id) REFERENCES locations(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_schedule_windows_weekday ON schedule_windows(weekday);
+CREATE INDEX IF NOT EXISTS idx_schedule_windows_clinician ON schedule_windows(clinician_user_id);
+
 CREATE TABLE IF NOT EXISTS visit_reports (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     patient_user_id INTEGER NOT NULL,
@@ -148,6 +250,120 @@ def _ensure_column(db: sqlite3.Connection, table_name: str, column_name: str, de
         db.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")
 
 
+def _backfill_accepted_invitation_appointments(db: sqlite3.Connection) -> None:
+    rows = db.execute(
+        """
+        SELECT id, accepted_user_id, created_by, appointment_at, note, created_at
+        FROM invitations
+        WHERE accepted_user_id IS NOT NULL AND appointment_at IS NOT NULL
+        """
+    ).fetchall()
+    for row in rows:
+        existing = db.execute(
+            """
+            SELECT id
+            FROM appointments
+            WHERE source_invitation_id = ?
+               OR (
+                    patient_user_id = ?
+                AND appointment_type = 'initial_consult'
+                AND starts_at = ?
+               )
+            LIMIT 1
+            """,
+            (row["id"], row["accepted_user_id"], row["appointment_at"]),
+        ).fetchone()
+        if existing is not None:
+            continue
+
+        note = (row["note"] or "").strip()
+        if note:
+            note = f"Imported from invite: {note}"
+
+        db.execute(
+            """
+            INSERT INTO appointments (
+                patient_user_id,
+                clinician_user_id,
+                appointment_type,
+                status,
+                starts_at,
+                source_invitation_id,
+                note,
+                created_at,
+                updated_at
+            )
+            VALUES (?, ?, 'initial_consult', 'scheduled', ?, ?, ?, ?, ?)
+            """,
+            (
+                row["accepted_user_id"],
+                row["created_by"],
+                row["appointment_at"],
+                row["id"],
+                note,
+                row["created_at"],
+                row["created_at"],
+            ),
+        )
+
+
+def _seed_default_locations(db: sqlite3.Connection) -> int:
+    existing = db.execute(
+        "SELECT id FROM locations WHERE slug = 'main-clinic' LIMIT 1"
+    ).fetchone()
+    if existing is not None:
+        return existing["id"]
+
+    db.execute(
+        """
+        INSERT INTO locations (name, slug, address, phone, timezone, active, created_at, updated_at)
+        VALUES ('Main Clinic', 'main-clinic', '123 Wellness Way', '555-0101', 'Europe/London', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        """
+    )
+    return db.execute("SELECT id FROM locations WHERE slug = 'main-clinic' LIMIT 1").fetchone()["id"]
+
+
+def _seed_default_schedule_windows(db: sqlite3.Connection) -> None:
+    existing = db.execute("SELECT COUNT(*) AS count FROM schedule_windows").fetchone()
+    if existing["count"]:
+        return
+
+    default_location_id = _seed_default_locations(db)
+    rows = []
+    for weekday in range(0, 5):
+        rows.append((None, default_location_id, weekday, "shift", "09:00", "17:00", "Clinic shift"))
+        rows.append((None, default_location_id, weekday, "downtime", "12:00", "13:00", "Lunch downtime"))
+
+    db.executemany(
+        """
+        INSERT INTO schedule_windows (
+            clinician_user_id,
+            location_id,
+            weekday,
+            window_type,
+            starts_time,
+            ends_time,
+            label,
+            created_at,
+            updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        """,
+        rows,
+    )
+
+
+def _backfill_default_location_assignments(db: sqlite3.Connection, default_location_id: int) -> None:
+    db.execute(
+        "UPDATE appointments SET location_id = ? WHERE location_id IS NULL",
+        (default_location_id,),
+    )
+    db.execute(
+        "UPDATE schedule_windows SET location_id = ? WHERE location_id IS NULL",
+        (default_location_id,),
+    )
+
+
 def get_db() -> sqlite3.Connection:
     if "db" not in g:
         g.db = sqlite3.connect(current_app.config["DATABASE"])
@@ -201,6 +417,36 @@ def init_db() -> None:
     }
     for column_name, definition in visit_report_columns.items():
         _ensure_column(db, "visit_reports", column_name, definition)
+    appointment_columns = {
+        "clinician_user_id": "INTEGER",
+        "location_id": "INTEGER",
+        "appointment_type": "TEXT NOT NULL DEFAULT 'initial_consult'",
+        "status": "TEXT NOT NULL DEFAULT 'scheduled'",
+        "ends_at": "TEXT",
+        "source_invitation_id": "INTEGER",
+        "note": "TEXT NOT NULL DEFAULT ''",
+        "patient_details": "TEXT NOT NULL DEFAULT ''",
+        "clinical_note": "TEXT NOT NULL DEFAULT ''",
+        "billing_status": "TEXT NOT NULL DEFAULT 'pending'",
+        "billing_code": "TEXT NOT NULL DEFAULT ''",
+        "billing_amount": "REAL",
+        "booking_source": "TEXT NOT NULL DEFAULT 'staff_portal'",
+        "created_at": "TEXT NOT NULL DEFAULT ''",
+        "updated_at": "TEXT NOT NULL DEFAULT ''",
+    }
+    for column_name, definition in appointment_columns.items():
+        _ensure_column(db, "appointments", column_name, definition)
+    db.execute("CREATE INDEX IF NOT EXISTS idx_appointments_location ON appointments(location_id)")
+    schedule_window_columns = {
+        "location_id": "INTEGER",
+    }
+    for column_name, definition in schedule_window_columns.items():
+        _ensure_column(db, "schedule_windows", column_name, definition)
+    db.execute("CREATE INDEX IF NOT EXISTS idx_schedule_windows_location ON schedule_windows(location_id)")
+    default_location_id = _seed_default_locations(db)
+    _backfill_accepted_invitation_appointments(db)
+    _seed_default_schedule_windows(db)
+    _backfill_default_location_assignments(db, default_location_id)
     db.commit()
 
 

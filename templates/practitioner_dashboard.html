@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+
+{% block title %}Practitioner Dashboard · Life Chiropractic{% endblock %}
+
+{% block content %}
+  <section class="hero-panel">
+    <div>
+      <div class="auth-eyebrow">Practitioner dashboard</div>
+      <h1>Your patient list and appointment charting.</h1>
+      <p>Use this dashboard to move through your assigned patients, open a specific appointment, and add SOAP notes tied to that visit.</p>
+    </div>
+    <div class="status-card">
+      <span>At a glance</span>
+      <strong>{{ patient_count }} patients</strong>
+      <small>{{ upcoming_count }} upcoming appointments</small>
+      <small>{{ charting_queue_count }} appointments still need SOAP charting</small>
+      <small>{{ charted_count }} appointment SOAP notes saved</small>
+    </div>
+  </section>
+
+  <section class="dashboard-grid">
+    <article class="panel">
+      <div class="panel-label">Today's schedule</div>
+      {% set schedule_items = today_appointments if today_appointments else upcoming_appointments %}
+      {% if schedule_items %}
+        <div class="invite-stack">
+          {% for appointment in schedule_items %}
+            <div class="agenda-item">
+              <div class="agenda-item-head">
+                <div>
+                  <span class="appointment-chip {{ appointment['type_tone'] }}">{{ appointment["type_label"] }}</span>
+                  <h3>{{ appointment["patient_name"] }}</h3>
+                </div>
+                <span class="status-dot {{ 'life' if appointment['has_soap_note'] else 'none' }}">
+                  {{ "SOAP saved" if appointment["has_soap_note"] else "SOAP not started" }}
+                </span>
+              </div>
+              <p>{{ appointment["starts_label"] }}</p>
+              <div class="agenda-meta">
+                {% if appointment["location_name"] %}
+                  <span class="availability-chip life">{{ appointment["location_name"] }}</span>
+                {% endif %}
+                <span class="status-dot {{ appointment['status'] }}">{{ appointment["status_label"] }}</span>
+              </div>
+              {% if appointment["patient_details"] %}
+                <p>{{ appointment["patient_details"] }}</p>
+              {% endif %}
+              <div class="tiny-actions">
+                <a class="tiny-button sky" href="{{ url_for('main.practitioner_appointment_soap_note', appointment_id=appointment['id']) }}">{{ appointment["soap_note_action_label"] }}</a>
+                <a class="tiny-button" href="{{ url_for('main.staff_patient_detail', user_id=appointment['patient_user_id']) }}">Open patient chart</a>
+              </div>
+              {% if appointment["soap_note_updated_label"] %}
+                <small class="muted-copy">Last SOAP update {{ appointment["soap_note_updated_label"] }}</small>
+              {% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p>No appointments are assigned to you yet.</p>
+      {% endif %}
+    </article>
+
+    <article class="panel">
+      <div class="panel-label">SOAP charting queue</div>
+      {% if charting_queue %}
+        <div class="invite-stack">
+          {% for appointment in charting_queue %}
+            <div class="mini-card">
+              <strong>{{ appointment["patient_name"] }}</strong>
+              <small>{{ appointment["type_label"] }} · {{ appointment["starts_label"] }}</small>
+              {% if appointment["location_name"] %}
+                <small>{{ appointment["location_name"] }}</small>
+              {% endif %}
+              <div class="tiny-actions">
+                <a class="tiny-button sky" href="{{ url_for('main.practitioner_appointment_soap_note', appointment_id=appointment['id']) }}">Add SOAP note</a>
+                <a class="table-link" href="{{ url_for('main.staff_patient_detail', user_id=appointment['patient_user_id']) }}">Open patient chart</a>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p>No appointments currently need SOAP charting.</p>
+      {% endif %}
+
+      {% if recent_charted %}
+        <div class="section-block">
+          <h3>Recently charted</h3>
+          <div class="invite-stack">
+            {% for appointment in recent_charted %}
+              <div class="mini-card">
+                <strong>{{ appointment["patient_name"] }}</strong>
+                <small>{{ appointment["type_label"] }} · {{ appointment["starts_label"] }}</small>
+                <small>{{ appointment["soap_note_updated_label"] }}</small>
+                <a class="table-link" href="{{ url_for('main.practitioner_appointment_soap_note', appointment_id=appointment['id']) }}">Edit SOAP note</a>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      {% endif %}
+    </article>
+  </section>
+
+  <section class="dashboard-grid" style="grid-template-columns:1fr">
+    <article class="panel">
+      <div class="panel-label">My patients</div>
+      {% if patients %}
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Patient</th>
+                <th>Next appointment</th>
+                <th>Last appointment</th>
+                <th>SOAP activity</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for patient in patients %}
+                {% set note_target = patient["last_appointment"] or patient["next_appointment"] %}
+                <tr>
+                  <td>
+                    <a class="table-link" href="{{ url_for('main.staff_patient_detail', user_id=patient['id']) }}">{{ patient["full_name"] }}</a>
+                    {% if patient["email"] %}
+                      <small>{{ patient["email"] }}</small>
+                    {% endif %}
+                    {% if patient["phone"] %}
+                      <small>{{ patient["phone"] }}</small>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if patient["next_appointment"] %}
+                      {{ patient["next_appointment"]["starts_label"] }}
+                      <small>{{ patient["next_appointment"]["type_label"] }}</small>
+                    {% else %}
+                      No future appointment
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if patient["last_appointment"] %}
+                      {{ patient["last_appointment"]["starts_label"] }}
+                      <small>{{ patient["last_appointment"]["type_label"] }}</small>
+                    {% else %}
+                      No prior visit
+                    {% endif %}
+                  </td>
+                  <td>
+                    <span class="status-dot {{ 'warm' if patient['pending_soap_count'] else 'life' }}">{{ patient["soap_note_count"] }} saved</span>
+                    {% if patient["pending_soap_count"] %}
+                      <small>{{ patient["pending_soap_count"] }} pending</small>
+                    {% endif %}
+                    {% if patient["last_soap_note_label"] %}
+                      <small>Last update {{ patient["last_soap_note_label"] }}</small>
+                    {% endif %}
+                  </td>
+                  <td>
+                    <div class="tiny-actions">
+                      <a class="tiny-button" href="{{ url_for('main.staff_patient_detail', user_id=patient['id']) }}">Open chart</a>
+                      {% if note_target %}
+                        <a class="tiny-button sky" href="{{ url_for('main.practitioner_appointment_soap_note', appointment_id=note_target['id']) }}">{{ note_target["soap_note_action_label"] }}</a>
+                      {% endif %}
+                    </div>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p>No patients are assigned to your appointment list yet.</p>
+      {% endif %}
+    </article>
+  </section>
+{% endblock %}

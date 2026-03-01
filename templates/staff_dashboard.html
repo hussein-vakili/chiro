@@ -7,7 +7,7 @@
     <div>
       <div class="auth-eyebrow">Staff dashboard</div>
       <h1>Clinic onboarding operations.</h1>
-      <p>Monitor patient intake completion, open appointment-linked invitations, and jump into a private patient summary before the first visit.</p>
+      <p>Monitor intake completion, schedule typed visits, and keep the clinic calendar clear across initial consultations, Reports of Findings, and care plan visits.</p>
     </div>
     <div class="status-card">
       <span>At a glance</span>
@@ -44,7 +44,17 @@
                       <small>{{ patient["intake_updated_at"][:10] }}</small>
                     {% endif %}
                   </td>
-                  <td>{{ patient["appointment_at"].replace("T", " ") if patient["appointment_at"] else "Not scheduled" }}</td>
+                  <td>
+                    {% if patient["next_appointment"] %}
+                      {{ patient["next_appointment"]["starts_label"] }}
+                      <small>{{ patient["next_appointment"]["type_label"] }}</small>
+                      {% if patient["next_appointment"]["location_name"] %}
+                        <small>{{ patient["next_appointment"]["location_name"] }}</small>
+                      {% endif %}
+                    {% else %}
+                      Not scheduled
+                    {% endif %}
+                  </td>
                   <td>
                     <span class="status-dot {{ patient['visit_report_status'] or 'none' }}">{{ patient["visit_report_status"] or "not started" }}</span>
                     {% if patient["visit_report_updated_at"] %}
@@ -62,6 +72,113 @@
     </article>
 
     <article class="panel">
+      <div class="panel-label">Upcoming appointments</div>
+      <div class="panel-actions" style="margin-top:12px">
+        <a class="primary-button" href="{{ url_for('main.staff_calendar') }}">Open calendar</a>
+      </div>
+      {% if upcoming_appointments %}
+        <div class="invite-stack">
+          {% for appointment in upcoming_appointments %}
+            <div class="mini-card">
+              <strong>{{ appointment["patient_name"] }}</strong>
+              <small>{{ appointment["type_label"] }} · {{ appointment["starts_label"] }}</small>
+              {% if appointment["location_name"] %}
+                <small>{{ appointment["location_name"] }}</small>
+              {% endif %}
+              {% if appointment["reminder_label"] %}
+                <small>{{ appointment["reminder_label"] }}</small>
+              {% endif %}
+              {% if appointment["patient_email"] %}
+                <small>{{ appointment["patient_email"] }}</small>
+              {% endif %}
+              <a class="table-link" href="{{ url_for('main.staff_patient_detail', user_id=appointment['patient_user_id']) }}">Open patient chart</a>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p>No future appointments are scheduled yet.</p>
+      {% endif %}
+    </article>
+  </section>
+
+  <section class="dashboard-grid">
+    <article class="panel">
+      <div class="panel-label">Calendar overview</div>
+      <div class="calendar-toolbar" style="margin-top:8px">
+        <div class="calendar-nav">
+          <a class="calendar-navlink" href="{{ url_for('main.dashboard', month=calendar['previous_month']) }}">Previous</a>
+          <strong>{{ calendar["month_label"] }}</strong>
+          <a class="calendar-navlink" href="{{ url_for('main.dashboard', month=calendar['next_month']) }}">Next</a>
+        </div>
+        <div class="legend-list">
+          <span class="legend-chip life">{{ appointment_counts["initial_consult"] }} Initial</span>
+          <span class="legend-chip sky">{{ appointment_counts["report_of_findings"] }} ROF</span>
+          <span class="legend-chip warm">{{ appointment_counts["care_plan"] }} Care plan</span>
+        </div>
+      </div>
+      <div class="calendar-grid">
+        {% for day in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] %}
+          <div class="calendar-head">{{ day }}</div>
+        {% endfor %}
+        {% for week in calendar["weeks"] %}
+          {% for day in week %}
+            <div class="calendar-cell {% if not day['in_month'] %}outside{% endif %} {% if day['is_today'] %}today{% endif %}">
+              <div class="calendar-date">
+                <span>{{ day["day"] }}</span>
+                {% if day["appointments"] %}
+                  <small>{{ day["appointments"]|length }}</small>
+                {% endif %}
+              </div>
+              <div class="calendar-items">
+                {% for appointment in day["appointments"][:3] %}
+                  <div class="calendar-item {{ appointment['type_tone'] }}">
+                    <strong>{{ appointment["patient_name"] }}</strong>
+                    <small>{{ appointment["time_label"] }} · {{ appointment["type_short_label"] }}</small>
+                  </div>
+                {% endfor %}
+              </div>
+            </div>
+          {% endfor %}
+        {% endfor %}
+      </div>
+    </article>
+
+    <article class="panel">
+      <div class="panel-label">Reminder queue</div>
+      <div class="panel-actions" style="margin-top:12px">
+        <a class="primary-button" href="{{ url_for('main.staff_reminders') }}">Open reminder center</a>
+      </div>
+      {% if appointment_reminders %}
+        <div class="invite-stack" style="margin-top:16px">
+          {% for appointment in appointment_reminders %}
+            <div class="reminder-card">
+              <strong>{{ appointment["patient_name"] }} · {{ appointment["type_label"] }}</strong>
+              <small>{{ appointment["starts_label"] }}</small>
+              <small>{{ appointment["reminder_label"] }}</small>
+              <div class="tiny-actions">
+                <form method="post" action="{{ url_for('main.send_staff_appointment_reminder', appointment_id=appointment['id']) }}">
+                  <input type="hidden" name="channel" value="email">
+                  <input type="hidden" name="next_url" value="{{ request.path }}">
+                  <button type="submit" class="tiny-button sky" {% if not appointment["can_email"] %}disabled{% endif %}>Send email</button>
+                </form>
+                <form method="post" action="{{ url_for('main.send_staff_appointment_reminder', appointment_id=appointment['id']) }}">
+                  <input type="hidden" name="channel" value="sms">
+                  <input type="hidden" name="next_url" value="{{ request.path }}">
+                  <button type="submit" class="tiny-button warm" {% if not appointment["can_sms"] %}disabled{% endif %}>Send SMS</button>
+                </form>
+                <a class="table-link" href="{{ url_for('main.staff_patient_detail', user_id=appointment['patient_user_id']) }}">Open patient chart</a>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p style="margin-top:12px">No ROF or care-plan reminders are due soon.</p>
+      {% endif %}
+    </article>
+  </section>
+
+  <section class="dashboard-grid">
+    <article class="panel">
       <div class="panel-label">Active invites</div>
       <div class="panel-actions" style="margin-top:12px">
         <a class="primary-button" href="{{ url_for('main.staff_new_invitation') }}">Create invite</a>
@@ -72,7 +189,7 @@
             <div class="mini-card">
               <strong>{{ invite["first_name"] }} {{ invite["last_name"] }}</strong>
               <small>{{ invite["email"] }}</small>
-              <small>{{ invite["appointment_at"].replace("T", " ") if invite["appointment_at"] else "No appointment set" }}</small>
+              <small>{{ invite["appointment_label"] or "No appointment set" }}</small>
               <a class="table-link" href="{{ url_for('main.accept_invite', token=invite['token'], _external=True) }}">Open invite link</a>
             </div>
           {% endfor %}

@@ -642,6 +642,9 @@
     <div class="summit-actions">
       <button type="submit" name="action" value="draft" class="s-btn s-btn-outline">Save draft</button>
       <button type="submit" name="action" value="published" class="s-btn s-btn-primary">Publish to portal</button>
+      {% if summary.visit_report and summary.visit_report.status == "published" %}
+        <a class="s-btn s-btn-outline" href="{{ url_for('main.staff_patient_results_preview', user_id=patient['id']) }}">Preview patient results</a>
+      {% endif %}
     </div>
   </form>
 

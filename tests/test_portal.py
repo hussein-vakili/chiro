@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date, datetime, timedelta
 import os
 import tempfile
 import unittest
@@ -16,6 +17,7 @@ class PortalFlowTestCase(unittest.TestCase):
         self.tempdir = tempfile.TemporaryDirectory()
         self.app = create_app()
         self.app.config.update(TESTING=True, DATABASE=os.path.join(self.tempdir.name, "test.sqlite3"))
+        self.base_now = datetime.now().replace(second=0, microsecond=0)
         with self.app.app_context():
             init_db()
         self.client = self.app.test_client()
@@ -43,11 +45,30 @@ class PortalFlowTestCase(unittest.TestCase):
             follow_redirects=True,
         )
         self.assertEqual(response.status_code, 200)
-        self.assertIn("Clinic onboarding operations", response.get_data(as_text=True))
+        self.assertIn("Practitioner dashboard", response.get_data(as_text=True))
+        self.assertIn("My patients", response.get_data(as_text=True))
+
+    def appointment_slot(self, days_from_now: int, hour: int, minute: int, duration_minutes: int = 30) -> tuple[str, str]:
+        start = (self.base_now + timedelta(days=days_from_now)).replace(hour=hour, minute=minute)
+        if start <= self.base_now:
+            start += timedelta(days=1)
+        end = start + timedelta(minutes=duration_minutes)
+        return (
+            start.strftime("%Y-%m-%dT%H:%M"),
+            end.strftime("%Y-%m-%dT%H:%M"),
+        )
 
     def test_invited_patient_and_password_reset_flow(self) -> None:
-        self.create_staff_user()
+        staff_id = self.create_staff_user()
         self.login_staff()
+        with self.app.app_context():
+            main_location_id = get_db().execute(
+                "SELECT id FROM locations WHERE slug = 'main-clinic'"
+            ).fetchone()["id"]
+        initial_consult_start, _ = self.appointment_slot(days_from_now=1, hour=9, minute=30)
+        rof_start, rof_end = self.appointment_slot(days_from_now=2, hour=9, minute=30)
+        rof_updated_start, rof_updated_end = self.appointment_slot(days_from_now=2, hour=10, minute=0)
+        care_plan_start, care_plan_end = self.appointment_slot(days_from_now=5, hour=9, minute=0, duration_minutes=20)
 
         response = self.client.post(
             "/staff/invitations/new",
@@ -55,13 +76,27 @@ class PortalFlowTestCase(unittest.TestCase):
                 "first_name": "Sarah",
                 "last_name": "Mitchell",
                 "email": "sarah@example.com",
-                "appointment_at": "2026-03-10T09:30",
+                "appointment_at": initial_consult_start,
                 "note": "Please arrive 10 minutes early.",
             },
             follow_redirects=True,
         )
         self.assertEqual(response.status_code, 200)
         self.assertIn("Invitation created", response.get_data(as_text=True))
+
+        response = self.client.post(
+            "/staff/locations",
+            data={
+                "name": "North Branch",
+                "slug": "north-branch",
+                "address": "88 High Street",
+                "phone": "555-0222",
+                "timezone": "Europe/London",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Location added", response.get_data(as_text=True))
 
         with self.app.app_context():
             db = get_db()
@@ -75,7 +110,9 @@ class PortalFlowTestCase(unittest.TestCase):
             follow_redirects=True,
         )
         self.assertEqual(response.status_code, 200)
-        self.assertIn("Appointment scheduled", response.get_data(as_text=True))
+        accepted_html = response.get_data(as_text=True)
+        self.assertIn("Invitation accepted", accepted_html)
+        self.assertIn("Initial Consultation", accepted_html)
 
         with self.app.app_context():
             user = dict(get_db().execute("SELECT * FROM users WHERE email = ?", ("sarah@example.com",)).fetchone())
@@ -97,7 +134,7 @@ class PortalFlowTestCase(unittest.TestCase):
                 "privacyNotice": True,
                 "accuracyConfirmation": True,
                 "signature": "Sarah Mitchell",
-                "signatureDate": "2026-03-01",
+                "signatureDate": date.today().isoformat(),
             }
         )
 
@@ -117,11 +154,14 @@ class PortalFlowTestCase(unittest.TestCase):
         overview_html = response.get_data(as_text=True)
         self.assertIn("Headaches and neck pain after long shifts", overview_html)
         self.assertIn("Open Summit Assessment", overview_html)
+        self.assertIn("Initial Consultation", overview_html)
+        self.assertIn("Available time slot", overview_html)
+        self.assertIn("Chiropractor", overview_html)
 
         response = self.client.get(f"/staff/patients/{patient['id']}/summit-assessment")
         self.assertEqual(response.status_code, 200)
         assessment_html = response.get_data(as_text=True)
-        self.assertIn("Summit complete assessment (2)", assessment_html)
+        self.assertIn("Summit complete assessment", assessment_html)
         self.assertIn("Dedicated chiropractor assessment workspace", assessment_html)
 
         response = self.client.post(
@@ -129,8 +169,8 @@ class PortalFlowTestCase(unittest.TestCase):
             data={
                 "action": "published",
                 "redirect_to": "assessment",
-                "visit_date": "2026-03-10T09:30",
-                "assessment_date": "2026-03-10",
+                "visit_date": initial_consult_start,
+                "assessment_date": initial_consult_start[:10],
                 "referring_provider": "Dr. Walsh",
                 "patient_goals": "Reduce headaches\nReturn to regular gym sessions",
                 "history_chief_complaint": "Headaches and neck pain after long shifts",
@@ -224,7 +264,263 @@ class PortalFlowTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         assessment_html = response.get_data(as_text=True)
         self.assertIn("published to the patient portal", assessment_html)
-        self.assertIn("Summit complete assessment (2)", assessment_html)
+        self.assertIn("Summit complete assessment", assessment_html)
+
+        response = self.client.get(
+            f"/staff/availability?date={rof_start[:10]}&clinician_user_id={staff_id}&location_id={main_location_id}&duration_minutes=30"
+        )
+        self.assertEqual(response.status_code, 200)
+        availability_payload = response.get_json()
+        self.assertTrue(any(item["value"] == rof_start for item in availability_payload["available_slots"]))
+        self.assertTrue(any(item["time_label"] == "12:00 - 13:00" for item in availability_payload["downtime_windows"]))
+        self.assertFalse(any(item["value"].endswith("T12:00") for item in availability_payload["available_slots"]))
+
+        response = self.client.post(
+            f"/staff/patients/{patient['id']}/appointments",
+            data={
+                "appointment_type": "report_of_findings",
+                "clinician_user_id": str(staff_id),
+                "location_id": str(main_location_id),
+                "appointment_date": rof_start[:10],
+                "duration_minutes": "30",
+                "slot_start": rof_start,
+                "patient_details": "Review report of findings, answer questions, and confirm the first treatment plan.",
+                "note": "Review findings, deliver results, and perform first treatment.",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Report of Findings scheduled", response.get_data(as_text=True))
+
+        response = self.client.get(
+            f"/staff/availability?date={rof_start[:10]}&clinician_user_id={staff_id}&location_id={main_location_id}&duration_minutes=30"
+        )
+        self.assertEqual(response.status_code, 200)
+        availability_payload = response.get_json()
+        self.assertFalse(any(item["value"] == rof_start for item in availability_payload["available_slots"]))
+
+        response = self.client.post(
+            f"/staff/patients/{patient['id']}/appointments",
+            data={
+                "appointment_type": "care_plan",
+                "clinician_user_id": str(staff_id),
+                "location_id": str(main_location_id),
+                "appointment_date": care_plan_start[:10],
+                "duration_minutes": "20",
+                "slot_start": care_plan_start,
+                "patient_details": "Adjustment visit booked from the care plan cadence.",
+                "note": "Care plan visit to continue the adjustment schedule.",
+                "repeat_count": "3",
+                "repeat_every_days": "7",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("3 Care Plan Visit appointments scheduled", response.get_data(as_text=True))
+
+        with self.app.app_context():
+            db = get_db()
+            rof_appointment = db.execute(
+                """
+                SELECT *
+                FROM appointments
+                WHERE patient_user_id = ? AND appointment_type = 'report_of_findings'
+                ORDER BY starts_at ASC
+                LIMIT 1
+                """,
+                (patient["id"],),
+            ).fetchone()
+            care_plan_appointments = db.execute(
+                """
+                SELECT *
+                FROM appointments
+                WHERE patient_user_id = ? AND appointment_type = 'care_plan'
+                ORDER BY starts_at ASC
+                """,
+                (patient["id"],),
+            ).fetchall()
+
+        self.assertEqual(len(care_plan_appointments), 3)
+
+        response = self.client.post(
+            f"/staff/patients/{patient['id']}/appointments/{rof_appointment['id']}",
+            data={
+                "action": "save",
+                "appointment_type": "report_of_findings",
+                "status": "scheduled",
+                "starts_at": rof_updated_start,
+                "ends_at": rof_updated_end,
+                "note": "Review findings, deliver results, first treatment, and answer questions.",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Appointment updated", response.get_data(as_text=True))
+
+        response = self.client.post(
+            f"/staff/patients/{patient['id']}/appointments/{care_plan_appointments[1]['id']}",
+            data={
+                "action": "complete",
+                "appointment_type": "care_plan",
+                "status": "scheduled",
+                "starts_at": care_plan_appointments[1]["starts_at"],
+                "ends_at": care_plan_appointments[1]["ends_at"] or "",
+                "note": care_plan_appointments[1]["note"],
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Appointment marked completed", response.get_data(as_text=True))
+
+        response = self.client.post(
+            f"/staff/patients/{patient['id']}/appointments/{care_plan_appointments[2]['id']}",
+            data={
+                "action": "cancel",
+                "appointment_type": "care_plan",
+                "status": "scheduled",
+                "starts_at": care_plan_appointments[2]["starts_at"],
+                "ends_at": care_plan_appointments[2]["ends_at"] or "",
+                "note": care_plan_appointments[2]["note"],
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Appointment cancelled", response.get_data(as_text=True))
+
+        response = self.client.get("/staff/calendar")
+        self.assertEqual(response.status_code, 200)
+        staff_calendar_html = response.get_data(as_text=True)
+        self.assertIn("Appointment schedule", staff_calendar_html)
+        self.assertIn("Report of Findings", staff_calendar_html)
+        self.assertIn("Care Plan Visit", staff_calendar_html)
+        self.assertIn("Sarah Mitchell", staff_calendar_html)
+        self.assertIn("Reminder queue", staff_calendar_html)
+        self.assertIn("Reminder due soon", staff_calendar_html)
+        self.assertIn("Coming up this week", staff_calendar_html)
+        self.assertIn("Send email", staff_calendar_html)
+        self.assertIn("Send SMS", staff_calendar_html)
+        self.assertIn("Weekly availability templates", staff_calendar_html)
+        self.assertIn("Lunch downtime", staff_calendar_html)
+        self.assertIn("North Branch", staff_calendar_html)
+        self.assertIn("Clinic locations", staff_calendar_html)
+
+        response = self.client.get("/dashboard")
+        self.assertEqual(response.status_code, 200)
+        practitioner_dashboard_html = response.get_data(as_text=True)
+        self.assertIn("Practitioner dashboard", practitioner_dashboard_html)
+        self.assertIn("My patients", practitioner_dashboard_html)
+        self.assertIn("Sarah Mitchell", practitioner_dashboard_html)
+        self.assertIn("SOAP charting queue", practitioner_dashboard_html)
+        self.assertIn("Add SOAP note", practitioner_dashboard_html)
+
+        response = self.client.get("/staff/dashboard")
+        self.assertEqual(response.status_code, 200)
+        staff_dashboard_html = response.get_data(as_text=True)
+        self.assertIn("Reminder queue", staff_dashboard_html)
+        self.assertIn("Reminder due soon", staff_dashboard_html)
+        self.assertIn("Coming up this week", staff_dashboard_html)
+        self.assertIn("Open reminder center", staff_dashboard_html)
+
+        response = self.client.get(f"/staff/patients/{patient['id']}")
+        self.assertEqual(response.status_code, 200)
+        patient_detail_html = response.get_data(as_text=True)
+        self.assertIn("Repeat count", patient_detail_html)
+        self.assertIn("Reminder queue", patient_detail_html)
+        self.assertIn("Review findings, deliver results, first treatment, and answer questions.", patient_detail_html)
+        self.assertIn("Completed", patient_detail_html)
+        self.assertIn("Cancelled", patient_detail_html)
+        self.assertIn("Send email", patient_detail_html)
+        self.assertIn("Send SMS", patient_detail_html)
+        self.assertIn("Billing status", patient_detail_html)
+        self.assertIn("Location", patient_detail_html)
+        self.assertIn("Add SOAP note", patient_detail_html)
+
+        response = self.client.get(f"/practitioner/appointments/{rof_appointment['id']}/soap")
+        self.assertEqual(response.status_code, 200)
+        soap_html = response.get_data(as_text=True)
+        self.assertIn("Appointment SOAP note", soap_html)
+        self.assertIn("Report of Findings", soap_html)
+        self.assertIn("Sarah Mitchell", soap_html)
+
+        response = self.client.post(
+            f"/practitioner/appointments/{rof_appointment['id']}/soap",
+            data={
+                "subjective": "Headaches eased for two days after the initial treatment, but neck stiffness returned after a long shift.",
+                "objective": "Cervical rotation improved slightly left and right. Upper trapezius tension still present on palpation.",
+                "assessment": "Progressing, but prolonged nursing shifts continue to irritate the cervical region.",
+                "plan": "Continue with the scheduled care plan, reinforce hourly posture resets, and re-check cervical rotation next visit.",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        soap_html = response.get_data(as_text=True)
+        self.assertIn("SOAP note saved for this appointment", soap_html)
+        self.assertIn("Headaches eased for two days", soap_html)
+        self.assertIn("Continue with the scheduled care plan", soap_html)
+
+        response = self.client.post(
+            f"/staff/appointments/{rof_appointment['id']}/send-reminder",
+            data={"channel": "email", "next_url": "/staff/reminders"},
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        reminder_center_html = response.get_data(as_text=True)
+        self.assertIn("Reminder processing complete", reminder_center_html)
+        self.assertIn("Reminder center", reminder_center_html)
+        self.assertIn("Recent delivery history", reminder_center_html)
+        self.assertIn("sarah@example.com", reminder_center_html)
+        self.assertIn("logged to outbox", reminder_center_html)
+
+        response = self.client.post(
+            f"/staff/appointments/{care_plan_appointments[0]['id']}/send-reminder",
+            data={"channel": "sms", "next_url": "/staff/reminders"},
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        reminder_center_html = response.get_data(as_text=True)
+        self.assertIn("Reminder center", reminder_center_html)
+        self.assertIn("555-0100", reminder_center_html)
+        self.assertIn("Open in device app", reminder_center_html)
+
+        response = self.client.post(
+            f"/staff/appointments/{rof_appointment['id']}/send-reminder",
+            data={"channel": "email", "next_url": "/staff/reminders"},
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("already sent for this reminder window", response.get_data(as_text=True))
+
+        with self.app.app_context():
+            reminder_rows = get_db().execute(
+                """
+                SELECT channel, status, delivery_mode, recipient
+                FROM appointment_reminders
+                ORDER BY id ASC
+                """
+            ).fetchall()
+
+        self.assertEqual(len(reminder_rows), 2)
+        self.assertEqual(reminder_rows[0]["channel"], "email")
+        self.assertEqual(reminder_rows[0]["status"], "logged")
+        self.assertEqual(reminder_rows[0]["delivery_mode"], "outbox")
+        self.assertEqual(reminder_rows[0]["recipient"], "sarah@example.com")
+        self.assertEqual(reminder_rows[1]["channel"], "sms")
+        self.assertEqual(reminder_rows[1]["status"], "logged")
+        self.assertEqual(reminder_rows[1]["recipient"], "555-0100")
+
+        response = self.client.get(f"/api/appointments?patient_user_id={patient['id']}")
+        self.assertEqual(response.status_code, 200)
+        staff_api_payload = response.get_json()
+        self.assertTrue(staff_api_payload["ok"])
+        self.assertTrue(any(item["location_name"] == "Main Clinic" for item in staff_api_payload["appointments"]))
+
+        response = self.client.get(f"/staff/patients/{patient['id']}/results-preview")
+        self.assertEqual(response.status_code, 200)
+        preview_html = response.get_data(as_text=True)
+        self.assertIn("Patient Portal Preview", preview_html)
+        self.assertIn("Print report", preview_html)
+        self.assertIn("Back to assessment", preview_html)
+        self.assertIn("restricted neck movement and muscle tension", preview_html)
 
         response = self.client.post(
             f"/staff/patients/{patient['id']}/notes",
@@ -232,7 +528,7 @@ class PortalFlowTestCase(unittest.TestCase):
                 "exam_findings": "Restricted cervical rotation and upper trap guarding.",
                 "assessment": "Mechanical neck pain with headache referral pattern.",
                 "care_plan": "6-visit trial with gentle adjustments and mobility work.",
-                "next_visit_at": "2026-03-12T09:30",
+                "next_visit_at": rof_updated_start,
                 "internal_notes": "Prefers low-force techniques.",
             },
             follow_redirects=True,
@@ -257,6 +553,62 @@ class PortalFlowTestCase(unittest.TestCase):
         self.assertIn("Grip Strength", results_html)
         self.assertIn("Spurling", results_html)
         self.assertIn("Cervical AP/lateral", results_html)
+
+        response = self.client.get("/appointments")
+        self.assertEqual(response.status_code, 200)
+        appointments_html = response.get_data(as_text=True)
+        self.assertIn("Your visit calendar", appointments_html)
+        self.assertIn("Self-service booking", appointments_html)
+        self.assertIn("Book available appointments 24/7", appointments_html)
+        self.assertIn("Initial Consultation", appointments_html)
+        self.assertIn("Report of Findings", appointments_html)
+        self.assertIn("Care Plan Visit", appointments_html)
+        self.assertIn("Review findings, deliver results, first treatment, and answer questions.", appointments_html)
+        self.assertIn("Reminders due soon", appointments_html)
+        self.assertIn("Reminder due soon", appointments_html)
+        self.assertIn("Coming up this week", appointments_html)
+        self.assertIn("Completed", appointments_html)
+        self.assertIn("Cancelled", appointments_html)
+        self.assertIn("Main Clinic", appointments_html)
+
+        self_book_start, _ = self.appointment_slot(days_from_now=9, hour=10, minute=0, duration_minutes=20)
+        response = self.client.get(
+            f"/api/availability?date={self_book_start[:10]}&clinician_user_id={staff_id}&location_id={main_location_id}&duration_minutes=20"
+        )
+        self.assertEqual(response.status_code, 200)
+        client_availability_payload = response.get_json()
+        self.assertTrue(client_availability_payload["ok"])
+        self.assertTrue(any(item["value"] == self_book_start for item in client_availability_payload["availability"]["available_slots"]))
+
+        response = self.client.post(
+            "/appointments/self-book",
+            data={
+                "appointment_type": "care_plan",
+                "location_id": str(main_location_id),
+                "clinician_user_id": str(staff_id),
+                "appointment_date": self_book_start[:10],
+                "duration_minutes": "20",
+                "slot_start": self_book_start,
+                "patient_details": "Booking from the portal for another care-plan visit.",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Appointment booked from your portal", response.get_data(as_text=True))
+        self.assertIn("Booking from the portal for another care-plan visit.", response.get_data(as_text=True))
+
+        response = self.client.get("/api/appointments")
+        self.assertEqual(response.status_code, 200)
+        client_api_payload = response.get_json()
+        self.assertTrue(client_api_payload["ok"])
+        self.assertTrue(any(item["booking_source"] == "patient_portal" for item in client_api_payload["appointments"]))
+        self.assertTrue(any(item["location_name"] == "Main Clinic" for item in client_api_payload["appointments"]))
+
+        response = self.client.get("/api/locations")
+        self.assertEqual(response.status_code, 200)
+        locations_payload = response.get_json()
+        self.assertTrue(locations_payload["ok"])
+        self.assertTrue(any(item["slug"] == "north-branch" for item in locations_payload["locations"]))
 
         self.client.post("/logout", follow_redirects=True)
         response = self.client.post("/forgot-password", data={"email": "sarah@example.com"}, follow_redirects=True)
@@ -283,6 +635,8 @@ class PortalFlowTestCase(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertIn("your onboarding is ready", response.get_data(as_text=True))
+        self.assertIn("Your dashboard is the home screen", response.get_data(as_text=True))
+        self.assertIn("Open calendar", response.get_data(as_text=True))
 
 
 if __name__ == "__main__":

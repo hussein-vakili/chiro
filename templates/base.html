@@ -17,15 +17,31 @@
         <span class="brand-mark">LC</span>
         <span class="brand-copy">
           <strong>Life Chiropractic</strong>
-          <small>{{ "Staff Portal" if g.user["role"] != "client" else "Client Portal" }}</small>
+          <small>
+            {% if g.user["role"] == "clinician" %}
+              Practitioner Portal
+            {% elif g.user["role"] != "client" %}
+              Staff Portal
+            {% else %}
+              Client Portal
+            {% endif %}
+          </small>
         </span>
       </a>
       <nav class="site-nav">
         <a href="{{ url_for('main.dashboard') }}">Dashboard</a>
         {% if g.user["role"] == "client" %}
           <a href="{{ url_for('main.intake') }}">Intake</a>
+          <a href="{{ url_for('main.appointments') }}">Appointments</a>
           <a href="{{ url_for('main.results') }}">Results</a>
+        {% elif g.user["role"] == "clinician" %}
+          <a href="{{ url_for('main.staff_dashboard') }}">Clinic Ops</a>
+          <a href="{{ url_for('main.staff_calendar') }}">Calendar</a>
+          <a href="{{ url_for('main.staff_reminders') }}">Reminders</a>
+          <a href="{{ url_for('main.staff_new_invitation') }}">New Invite</a>
         {% else %}
+          <a href="{{ url_for('main.staff_calendar') }}">Calendar</a>
+          <a href="{{ url_for('main.staff_reminders') }}">Reminders</a>
           <a href="{{ url_for('main.staff_new_invitation') }}">New Invite</a>
         {% endif %}
         <form method="post" action="{{ url_for('main.logout') }}">

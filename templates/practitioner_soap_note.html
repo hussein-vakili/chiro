@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+
+{% block title %}SOAP Note · Life Chiropractic{% endblock %}
+
+{% block content %}
+  <section class="hero-panel">
+    <div>
+      <div class="auth-eyebrow">Appointment SOAP note</div>
+      <h1>{{ patient["first_name"] }} {{ patient["last_name"] }}</h1>
+      <p>Chart this specific visit using structured Subjective, Objective, Assessment, and Plan sections.</p>
+    </div>
+    <div class="status-card">
+      <span>Appointment</span>
+      <strong>{{ appointment["type_label"] }}</strong>
+      <small>{{ appointment["starts_label"] }}</small>
+      {% if appointment["location_name"] %}
+        <small>{{ appointment["location_name"] }}</small>
+      {% endif %}
+      <small>{{ "SOAP note already started" if appointment["has_soap_note"] else "No SOAP note saved yet" }}</small>
+    </div>
+  </section>
+
+  <section class="dashboard-grid">
+    <article class="panel">
+      <div class="panel-label">Visit context</div>
+      <div class="detail-grid">
+        <div><strong>Patient:</strong> {{ appointment["patient_name"] }}</div>
+        <div><strong>Visit type:</strong> {{ appointment["type_label"] }}</div>
+        <div><strong>Status:</strong> {{ appointment["status_label"] }}</div>
+        <div><strong>Time:</strong> {{ appointment["starts_label"] }}</div>
+      </div>
+      {% if appointment["patient_details"] %}
+        <div class="section-block">
+          <h3>Patient-facing details</h3>
+          <p>{{ appointment["patient_details"] }}</p>
+        </div>
+      {% endif %}
+      {% if appointment["note"] %}
+        <div class="section-block">
+          <h3>Scheduling note</h3>
+          <p>{{ appointment["note"] }}</p>
+        </div>
+      {% endif %}
+      <div class="panel-actions">
+        <a class="secondary-button" href="{{ url_for('main.dashboard') }}">Back to dashboard</a>
+        <a class="secondary-button" href="{{ url_for('main.staff_patient_detail', user_id=appointment['patient_user_id']) }}">Open patient chart</a>
+      </div>
+    </article>
+
+    <article class="panel">
+      <div class="panel-label">SOAP note</div>
+      <form method="post" class="auth-form">
+        <label>
+          <span>Subjective</span>
+          <textarea name="subjective" rows="6" placeholder="Symptoms reported, response since last visit, pain changes, functional complaints...">{{ soap_note["subjective"] if soap_note else "" }}</textarea>
+        </label>
+        <label>
+          <span>Objective</span>
+          <textarea name="objective" rows="6" placeholder="Exam findings, ROM, palpation, orthopedic tests, vitals, treatment delivered...">{{ soap_note["objective"] if soap_note else "" }}</textarea>
+        </label>
+        <label>
+          <span>Assessment</span>
+          <textarea name="assessment" rows="5" placeholder="Clinical impression, progress, response to care, working diagnosis...">{{ soap_note["assessment"] if soap_note else "" }}</textarea>
+        </label>
+        <label>
+          <span>Plan</span>
+          <textarea name="plan" rows="5" placeholder="Next visit plan, home care, frequency changes, re-exam plan...">{{ soap_note["plan"] if soap_note else "" }}</textarea>
+        </label>
+        <button type="submit" class="primary-button">Save SOAP note</button>
+      </form>
+      {% if soap_note %}
+        <div class="info-box">Last updated {{ soap_note["updated_at"] }}.</div>
+      {% endif %}
+    </article>
+  </section>
+{% endblock %}
