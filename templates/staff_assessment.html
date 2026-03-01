@@ -5,10 +5,10 @@
 {% block content %}
   <section class="hero-panel">
     <div>
-      <div class="auth-eyebrow">Summit complete assessment (2)</div>
+      <div class="auth-eyebrow">Summit complete assessment</div>
       <h1>{{ summary.full_name }}</h1>
       <p>
-        Dedicated chiropractor assessment workspace separate from the intake overview.
+        Dedicated chiropractor assessment workspace.
         {% if summary.appointment_at %} Appointment {{ summary.appointment_at }}.{% endif %}
       </p>
     </div>
@@ -25,516 +25,796 @@
     <a class="subnav-link {% if active_staff_tab == 'assessment' %}active{% endif %}" href="{{ url_for('main.staff_patient_assessment', user_id=patient['id']) }}">Summit Assessment</a>
   </nav>
 
-  <div class="section-tabbar" aria-label="Assessment sections">
-    <a class="section-tablink" href="#sec-patient">Patient</a>
-    <a class="section-tablink" href="#sec-history">History</a>
-    <a class="section-tablink" href="#sec-health">Health Indicators</a>
-    <a class="section-tablink" href="#sec-functional">Functional Tests</a>
-    <a class="section-tablink" href="#sec-rom">Range of Motion</a>
-    <a class="section-tablink" href="#sec-ortho">Ortho Tests</a>
-    <a class="section-tablink" href="#sec-spine">Spine</a>
-    <a class="section-tablink" href="#sec-publish">Publish</a>
+  <div class="section-tabbar" id="sectionTabbar" aria-label="Assessment sections">
+    <a class="section-tablink active" href="#sec-patient" onclick="scrollToSec('sec-patient',this)">Patient</a>
+    <a class="section-tablink" href="#sec-history" onclick="scrollToSec('sec-history',this)">History</a>
+    <a class="section-tablink" href="#sec-health" onclick="scrollToSec('sec-health',this)">Health Indicators</a>
+    <a class="section-tablink" href="#sec-functional" onclick="scrollToSec('sec-functional',this)">Functional Tests</a>
+    <a class="section-tablink" href="#sec-rom" onclick="scrollToSec('sec-rom',this)">Range of Motion</a>
+    <a class="section-tablink" href="#sec-ortho" onclick="scrollToSec('sec-ortho',this)">Ortho Tests</a>
+    <a class="section-tablink" href="#sec-spine" onclick="scrollToSec('sec-spine',this)">Spine</a>
+    <a class="section-tablink" href="#sec-publish" onclick="scrollToSec('sec-publish',this)">Publish</a>
   </div>
 
-  <section class="dashboard-grid" style="grid-template-columns:1fr">
-    <article class="panel">
-      <div class="panel-label">Assessment overview</div>
-      <div class="metric-grid" style="margin-top:16px">
-        <div class="metric-card">
-          <span>Patient</span>
-          <strong>{{ summit_assessment["patient"]["full_name"] }}</strong>
-          <small>{{ summit_assessment["patient"]["sex"] or "Sex not provided" }}{% if summary.age %} · {{ summary.age }} years old{% endif %}</small>
+  <form method="post" action="{{ url_for('main.save_initial_consult_report', user_id=patient['id']) }}">
+    <input type="hidden" name="redirect_to" value="assessment">
+
+    {# ── PATIENT INFO ── #}
+    <div class="summit-section" id="sec-patient">
+      <div class="sec-hdr">
+        <div class="sec-icon" style="background:var(--s-blue-l)">👤</div>
+        <div><div class="sec-title">Patient Information</div><div class="sec-sub">Demographics, visit date, and goals</div></div>
+      </div>
+      <div class="s-fg">
+        <div class="s-field">
+          <label>Full Name</label>
+          <input type="text" value="{{ summit_assessment['patient']['full_name'] }}" readonly>
         </div>
-        <div class="metric-card">
-          <span>Vitals passed</span>
-          <strong>{{ summary.visit_report.health_indicator_summary.healthy_count if summary.visit_report else 0 }}/{{ summary.visit_report.health_indicator_summary.tested_count if summary.visit_report and summary.visit_report.health_indicator_summary.tested_count else 0 }}</strong>
-          <small>Healthy indicators in the current Summit assessment.</small>
+        <div class="s-field">
+          <label>Visit date and time</label>
+          <input type="datetime-local" name="visit_date" value="{{ visit_report['visit_date'] if visit_report else '' }}" required>
         </div>
-        <div class="metric-card">
-          <span>Positive ortho tests</span>
-          <strong>{{ summary.visit_report.positive_orthopedic_tests|length if summary.visit_report else 0 }}</strong>
-          <small>Recorded positive findings.</small>
+        <div class="s-field">
+          <label>Assessment date</label>
+          <input type="date" name="assessment_date" value="{{ summit_assessment['assessment_date'] }}">
+        </div>
+        <div class="s-field">
+          <label>Sex</label>
+          <input type="text" value="{{ summit_assessment['patient']['sex'] or 'Not provided' }}" readonly>
+        </div>
+        <div class="s-field">
+          <label>Age</label>
+          <input type="text" value="{{ summary.age or '' }}" readonly>
+        </div>
+        <div class="s-field">
+          <label>Referring Provider <span class="unit">(optional)</span></label>
+          <input type="text" name="referring_provider" value="{{ summit_assessment['patient']['referring_provider'] }}" placeholder="Dr. ...">
+        </div>
+        <div class="s-field">
+          <label>Commitment score <span class="unit">(0-10)</span></label>
+          <input type="number" min="0" max="10" name="commitment_score" value="{{ visit_report['commitment_score'] if visit_report and visit_report['commitment_score'] is not none else '' }}" placeholder="10 = fully committed">
+        </div>
+        <div class="s-field s-full">
+          <label>Patient Goals</label>
+          <div class="goals-area" id="goalsArea">
+            {% set goals_text = summit_assessment["patient_goals_text"] %}
+            {% if goals_text %}
+              {% for goal in goals_text.split('\n') %}
+                {% if goal.strip() %}
+                  <div class="goal-tag">{{ goal.strip() }}<button type="button" onclick="this.parentElement.remove();syncGoals()">×</button></div>
+                {% endif %}
+              {% endfor %}
+            {% endif %}
+            <button type="button" class="add-goal" onclick="addGoal()">+ Add Goal</button>
+          </div>
+          <textarea name="patient_goals" id="goalsHidden" class="goals-hidden">{{ summit_assessment["patient_goals_text"] }}</textarea>
+        </div>
+      </div>
+    </div>
+
+    {# ── HISTORY ── #}
+    <div class="summit-section" id="sec-history">
+      <div class="sec-hdr">
+        <div class="sec-icon" style="background:var(--s-amber-l)">📋</div>
+        <div><div class="sec-title">History &amp; Presentation</div><div class="sec-sub">Chief complaint, work context, pain behavior, and narrative history</div></div>
+      </div>
+      <div class="s-fg three">
+        <div class="s-field">
+          <label>Chief Complaint</label>
+          <input type="text" name="history_chief_complaint" value="{{ summit_assessment['history']['chief_complaint'] }}" placeholder="Headaches">
+        </div>
+        <div class="s-field">
+          <label>Duration <span class="unit">(years)</span></label>
+          <input type="number" min="0" step="0.1" name="history_duration_years" value="{{ summit_assessment['history']['duration_years'] if summit_assessment['history']['duration_years'] is not none else '' }}" placeholder="3">
+        </div>
+        <div class="s-field">
+          <label>Pain Level <span class="unit">(0-10)</span></label>
+          <div style="display:flex;align-items:center;gap:10px">
+            <input type="range" class="rom-slider" min="0" max="10" value="{{ summit_assessment['history']['pain_level'] if summit_assessment['history']['pain_level'] is not none else 0 }}" name="history_pain_level" id="painSlider" style="flex:1" oninput="document.getElementById('painDisp').textContent=this.value">
+            <span id="painDisp" style="font-size:18px;font-weight:700;font-family:var(--serif);color:var(--s-blue-d);width:24px;text-align:center">{{ summit_assessment['history']['pain_level'] if summit_assessment['history']['pain_level'] is not none else 0 }}</span><span style="font-size:11px;color:var(--ink4)">/10</span>
+          </div>
+        </div>
+      </div>
+      <div class="s-fg three">
+        <div class="s-field">
+          <label>Occupation</label>
+          <input type="text" name="history_occupation" value="{{ summit_assessment['history']['occupation'] }}" placeholder="Desk job">
+        </div>
+        <div class="s-field">
+          <label>Daily Work Hours</label>
+          <input type="text" name="history_work_hours" value="{{ summit_assessment['history']['work_hours'] }}" placeholder="6-7 hrs">
+        </div>
+        <div class="s-field">
+          <label>Frequency <span class="unit">(per 10 days)</span></label>
+          <input type="number" min="0" max="10" name="history_frequency" value="{{ summit_assessment['history']['frequency'] if summit_assessment['history']['frequency'] is not none else '' }}" placeholder="3">
+        </div>
+      </div>
+      <div class="s-fg s-full">
+        <div class="s-field s-full">
+          <label>History notes</label>
+          <textarea name="history_notes" rows="3" placeholder="Medication use, glasses, aggravating patterns, relevant patient narrative...">{{ summit_assessment["history"]["notes"] }}</textarea>
+        </div>
+      </div>
+      <div class="s-fg three">
+        <div class="s-field">
+          <label>First noticed</label>
+          <input type="text" name="first_notice" value="{{ visit_report['first_notice'] if visit_report else '' }}" placeholder="First time the patient remembers this pattern">
+        </div>
+        <div class="s-field">
+          <label>Pain quality</label>
+          <input type="text" name="pain_quality" value="{{ visit_report['pain_quality'] if visit_report else '' }}" placeholder="Sharp, throbbing, shooting...">
+        </div>
+        <div class="s-field">
+          <label>Symptom trend</label>
+          <input type="text" name="symptom_trend" value="{{ visit_report['symptom_trend'] if visit_report else '' }}" placeholder="Improving, unchanged, worsening">
+        </div>
+      </div>
+      <div class="check-row">
+        <input type="checkbox" name="radiates" {% if visit_report and visit_report["radiates"] %}checked{% endif %}>
+        <span class="check-copy">
+          <strong>Symptoms radiate</strong>
+          <small>Use when the pain travels beyond the primary complaint area.</small>
+        </span>
+      </div>
+      <div class="s-fg">
+        <div class="s-field">
+          <label>Radiation start</label>
+          <input type="text" name="radiation_start" value="{{ visit_report['radiation_start'] if visit_report else '' }}" placeholder="Base of neck">
+        </div>
+        <div class="s-field">
+          <label>Radiation end</label>
+          <input type="text" name="radiation_end" value="{{ visit_report['radiation_end'] if visit_report else '' }}" placeholder="Left temple / shoulder">
+        </div>
+      </div>
+      <div class="s-fg">
+        <div class="s-field">
+          <label>Accident and injury history</label>
+          <textarea name="accident_history" rows="3" placeholder="Major accidents, falls, fractures, hospital visits...">{{ visit_report["accident_history"] if visit_report else "" }}</textarea>
+        </div>
+        <div class="s-field">
+          <label>Microtrauma / repetitive strain</label>
+          <textarea name="microtrauma_history" rows="3" placeholder="Desk posture, repeated lifting, sport load, childcare, commuting...">{{ visit_report["microtrauma_history"] if visit_report else "" }}</textarea>
+        </div>
+      </div>
+      <div class="s-fg">
+        <div class="s-field">
+          <label>Past or current treatment sought</label>
+          <textarea name="prior_treatment_history" rows="3" placeholder="Physio, massage, medication, previous chiropractic, self-care...">{{ visit_report["prior_treatment_history"] if visit_report else "" }}</textarea>
+        </div>
+        <div class="s-field">
+          <label>ADL impact and life participation</label>
+          <textarea name="adl_impacts" rows="3" placeholder="Work tolerance, sleep, driving, hobbies, parenting, exercise limits...">{{ visit_report["adl_impacts"] if visit_report else "" }}</textarea>
+        </div>
+      </div>
+      <div class="s-fg">
+        <div class="s-field">
+          <label>Medical and family history review</label>
+          <textarea name="medical_family_history_review" rows="3" placeholder="Medication, other diagnoses, family patterns, relevant risks...">{{ visit_report["medical_family_history_review"] if visit_report else "" }}</textarea>
+        </div>
+        <div class="s-field">
+          <label>Obstacles to care</label>
+          <textarea name="obstacles_to_care" rows="3" placeholder="Time, transport, schedule, fear, cost, other barriers...">{{ visit_report["obstacles_to_care"] if visit_report else "" }}</textarea>
+        </div>
+      </div>
+      <div class="s-field s-full">
+        <label>Education summary</label>
+        <textarea name="education_summary" rows="3" placeholder="What was explained before or during testing, including expectations for care...">{{ visit_report["education_summary"] if visit_report else "" }}</textarea>
+      </div>
+    </div>
+
+    {# ── HEALTH INDICATORS ── #}
+    <div class="summit-section" id="sec-health">
+      <div class="sec-hdr">
+        <div class="sec-icon" style="background:var(--s-green-l)">💪</div>
+        <div><div class="sec-title">Vital Health Indicators</div><div class="sec-sub">8 research-backed tests that predict mortality, fall risk, and functional health</div></div>
+      </div>
+
+      {# Grip Strength #}
+      <div class="hi-card open" id="hi_grip">
+        <div class="hi-top" onclick="toggleHI('hi_grip')">
+          <div class="hi-icon" style="background:var(--s-blue-l)">✊</div>
+          <div class="hi-title">Grip Strength</div>
+          <div class="hi-badge" style="background:var(--s-green-l);color:var(--s-green)">Strong Evidence</div>
+          <div class="hi-arrow">▼</div>
+        </div>
+        <div class="hi-body">
+          <div class="hi-how"><ol><li>Dynamometer, arm at side, elbow 90°</li><li>Squeeze max 3-5s, test each hand twice, record highest</li></ol></div>
+          <div class="hi-input-row">
+            <div class="s-field"><label>Left (kg)</label><input type="number" step="0.1" min="0" name="grip_left_kg" value="{{ summit_assessment['health_indicators']['grip_strength']['left_kg'] if summit_assessment['health_indicators']['grip_strength']['left_kg'] is not none else '' }}" oninput="scoreGrip()"></div>
+            <div class="s-field"><label>Right (kg)</label><input type="number" step="0.1" min="0" name="grip_right_kg" value="{{ summit_assessment['health_indicators']['grip_strength']['right_kg'] if summit_assessment['health_indicators']['grip_strength']['right_kg'] is not none else '' }}" oninput="scoreGrip()"></div>
+          </div>
+          <div class="hi-result empty" id="r_grip"><div class="hi-result-lbl" style="color:var(--ink4)">Enter values to see result</div></div>
+          <div class="hi-cite">PURE Study (Lancet, 2015): each 5 kg decrease = 16% increase all-cause mortality across 140,000 adults.</div>
         </div>
       </div>
 
-      <form method="post" action="{{ url_for('main.save_initial_consult_report', user_id=patient['id']) }}" class="auth-form consult-form">
-        <input type="hidden" name="redirect_to" value="assessment">
-
-        <section class="consult-section" id="sec-patient">
-          <div class="consult-section-head">
-            <h3>Patient information</h3>
-            <p>Use the Summit patient header section to anchor this assessment to the right visit and goals.</p>
-          </div>
-          <div class="consult-grid">
-            <label>
-              <span>Visit date and time</span>
-              <input type="datetime-local" name="visit_date" value="{{ visit_report['visit_date'] if visit_report else '' }}" required>
-            </label>
-            <label>
-              <span>Assessment date</span>
-              <input type="date" name="assessment_date" value="{{ summit_assessment['assessment_date'] }}">
-            </label>
-          </div>
-          <div class="consult-grid">
-            <label>
-              <span>Referring provider</span>
-              <input type="text" name="referring_provider" value="{{ summit_assessment['patient']['referring_provider'] }}" placeholder="Dr. ...">
-            </label>
-            <label>
-              <span>Commitment score (0-10)</span>
-              <input type="number" min="0" max="10" name="commitment_score" value="{{ visit_report['commitment_score'] if visit_report and visit_report['commitment_score'] is not none else '' }}" placeholder="10 = fully committed">
-            </label>
-          </div>
-          <label>
-            <span>Patient goals</span>
-            <textarea name="patient_goals" rows="4" placeholder="One goal per line.">{{ summit_assessment["patient_goals_text"] }}</textarea>
-          </label>
-        </section>
-
-        <section class="consult-section" id="sec-history">
-          <div class="consult-section-head">
-            <h3>History & presentation</h3>
-            <p>Chief complaint, work context, pain behavior, and narrative history from the Summit assessment.</p>
-          </div>
-          <div class="consult-grid-3">
-            <label>
-              <span>Chief complaint</span>
-              <input type="text" name="history_chief_complaint" value="{{ summit_assessment['history']['chief_complaint'] }}" placeholder="Headaches">
-            </label>
-            <label>
-              <span>Duration (years)</span>
-              <input type="number" min="0" step="0.1" name="history_duration_years" value="{{ summit_assessment['history']['duration_years'] if summit_assessment['history']['duration_years'] is not none else '' }}" placeholder="3">
-            </label>
-            <label>
-              <span>Pain level (0-10)</span>
-              <input type="number" min="0" max="10" name="history_pain_level" value="{{ summit_assessment['history']['pain_level'] if summit_assessment['history']['pain_level'] is not none else '' }}" placeholder="7">
-            </label>
-          </div>
-          <div class="consult-grid-3">
-            <label>
-              <span>Occupation</span>
-              <input type="text" name="history_occupation" value="{{ summit_assessment['history']['occupation'] }}" placeholder="Desk job">
-            </label>
-            <label>
-              <span>Daily work hours</span>
-              <input type="text" name="history_work_hours" value="{{ summit_assessment['history']['work_hours'] }}" placeholder="6-7 hrs">
-            </label>
-            <label>
-              <span>Frequency (per 10 days)</span>
-              <input type="number" min="0" max="10" name="history_frequency" value="{{ summit_assessment['history']['frequency'] if summit_assessment['history']['frequency'] is not none else '' }}" placeholder="3">
-            </label>
-          </div>
-          <label>
-            <span>History notes</span>
-            <textarea name="history_notes" rows="4" placeholder="Medication use, glasses, aggravating patterns, relevant patient narrative...">{{ summit_assessment["history"]["notes"] }}</textarea>
-          </label>
-          <div class="consult-grid-3">
-            <label>
-              <span>First noticed</span>
-              <input type="text" name="first_notice" value="{{ visit_report['first_notice'] if visit_report else '' }}" placeholder="First time the patient remembers this pattern">
-            </label>
-            <label>
-              <span>Pain quality</span>
-              <input type="text" name="pain_quality" value="{{ visit_report['pain_quality'] if visit_report else '' }}" placeholder="Sharp, throbbing, shooting...">
-            </label>
-            <label>
-              <span>Symptom trend</span>
-              <input type="text" name="symptom_trend" value="{{ visit_report['symptom_trend'] if visit_report else '' }}" placeholder="Improving, unchanged, worsening">
-            </label>
-          </div>
-          <label class="check-row">
-            <input type="checkbox" name="radiates" {% if visit_report and visit_report["radiates"] %}checked{% endif %}>
-            <span class="check-copy">
-              <strong>Symptoms radiate</strong>
-              <small>Use when the pain travels beyond the primary complaint area.</small>
-            </span>
-          </label>
-          <div class="consult-grid">
-            <label>
-              <span>Radiation start</span>
-              <input type="text" name="radiation_start" value="{{ visit_report['radiation_start'] if visit_report else '' }}" placeholder="Base of neck">
-            </label>
-            <label>
-              <span>Radiation end</span>
-              <input type="text" name="radiation_end" value="{{ visit_report['radiation_end'] if visit_report else '' }}" placeholder="Left temple / shoulder">
-            </label>
-          </div>
-          <div class="consult-grid">
-            <label>
-              <span>Accident and injury history</span>
-              <textarea name="accident_history" rows="4" placeholder="Major accidents, falls, fractures, hospital visits...">{{ visit_report["accident_history"] if visit_report else "" }}</textarea>
-            </label>
-            <label>
-              <span>Microtrauma / repetitive strain</span>
-              <textarea name="microtrauma_history" rows="4" placeholder="Desk posture, repeated lifting, sport load, childcare, commuting...">{{ visit_report["microtrauma_history"] if visit_report else "" }}</textarea>
-            </label>
-          </div>
-          <div class="consult-grid">
-            <label>
-              <span>Past or current treatment sought</span>
-              <textarea name="prior_treatment_history" rows="4" placeholder="Physio, massage, medication, previous chiropractic, self-care...">{{ visit_report["prior_treatment_history"] if visit_report else "" }}</textarea>
-            </label>
-            <label>
-              <span>ADL impact and life participation</span>
-              <textarea name="adl_impacts" rows="4" placeholder="Work tolerance, sleep, driving, hobbies, parenting, exercise limits...">{{ visit_report["adl_impacts"] if visit_report else "" }}</textarea>
-            </label>
-          </div>
-          <div class="consult-grid">
-            <label>
-              <span>Medical and family history review</span>
-              <textarea name="medical_family_history_review" rows="4" placeholder="Medication, other diagnoses, family patterns, relevant risks...">{{ visit_report["medical_family_history_review"] if visit_report else "" }}</textarea>
-            </label>
-            <label>
-              <span>Obstacles to care</span>
-              <textarea name="obstacles_to_care" rows="4" placeholder="Time, transport, schedule, fear, cost, other barriers...">{{ visit_report["obstacles_to_care"] if visit_report else "" }}</textarea>
-            </label>
-          </div>
-          <label>
-            <span>Education summary</span>
-            <textarea name="education_summary" rows="4" placeholder="What was explained before or during testing, including expectations for care...">{{ visit_report["education_summary"] if visit_report else "" }}</textarea>
-          </label>
-        </section>
-
-        <section class="consult-section" id="sec-health">
-          <div class="consult-section-head">
-            <h3>Vital health indicators</h3>
-            <p>Research-backed objective markers from the Summit assessment. Leave fields blank if a test was not performed.</p>
-          </div>
-          <div class="consult-grid-3">
-            <label>
-              <span>Grip strength left (kg)</span>
-              <input type="number" step="0.1" min="0" name="grip_left_kg" value="{{ summit_assessment['health_indicators']['grip_strength']['left_kg'] if summit_assessment['health_indicators']['grip_strength']['left_kg'] is not none else '' }}">
-            </label>
-            <label>
-              <span>Grip strength right (kg)</span>
-              <input type="number" step="0.1" min="0" name="grip_right_kg" value="{{ summit_assessment['health_indicators']['grip_strength']['right_kg'] if summit_assessment['health_indicators']['grip_strength']['right_kg'] is not none else '' }}">
-            </label>
-            <label>
-              <span>Resting heart rate (bpm)</span>
-              <input type="number" min="0" name="resting_hr_bpm" value="{{ summit_assessment['health_indicators']['resting_heart_rate']['bpm'] if summit_assessment['health_indicators']['resting_heart_rate']['bpm'] is not none else '' }}">
-            </label>
-          </div>
-          <div class="consult-grid-3">
-            <label>
-              <span>Balance left (sec)</span>
-              <input type="number" min="0" name="balance_left_sec" value="{{ summit_assessment['health_indicators']['balance']['left_sec'] if summit_assessment['health_indicators']['balance']['left_sec'] is not none else '' }}">
-            </label>
-            <label>
-              <span>Balance right (sec)</span>
-              <input type="number" min="0" name="balance_right_sec" value="{{ summit_assessment['health_indicators']['balance']['right_sec'] if summit_assessment['health_indicators']['balance']['right_sec'] is not none else '' }}">
-            </label>
-            <label>
-              <span>Chair stand reps (30 sec)</span>
-              <input type="number" min="0" name="chair_stand_reps_30s" value="{{ summit_assessment['health_indicators']['chair_stand']['reps_30s'] if summit_assessment['health_indicators']['chair_stand']['reps_30s'] is not none else '' }}">
-            </label>
-          </div>
-          <div class="consult-grid-3">
-            <label>
-              <span>10 m gait time (sec)</span>
-              <input type="number" min="0" step="0.1" name="gait_speed_time_10m" value="{{ summit_assessment['health_indicators']['gait_speed']['time_10m'] if summit_assessment['health_indicators']['gait_speed']['time_10m'] is not none else '' }}">
-            </label>
-            <label>
-              <span>Sit score (0-5)</span>
-              <input type="number" min="0" max="5" step="0.5" name="srt_sit_score" value="{{ summit_assessment['health_indicators']['sitting_rising']['sit_score'] if summit_assessment['health_indicators']['sitting_rising']['sit_score'] is not none else '' }}">
-            </label>
-            <label>
-              <span>Rise score (0-5)</span>
-              <input type="number" min="0" max="5" step="0.5" name="srt_rise_score" value="{{ summit_assessment['health_indicators']['sitting_rising']['rise_score'] if summit_assessment['health_indicators']['sitting_rising']['rise_score'] is not none else '' }}">
-            </label>
-          </div>
-          <div class="consult-grid-3">
-            <label>
-              <span>VO2 age</span>
-              <input type="number" min="18" max="100" name="vo2_age" value="{{ summit_assessment['health_indicators']['vo2_max']['age'] if summit_assessment['health_indicators']['vo2_max']['age'] is not none else '' }}">
-            </label>
-            <label>
-              <span>VO2 resting HR</span>
-              <input type="number" min="0" name="vo2_resting_hr" value="{{ summit_assessment['health_indicators']['vo2_max']['resting_hr'] if summit_assessment['health_indicators']['vo2_max']['resting_hr'] is not none else '' }}">
-            </label>
-            <label>
-              <span>Fingertip-to-floor (cm)</span>
-              <input type="number" min="0" step="0.1" name="fingertip_floor_cm" value="{{ summit_assessment['health_indicators']['fingertip_to_floor']['distance_cm'] if summit_assessment['health_indicators']['fingertip_to_floor']['distance_cm'] is not none else '' }}">
-            </label>
-          </div>
-        </section>
-
-        <section class="consult-section" id="sec-functional">
-          <div class="consult-section-head">
-            <h3>Chiropractic functional tests</h3>
-            <p>Record balance, coordination, weight distribution, and leg-length findings from the Summit workflow.</p>
-          </div>
-          <div class="consult-grid-3">
-            <label>
-              <span>Marching deviation (cm)</span>
-              <input type="number" min="0" step="0.1" name="marching_deviation_cm" value="{{ summit_assessment['functional_tests']['marching_test']['deviation_cm'] if summit_assessment['functional_tests']['marching_test']['deviation_cm'] is not none else '' }}">
-            </label>
-            <label>
-              <span>Marching direction</span>
-              <select name="marching_direction">
-                <option value="" {% if not summit_assessment['functional_tests']['marching_test']['direction'] %}selected{% endif %}>Select...</option>
-                <option value="L" {% if summit_assessment['functional_tests']['marching_test']['direction'] == 'L' %}selected{% endif %}>Left</option>
-                <option value="R" {% if summit_assessment['functional_tests']['marching_test']['direction'] == 'R' %}selected{% endif %}>Right</option>
-                <option value="center" {% if summit_assessment['functional_tests']['marching_test']['direction'] == 'center' %}selected{% endif %}>Center</option>
-              </select>
-            </label>
-            <label>
-              <span>Heel-to-toe steady steps</span>
-              <input type="number" min="0" name="heel_toe_steps" value="{{ summit_assessment['functional_tests']['heel_toe_walk']['steady_steps'] if summit_assessment['functional_tests']['heel_toe_walk']['steady_steps'] is not none else '' }}">
-            </label>
-          </div>
-          <div class="consult-grid-3">
-            <label>
-              <span>Weight distribution left (kg)</span>
-              <input type="number" min="0" step="0.1" name="weight_left_kg" value="{{ summit_assessment['functional_tests']['weight_distribution']['left_kg'] if summit_assessment['functional_tests']['weight_distribution']['left_kg'] is not none else '' }}">
-            </label>
-            <label>
-              <span>Weight distribution right (kg)</span>
-              <input type="number" min="0" step="0.1" name="weight_right_kg" value="{{ summit_assessment['functional_tests']['weight_distribution']['right_kg'] if summit_assessment['functional_tests']['weight_distribution']['right_kg'] is not none else '' }}">
-            </label>
-            <div></div>
-            <label>
-              <span>Leg length left (cm)</span>
-              <input type="number" step="0.1" name="leg_left_cm" value="{{ summit_assessment['leg_length']['left_cm'] if summit_assessment['leg_length']['left_cm'] is not none else '' }}">
-            </label>
-            <label>
-              <span>Leg length right (cm)</span>
-              <input type="number" step="0.1" name="leg_right_cm" value="{{ summit_assessment['leg_length']['right_cm'] if summit_assessment['leg_length']['right_cm'] is not none else '' }}">
-            </label>
-          </div>
-        </section>
-
-        <section class="consult-section" id="sec-rom">
-          <div class="consult-section-head">
-            <h3>Range of motion</h3>
-            <p>Measured values are stored against Summit normal ranges so the patient portal can show objective movement loss.</p>
-          </div>
-          {% for section in summit_rom_sections %}
-            <div class="section-block">
-              <h3 style="font-size:22px">{{ section["label"] }}</h3>
-              <div class="consult-grid-3">
-                {% for item in section["items"] %}
-                  <label>
-                    <span>{{ item["label"] }} <small class="field-hint">/{{ item["max_norm"] }}&deg; norm</small></span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.1"
-                      name="rom_{{ section['key'] }}_{{ item['key'] }}"
-                      value="{{ summit_assessment['range_of_motion'][section['key']][item['key']] if summit_assessment['range_of_motion'][section['key']][item['key']] is not none else '' }}"
-                    >
-                  </label>
-                {% endfor %}
-              </div>
-            </div>
-          {% endfor %}
-        </section>
-
-        <section class="consult-section" id="sec-ortho">
-          <div class="consult-section-head">
-            <h3>Orthopedic / special tests</h3>
-            <p>Use the Summit test battery by spinal region. Record only the tests that were actually performed.</p>
-          </div>
-          {% for region in summit_ortho_regions %}
-            {% set region_entries = summit_assessment["orthopedic_tests"][region["key"]] %}
-            <div class="section-block">
-              <h3 style="font-size:22px">{{ region["label"] }}</h3>
-              <div class="invite-stack">
-                {% for test in region["tests"] %}
-                  {% set entry = region_entries[loop.index0] %}
-                  <div class="mini-card">
-                    <strong>{{ test["name"] }}</strong>
-                    <small>{{ test["target"] }}</small>
-                    <small>{{ test["detail"] }}</small>
-                    <div class="consult-grid-3" style="margin-top:8px">
-                      <label>
-                        <span>Result</span>
-                        <select name="ortho_{{ region['key'] }}_{{ loop.index0 }}_result">
-                          <option value="" {% if not entry["result"] %}selected{% endif %}>—</option>
-                          <option value="+" {% if entry["result"] == '+' %}selected{% endif %}>Positive</option>
-                          <option value="−" {% if entry["result"] == '−' %}selected{% endif %}>Negative</option>
-                        </select>
-                      </label>
-                      {% if test["has_side"] %}
-                        <label>
-                          <span>Side</span>
-                          <select name="ortho_{{ region['key'] }}_{{ loop.index0 }}_side">
-                            <option value="B" {% if entry["side"] == 'B' %}selected{% endif %}>Bilateral</option>
-                            <option value="L" {% if entry["side"] == 'L' %}selected{% endif %}>Left</option>
-                            <option value="R" {% if entry["side"] == 'R' %}selected{% endif %}>Right</option>
-                          </select>
-                        </label>
-                      {% else %}
-                        <div></div>
-                      {% endif %}
-                      {% if test["has_measure"] %}
-                        <label>
-                          <span>Measure{% if test.get("measure_unit") %} ({{ test["measure_unit"] }}){% endif %}</span>
-                          <input type="number" step="0.1" min="0" name="ortho_{{ region['key'] }}_{{ loop.index0 }}_measure" value="{{ entry['measure'] if entry['measure'] is not none else '' }}">
-                        </label>
-                      {% else %}
-                        <div></div>
-                      {% endif %}
-                    </div>
-                    <label style="margin-top:8px">
-                      <span>Notes</span>
-                      <input type="text" name="ortho_{{ region['key'] }}_{{ loop.index0 }}_notes" value="{{ entry['notes'] }}" placeholder="{{ test['evidence'] }}">
-                    </label>
-                  </div>
-                {% endfor %}
-              </div>
-            </div>
-          {% endfor %}
-        </section>
-
-        <section class="consult-section" id="sec-spine">
-          <div class="consult-section-head">
-            <h3>Spine assessment</h3>
-            <p>Record left and right involvement on the Summit 0-5 severity scale for each spinal level.</p>
-          </div>
-          {% for region in summit_spine_regions %}
-            <div class="section-block">
-              <h3 style="font-size:22px">{{ region["label"] }}</h3>
-              <div class="detail-grid">
-                {% for level in region["levels"] %}
-                  <div class="consult-grid-3">
-                    <label>
-                      <span>Level</span>
-                      <input type="text" value="{{ level }}" readonly>
-                    </label>
-                    <label>
-                      <span>Left (0-5)</span>
-                      <select name="spine_left_{{ level }}">
-                        {% for value in range(0, 6) %}
-                          <option value="{{ value }}" {% if summit_assessment['spine_assessment']['left'][level] == value %}selected{% endif %}>{{ value }}</option>
-                        {% endfor %}
-                      </select>
-                    </label>
-                    <label>
-                      <span>Right (0-5)</span>
-                      <select name="spine_right_{{ level }}">
-                        {% for value in range(0, 6) %}
-                          <option value="{{ value }}" {% if summit_assessment['spine_assessment']['right'][level] == value %}selected{% endif %}>{{ value }}</option>
-                        {% endfor %}
-                      </select>
-                    </label>
-                  </div>
-                {% endfor %}
-              </div>
-            </div>
-          {% endfor %}
-        </section>
-
-        <section class="consult-section" id="sec-publish">
-          <div class="consult-section-head">
-            <h3>Clinician interpretation & portal publishing</h3>
-            <p>These notes and summaries are what the patient will eventually see in their portal after publication.</p>
-          </div>
-          <div class="consult-grid">
-            <label>
-              <span>Posture findings</span>
-              <textarea name="posture_findings" rows="4" placeholder="Forward head carriage, pelvic asymmetry, guarding...">{{ visit_report["posture_findings"] if visit_report else "" }}</textarea>
-            </label>
-            <label>
-              <span>Neurological findings</span>
-              <textarea name="neuro_findings" rows="4" placeholder="Strength, sensation, reflexes, neurological screens...">{{ visit_report["neuro_findings"] if visit_report else "" }}</textarea>
-            </label>
-          </div>
-          <div class="consult-grid-3">
-            <label>
-              <span>Forward head posture (inches)</span>
-              <input type="number" step="0.1" min="0" name="forward_head_inches" value="{{ visit_report['forward_head_inches'] if visit_report and visit_report['forward_head_inches'] is not none else '' }}">
-            </label>
-            <label>
-              <span>Shoulder level</span>
-              <input type="text" name="shoulders_level" value="{{ visit_report['shoulders_level'] if visit_report else '' }}" placeholder="Right high">
-            </label>
-            <label>
-              <span>Hip level</span>
-              <input type="text" name="hips_level" value="{{ visit_report['hips_level'] if visit_report else '' }}" placeholder="Level / Left high">
-            </label>
-          </div>
-          <div class="consult-grid">
-            <label>
-              <span>Palpation findings</span>
-              <textarea name="palpation_findings" rows="4" placeholder="Tenderness, hypertonicity, restrictions, motion findings...">{{ visit_report["palpation_findings"] if visit_report else "" }}</textarea>
-            </label>
-            <label>
-              <span>Assessment</span>
-              <textarea name="assessment" rows="4" placeholder="Clinical impression, drivers, contraindications, and case synthesis...">{{ visit_report["assessment"] if visit_report else "" }}</textarea>
-            </label>
-          </div>
-          <div class="consult-grid">
-            <label>
-              <span>Diagnosis / working impression</span>
-              <textarea name="diagnosis" rows="4" placeholder="One line per diagnosis or working impression.">{{ visit_report["diagnosis"] if visit_report else "" }}</textarea>
-            </label>
-            <label>
-              <span>Imaging review</span>
-              <textarea name="imaging_review" rows="4" placeholder="Relevant X-ray or MRI review notes.">{{ visit_report["imaging_review"] if visit_report else "" }}</textarea>
-            </label>
-          </div>
-          <label class="check-row">
-            <input type="checkbox" name="xray_recommended" {% if visit_report and visit_report["xray_recommended"] %}checked{% endif %}>
-            <span class="check-copy">
-              <strong>X-ray recommended</strong>
-              <small>Mark when imaging is part of the plan or follow-up Report of Findings workflow.</small>
-            </span>
-          </label>
-          <div class="consult-grid">
-            <label>
-              <span>X-ray status</span>
-              <input type="text" name="xray_status" value="{{ visit_report['xray_status'] if visit_report else '' }}" placeholder="Booked / reviewed / not indicated">
-            </label>
-            <label>
-              <span>X-ray regions</span>
-              <input type="text" name="xray_regions" value="{{ visit_report['xray_regions'] if visit_report else '' }}" placeholder="Cervical AP/lateral">
-            </label>
-          </div>
-          <div class="consult-grid">
-            <label>
-              <span>Care plan</span>
-              <textarea name="care_plan" rows="4" placeholder="Visit frequency, techniques, re-exam cadence, treatment focus...">{{ visit_report["care_plan"] if visit_report else "" }}</textarea>
-            </label>
-            <label>
-              <span>Home care</span>
-              <textarea name="home_care" rows="4" placeholder="Exercises, walking, recovery, ergonomics, hydration...">{{ visit_report["home_care"] if visit_report else "" }}</textarea>
-            </label>
-          </div>
-          <div class="consult-grid">
-            <label>
-              <span>Follow-up plan</span>
-              <textarea name="follow_up_plan" rows="4" placeholder="Re-test plan, next appointment goals, imaging review, milestones...">{{ visit_report["follow_up_plan"] if visit_report else "" }}</textarea>
-            </label>
-            <label>
-              <span>Wrap-up notes</span>
-              <textarea name="wrap_up_notes" rows="4" placeholder="What the patient was told before leaving and what happens next.">{{ visit_report["wrap_up_notes"] if visit_report else "" }}</textarea>
-            </label>
-          </div>
-          <label>
-            <span>Triangle / handoff</span>
-            <textarea name="triangle_handoff" rows="3" placeholder="Front desk booking, consent handoff, CA notes...">{{ visit_report["triangle_handoff"] if visit_report else "" }}</textarea>
-          </label>
-          <label>
-            <span>Patient-facing summary</span>
-            <textarea name="patient_summary" rows="4" placeholder="Plain-language explanation of what was found and what it means for the patient.">{{ visit_report["patient_summary"] if visit_report else "" }}</textarea>
-          </label>
-          <div class="consult-grid">
-            <label>
-              <span>Patient key findings</span>
-              <textarea name="patient_key_findings" rows="4" placeholder="One plain-language takeaway per line.">{{ visit_report["patient_key_findings"] if visit_report else "" }}</textarea>
-            </label>
-            <label>
-              <span>Patient recommendations</span>
-              <textarea name="patient_recommendations" rows="4" placeholder="One clear recommendation per line.">{{ visit_report["patient_recommendations"] if visit_report else "" }}</textarea>
-            </label>
-          </div>
-        </section>
-
-        <div class="panel-actions">
-          <button type="submit" name="action" value="draft" class="secondary-button">Save draft</button>
-          <button type="submit" name="action" value="published" class="primary-button">Publish to portal</button>
+      {# Balance #}
+      <div class="hi-card" id="hi_bal">
+        <div class="hi-top" onclick="toggleHI('hi_bal')">
+          <div class="hi-icon" style="background:var(--s-purple-l)">🦩</div>
+          <div class="hi-title">10-Second Balance</div>
+          <div class="hi-badge" style="background:var(--s-green-l);color:var(--s-green)">Strong Evidence</div>
+          <div class="hi-arrow">▼</div>
         </div>
-      </form>
-    </article>
-  </section>
+        <div class="hi-body">
+          <div class="hi-how"><ol><li>Hands on hips, eyes open</li><li>Raise foot to opposite calf, time each leg (max 30s)</li></ol></div>
+          <div class="hi-input-row">
+            <div class="s-field"><label>Left (sec)</label><input type="number" min="0" name="balance_left_sec" value="{{ summit_assessment['health_indicators']['balance']['left_sec'] if summit_assessment['health_indicators']['balance']['left_sec'] is not none else '' }}" oninput="scoreBal()"></div>
+            <div class="s-field"><label>Right (sec)</label><input type="number" min="0" name="balance_right_sec" value="{{ summit_assessment['health_indicators']['balance']['right_sec'] if summit_assessment['health_indicators']['balance']['right_sec'] is not none else '' }}" oninput="scoreBal()"></div>
+          </div>
+          <div class="hi-result empty" id="r_bal"><div class="hi-result-lbl" style="color:var(--ink4)">Enter values to see result</div></div>
+          <div class="hi-cite">BJSM (2022): inability to hold 10s = 84% higher mortality risk over 7 years.</div>
+        </div>
+      </div>
+
+      {# Chair Stand #}
+      <div class="hi-card" id="hi_cs">
+        <div class="hi-top" onclick="toggleHI('hi_cs')">
+          <div class="hi-icon" style="background:var(--s-green-l)">🪑</div>
+          <div class="hi-title">30-Second Chair Stand</div>
+          <div class="hi-badge" style="background:var(--s-green-l);color:var(--s-green)">Strong Evidence</div>
+          <div class="hi-arrow">▼</div>
+        </div>
+        <div class="hi-body">
+          <div class="hi-how"><ol><li>Standard chair (43 cm), arms crossed over chest</li><li>Stand fully, sit fully, repeat 30 seconds — count total</li></ol></div>
+          <div class="hi-input-row">
+            <div class="s-field"><label>Reps in 30s</label><input type="number" min="0" max="40" name="chair_stand_reps_30s" value="{{ summit_assessment['health_indicators']['chair_stand']['reps_30s'] if summit_assessment['health_indicators']['chair_stand']['reps_30s'] is not none else '' }}" oninput="scoreCS()"></div>
+          </div>
+          <div class="hi-result empty" id="r_cs"><div class="hi-result-lbl" style="color:var(--ink4)">Enter value to see result</div></div>
+          <div class="hi-cite">Fall risk cut-off: 7 reps or fewer. AUC 0.67, 97% sensitivity (PLOS One, 2017).</div>
+        </div>
+      </div>
+
+      {# Gait Speed #}
+      <div class="hi-card" id="hi_gait">
+        <div class="hi-top" onclick="toggleHI('hi_gait')">
+          <div class="hi-icon" style="background:var(--s-amber-l)">🚶</div>
+          <div class="hi-title">Gait Speed (10 m Walk)</div>
+          <div class="hi-badge" style="background:var(--s-green-l);color:var(--s-green)">Strong Evidence</div>
+          <div class="hi-arrow">▼</div>
+        </div>
+        <div class="hi-body">
+          <div class="hi-how"><ol><li>Mark 10 m with 2 m buffer at each end</li><li>Walk at comfortable pace, time the 10 m section</li></ol></div>
+          <div class="hi-input-row">
+            <div class="s-field"><label>Time for 10 m (sec)</label><input type="number" min="0" step="0.1" name="gait_speed_time_10m" value="{{ summit_assessment['health_indicators']['gait_speed']['time_10m'] if summit_assessment['health_indicators']['gait_speed']['time_10m'] is not none else '' }}" oninput="scoreGait()"></div>
+          </div>
+          <div class="hi-result empty" id="r_gait"><div class="hi-result-lbl" style="color:var(--ink4)">Enter value to see result</div></div>
+          <div class="hi-cite">JAMA (2011): gait speed predicted survival as well as age, sex, and chronic conditions combined.</div>
+        </div>
+      </div>
+
+      {# Sitting-Rising #}
+      <div class="hi-card" id="hi_srt">
+        <div class="hi-top" onclick="toggleHI('hi_srt')">
+          <div class="hi-icon" style="background:var(--s-red-l)">🧘</div>
+          <div class="hi-title">Sitting-Rising Test</div>
+          <div class="hi-badge" style="background:var(--s-green-l);color:var(--s-green)">Strong Evidence</div>
+          <div class="hi-arrow">▼</div>
+        </div>
+        <div class="hi-body">
+          <div class="hi-how"><ol><li>Start standing, lower to cross-legged sit, rise back up</li><li>Score /10 — deduct 1 pt per hand/knee used, 0.5 pt for unsteadiness</li></ol></div>
+          <div class="hi-input-row">
+            <div class="s-field"><label>Sit score (0-5)</label><input type="number" min="0" max="5" step="0.5" name="srt_sit_score" value="{{ summit_assessment['health_indicators']['sitting_rising']['sit_score'] if summit_assessment['health_indicators']['sitting_rising']['sit_score'] is not none else '' }}" oninput="scoreSRT()"></div>
+            <div class="s-field"><label>Rise score (0-5)</label><input type="number" min="0" max="5" step="0.5" name="srt_rise_score" value="{{ summit_assessment['health_indicators']['sitting_rising']['rise_score'] if summit_assessment['health_indicators']['sitting_rising']['rise_score'] is not none else '' }}" oninput="scoreSRT()"></div>
+          </div>
+          <div class="hi-result empty" id="r_srt"><div class="hi-result-lbl" style="color:var(--ink4)">Enter values to see result</div></div>
+          <div class="hi-cite">Eur J Cardiovasc Prev (2012): score 0-3 = 6.5x mortality vs 8-10 over 6 years.</div>
+        </div>
+      </div>
+
+      {# Resting Heart Rate #}
+      <div class="hi-card" id="hi_rhr">
+        <div class="hi-top" onclick="toggleHI('hi_rhr')">
+          <div class="hi-icon" style="background:var(--s-red-l)">❤️</div>
+          <div class="hi-title">Resting Heart Rate</div>
+          <div class="hi-badge" style="background:var(--s-green-l);color:var(--s-green)">Strong Evidence</div>
+          <div class="hi-arrow">▼</div>
+        </div>
+        <div class="hi-body">
+          <div class="hi-how"><ol><li>Sit quietly 5 min, count pulse for 20s then multiply by 3</li><li>Ideally test first thing in the morning</li></ol></div>
+          <div class="hi-input-row">
+            <div class="s-field"><label>RHR (bpm)</label><input type="number" min="0" name="resting_hr_bpm" value="{{ summit_assessment['health_indicators']['resting_heart_rate']['bpm'] if summit_assessment['health_indicators']['resting_heart_rate']['bpm'] is not none else '' }}" oninput="scoreRHR()"></div>
+          </div>
+          <div class="hi-result empty" id="r_rhr"><div class="hi-result-lbl" style="color:var(--ink4)">Enter value to see result</div></div>
+          <div class="hi-cite">JAMA (2005): RHR 76+ bpm = 26% higher coronary event risk in 129,000+ women.</div>
+        </div>
+      </div>
+
+      {# VO2 Max #}
+      <div class="hi-card" id="hi_vo2">
+        <div class="hi-top" onclick="toggleHI('hi_vo2')">
+          <div class="hi-icon" style="background:var(--s-green-l)">🫁</div>
+          <div class="hi-title">VO2 Max Estimate</div>
+          <div class="hi-badge" style="background:var(--s-green-l);color:var(--s-green)">Strong Evidence</div>
+          <div class="hi-arrow">▼</div>
+        </div>
+        <div class="hi-body">
+          <div class="hi-how"><ol><li>Uses resting HR method: VO2max = 15.3 x (MaxHR / RHR)</li><li>MaxHR = 208 - (0.7 x age)</li></ol></div>
+          <div class="hi-input-row">
+            <div class="s-field"><label>Age</label><input type="number" min="18" max="100" name="vo2_age" value="{{ summit_assessment['health_indicators']['vo2_max']['age'] if summit_assessment['health_indicators']['vo2_max']['age'] is not none else '' }}" oninput="scoreVO2()"></div>
+            <div class="s-field"><label>Resting HR (bpm)</label><input type="number" min="0" name="vo2_resting_hr" value="{{ summit_assessment['health_indicators']['vo2_max']['resting_hr'] if summit_assessment['health_indicators']['vo2_max']['resting_hr'] is not none else '' }}" oninput="scoreVO2()"></div>
+          </div>
+          <div class="hi-result empty" id="r_vo2"><div class="hi-result-lbl" style="color:var(--ink4)">Enter age + resting HR</div></div>
+          <div class="hi-cite">Cleveland Clinic / JAMA (2018): 122K patients — elite fitness = 80% lower mortality vs low fitness.</div>
+        </div>
+      </div>
+
+      {# Fingertip-to-Floor #}
+      <div class="hi-card" id="hi_ftf">
+        <div class="hi-top" onclick="toggleHI('hi_ftf')">
+          <div class="hi-icon" style="background:var(--s-amber-l)">🤸</div>
+          <div class="hi-title">Fingertip-to-Floor</div>
+          <div class="hi-badge" style="background:var(--s-amber-l);color:var(--s-amber)">Moderate Evidence</div>
+          <div class="hi-arrow">▼</div>
+        </div>
+        <div class="hi-body">
+          <div class="hi-how"><ol><li>Stand, bend forward with straight knees</li><li>Measure distance from fingertips to floor (cm)</li></ol></div>
+          <div class="hi-input-row">
+            <div class="s-field"><label>Distance (cm)</label><input type="number" min="0" step="0.5" name="fingertip_floor_cm" value="{{ summit_assessment['health_indicators']['fingertip_to_floor']['distance_cm'] if summit_assessment['health_indicators']['fingertip_to_floor']['distance_cm'] is not none else '' }}" oninput="scoreFTF()"></div>
+          </div>
+          <div class="hi-result empty" id="r_ftf"><div class="hi-result-lbl" style="color:var(--ink4)">Enter value to see result</div></div>
+          <div class="hi-cite">Standard orthopedic measure for hamstring + lumbar flexibility. Healthy: less than 5 cm.</div>
+        </div>
+      </div>
+    </div>
+
+    {# ── FUNCTIONAL TESTS ── #}
+    <div class="summit-section" id="sec-functional">
+      <div class="sec-hdr">
+        <div class="sec-icon" style="background:var(--s-teal-l)">⚡</div>
+        <div><div class="sec-title">Chiropractic Functional Tests</div><div class="sec-sub">Balance, coordination, weight distribution</div></div>
+      </div>
+      <div class="s-fg">
+        <div class="s-field">
+          <label>Marching Test <span class="unit">(cm deviation)</span><span class="healthy">Healthy = on the T</span></label>
+          <input type="number" min="0" step="0.1" name="marching_deviation_cm" value="{{ summit_assessment['functional_tests']['marching_test']['deviation_cm'] if summit_assessment['functional_tests']['marching_test']['deviation_cm'] is not none else '' }}">
+        </div>
+        <div class="s-field">
+          <label>Marching Direction</label>
+          <select name="marching_direction">
+            <option value="" {% if not summit_assessment['functional_tests']['marching_test']['direction'] %}selected{% endif %}>Select...</option>
+            <option value="L" {% if summit_assessment['functional_tests']['marching_test']['direction'] == 'L' %}selected{% endif %}>Left</option>
+            <option value="R" {% if summit_assessment['functional_tests']['marching_test']['direction'] == 'R' %}selected{% endif %}>Right</option>
+            <option value="center" {% if summit_assessment['functional_tests']['marching_test']['direction'] == 'center' %}selected{% endif %}>Center</option>
+          </select>
+        </div>
+        <div class="s-field">
+          <label>Heel-Toe Walk <span class="unit">(steady steps)</span><span class="healthy">Healthy = 10</span></label>
+          <input type="number" min="0" name="heel_toe_steps" value="{{ summit_assessment['functional_tests']['heel_toe_walk']['steady_steps'] if summit_assessment['functional_tests']['heel_toe_walk']['steady_steps'] is not none else '' }}">
+        </div>
+        <div class="s-field">
+          <label>Weight Distribution — Left <span class="unit">(kg)</span></label>
+          <input type="number" min="0" step="0.1" name="weight_left_kg" id="wdLeft" value="{{ summit_assessment['functional_tests']['weight_distribution']['left_kg'] if summit_assessment['functional_tests']['weight_distribution']['left_kg'] is not none else '' }}" oninput="updateWD()">
+        </div>
+        <div class="s-field">
+          <label>Weight Distribution — Right <span class="unit">(kg)</span><span class="healthy">Healthy: less than 2 kg diff</span></label>
+          <input type="number" min="0" step="0.1" name="weight_right_kg" id="wdRight" value="{{ summit_assessment['functional_tests']['weight_distribution']['right_kg'] if summit_assessment['functional_tests']['weight_distribution']['right_kg'] is not none else '' }}" oninput="updateWD()">
+        </div>
+        <div class="s-field">
+          <label>Weight Diff</label>
+          <div id="wdDiff" style="font-size:14px;font-weight:700;padding:10px;color:var(--ink3)">—</div>
+        </div>
+      </div>
+      <div style="margin-top:20px">
+        <label style="font-size:13px;font-weight:600;color:var(--ink3)">Leg Length <span style="font-weight:400">(cm)</span></label>
+        <div class="leg-display">
+          <div class="leg-col">
+            <label>Left</label><br>
+            <input type="number" step="0.1" name="leg_left_cm" id="legL" value="{{ summit_assessment['leg_length']['left_cm'] if summit_assessment['leg_length']['left_cm'] is not none else '' }}" oninput="updateLD()">
+          </div>
+          <div style="font-size:20px;color:var(--ink4)">⟷</div>
+          <div class="leg-col">
+            <label>Right</label><br>
+            <input type="number" step="0.1" name="leg_right_cm" id="legR" value="{{ summit_assessment['leg_length']['right_cm'] if summit_assessment['leg_length']['right_cm'] is not none else '' }}" oninput="updateLD()">
+          </div>
+        </div>
+        <div class="leg-diff" id="ldDiff">Difference: <span class="val">—</span></div>
+      </div>
+    </div>
+
+    {# ── RANGE OF MOTION ── #}
+    <div class="summit-section" id="sec-rom">
+      <div class="sec-hdr">
+        <div class="sec-icon" style="background:var(--s-purple-l)">🔄</div>
+        <div><div class="sec-title">Range of Motion</div><div class="sec-sub">Drag sliders or enter values — stored against normal ranges for the patient portal</div></div>
+      </div>
+      {% for section in summit_rom_sections %}
+        <div class="rom-group{% if not loop.first %}" style="margin-top:12px{% endif %}">
+          <div class="rom-group-title">{{ section["label"] }}</div>
+          {% for item in section["items"] %}
+            {% set current_val = summit_assessment['range_of_motion'][section['key']][item['key']] %}
+            {% set val = current_val if current_val is not none else 0 %}
+            <div class="rom-row">
+              <div class="rom-label">{{ item["label"] }} <span class="rm">/{{ item["max_norm"] }}°</span></div>
+              <input type="range" class="rom-slider" min="0" max="{{ item['max_norm'] }}" value="{{ val }}" oninput="syncROM(this)">
+              <div class="rom-val">{{ val }}°</div>
+              <div class="rom-mx">/{{ item["max_norm"] }}</div>
+              <input type="hidden" name="rom_{{ section['key'] }}_{{ item['key'] }}" value="{{ val }}" class="rom-hidden">
+            </div>
+          {% endfor %}
+        </div>
+      {% endfor %}
+    </div>
+
+    {# ── ORTHOPEDIC TESTS ── #}
+    <div class="summit-section" id="sec-ortho">
+      <div class="sec-hdr">
+        <div class="sec-icon" style="background:var(--s-red-l)">🩻</div>
+        <div><div class="sec-title">Orthopedic / Special Tests</div><div class="sec-sub">Provocative tests by spinal region — click regions to expand, record results and notes</div></div>
+      </div>
+      {% set region_colors = {"cervical": "var(--s-blue)", "thoracic": "var(--s-amber)", "lumbar": "var(--s-green)", "si": "var(--s-purple)"} %}
+      {% for region in summit_ortho_regions %}
+        {% set region_entries = summit_assessment["orthopedic_tests"][region["key"]] %}
+        {% set ns = namespace(done=0) %}
+        {% for entry in region_entries %}
+          {% if entry["result"] %}{% set ns.done = ns.done + 1 %}{% endif %}
+        {% endfor %}
+        <div class="ortho-region{% if ns.done > 0 %} open{% endif %}" id="ortho_{{ region['key'] }}">
+          <div class="ortho-region-hdr" onclick="this.parentElement.classList.toggle('open')">
+            <span class="ortho-region-dot" style="background:{{ region_colors.get(region['key'], 'var(--ink4)') }}"></span>
+            <span class="ortho-region-title">{{ region["label"] }}</span>
+            <span class="ortho-region-count">{{ ns.done }}/{{ region["tests"]|length }}</span>
+            <span class="hi-arrow" style="margin-left:auto">▼</span>
+          </div>
+          <div class="ortho-region-body">
+            {% for test in region["tests"] %}
+              {% set entry = region_entries[loop.index0] %}
+              <div class="ortho-test">
+                <div class="ortho-test-hdr">
+                  <div class="ortho-test-name">{{ test["name"] }}</div>
+                  <div class="ortho-test-target">{{ test["target"] }}</div>
+                </div>
+                <div class="ortho-test-detail">{{ test["detail"] }}</div>
+                <div class="ortho-test-evidence">{{ test["evidence"] }}</div>
+                <div class="ortho-test-inputs">
+                  <select class="ortho-select" name="ortho_{{ region['key'] }}_{{ loop.index0 }}_result" onchange="updateOrthoCount('{{ region['key'] }}')">
+                    <option value="" {% if not entry["result"] %}selected{% endif %}>—</option>
+                    <option value="+" {% if entry["result"] == '+' %}selected{% endif %}>+ Positive</option>
+                    <option value="−" {% if entry["result"] == '−' %}selected{% endif %}>− Negative</option>
+                  </select>
+                  {% if test["has_side"] %}
+                    <select class="ortho-side" name="ortho_{{ region['key'] }}_{{ loop.index0 }}_side">
+                      <option value="B" {% if entry["side"] == 'B' %}selected{% endif %}>Bilateral</option>
+                      <option value="L" {% if entry["side"] == 'L' %}selected{% endif %}>Left</option>
+                      <option value="R" {% if entry["side"] == 'R' %}selected{% endif %}>Right</option>
+                    </select>
+                  {% endif %}
+                  {% if test["has_measure"] %}
+                    <input type="number" class="ortho-measure" step="0.1" min="0" name="ortho_{{ region['key'] }}_{{ loop.index0 }}_measure" value="{{ entry['measure'] if entry['measure'] is not none else '' }}" placeholder="{{ test.get('measure_unit', '') }}">
+                  {% endif %}
+                  <input type="text" class="ortho-note" name="ortho_{{ region['key'] }}_{{ loop.index0 }}_notes" value="{{ entry['notes'] }}" placeholder="Notes...">
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+
+    {# ── SPINE ASSESSMENT ── #}
+    <div class="summit-section" id="sec-spine">
+      <div class="sec-hdr">
+        <div class="sec-icon" style="background:var(--s-amber-l)">🦴</div>
+        <div><div class="sec-title">Spine Assessment</div><div class="sec-sub">Click bars to cycle involvement level (0-5). Hidden selects sync for form submission.</div></div>
+      </div>
+      <div class="spine-area" id="spineInput">
+        {% for side_name in ["left", "right"] %}
+          <div class="spine-side">
+            <div class="spine-side-title">{{ "Left" if side_name == "left" else "Right" }} Side</div>
+            {% for region in summit_spine_regions %}
+              <div class="spine-region-div">{{ region["label"] }}</div>
+              {% for level in region["levels"] %}
+                {% set current_val = summit_assessment['spine_assessment'][side_name][level] %}
+                <div class="spine-row">
+                  <div class="spine-lbl">{{ level }}</div>
+                  <div class="spine-bar" data-side="{{ side_name }}" data-level="{{ level }}" onclick="cycleSpine(this)">
+                    <div class="spine-fill" style="width:{{ (current_val / 5 * 100)|int }}%;background:{{ ['#e2e8f0','#93c5fd','#fbbf24','#fb923c','#ef4444','#991b1b'][current_val] }}"></div>
+                    <select name="spine_{{ side_name }}_{{ level }}">
+                      {% for value in range(0, 6) %}
+                        <option value="{{ value }}" {% if current_val == value %}selected{% endif %}>{{ value }}</option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                </div>
+              {% endfor %}
+            {% endfor %}
+          </div>
+        {% endfor %}
+      </div>
+      <div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:3px;font-size:10px;color:var(--ink3)"><div style="width:10px;height:10px;border-radius:2px;background:#e2e8f0"></div>None</div>
+        <div style="display:flex;align-items:center;gap:3px;font-size:10px;color:var(--ink3)"><div style="width:10px;height:10px;border-radius:2px;background:#93c5fd"></div>Mild</div>
+        <div style="display:flex;align-items:center;gap:3px;font-size:10px;color:var(--ink3)"><div style="width:10px;height:10px;border-radius:2px;background:#fbbf24"></div>Moderate</div>
+        <div style="display:flex;align-items:center;gap:3px;font-size:10px;color:var(--ink3)"><div style="width:10px;height:10px;border-radius:2px;background:#fb923c"></div>Significant</div>
+        <div style="display:flex;align-items:center;gap:3px;font-size:10px;color:var(--ink3)"><div style="width:10px;height:10px;border-radius:2px;background:#ef4444"></div>Severe</div>
+        <div style="display:flex;align-items:center;gap:3px;font-size:10px;color:var(--ink3)"><div style="width:10px;height:10px;border-radius:2px;background:#991b1b"></div>Critical</div>
+      </div>
+    </div>
+
+    {# ── PUBLISH ── #}
+    <div class="summit-section" id="sec-publish">
+      <div class="sec-hdr">
+        <div class="sec-icon" style="background:var(--s-blue-l)">📄</div>
+        <div><div class="sec-title">Clinician Interpretation &amp; Portal Publishing</div><div class="sec-sub">These notes and summaries are what the patient will see in their portal after publication</div></div>
+      </div>
+      <div class="s-fg">
+        <div class="s-field">
+          <label>Posture findings</label>
+          <textarea name="posture_findings" rows="3" placeholder="Forward head carriage, pelvic asymmetry, guarding...">{{ visit_report["posture_findings"] if visit_report else "" }}</textarea>
+        </div>
+        <div class="s-field">
+          <label>Neurological findings</label>
+          <textarea name="neuro_findings" rows="3" placeholder="Strength, sensation, reflexes, neurological screens...">{{ visit_report["neuro_findings"] if visit_report else "" }}</textarea>
+        </div>
+      </div>
+      <div class="s-fg three">
+        <div class="s-field">
+          <label>Forward head posture <span class="unit">(inches)</span></label>
+          <input type="number" step="0.1" min="0" name="forward_head_inches" value="{{ visit_report['forward_head_inches'] if visit_report and visit_report['forward_head_inches'] is not none else '' }}">
+        </div>
+        <div class="s-field">
+          <label>Shoulder level</label>
+          <input type="text" name="shoulders_level" value="{{ visit_report['shoulders_level'] if visit_report else '' }}" placeholder="Right high">
+        </div>
+        <div class="s-field">
+          <label>Hip level</label>
+          <input type="text" name="hips_level" value="{{ visit_report['hips_level'] if visit_report else '' }}" placeholder="Level / Left high">
+        </div>
+      </div>
+      <div class="s-fg">
+        <div class="s-field">
+          <label>Palpation findings</label>
+          <textarea name="palpation_findings" rows="3" placeholder="Tenderness, hypertonicity, restrictions, motion findings...">{{ visit_report["palpation_findings"] if visit_report else "" }}</textarea>
+        </div>
+        <div class="s-field">
+          <label>Assessment</label>
+          <textarea name="assessment" rows="3" placeholder="Clinical impression, drivers, contraindications, and case synthesis...">{{ visit_report["assessment"] if visit_report else "" }}</textarea>
+        </div>
+      </div>
+      <div class="s-fg">
+        <div class="s-field">
+          <label>Diagnosis / working impression</label>
+          <textarea name="diagnosis" rows="3" placeholder="One line per diagnosis or working impression.">{{ visit_report["diagnosis"] if visit_report else "" }}</textarea>
+        </div>
+        <div class="s-field">
+          <label>Imaging review</label>
+          <textarea name="imaging_review" rows="3" placeholder="Relevant X-ray or MRI review notes.">{{ visit_report["imaging_review"] if visit_report else "" }}</textarea>
+        </div>
+      </div>
+      <div class="check-row">
+        <input type="checkbox" name="xray_recommended" {% if visit_report and visit_report["xray_recommended"] %}checked{% endif %}>
+        <span class="check-copy">
+          <strong>X-ray recommended</strong>
+          <small>Mark when imaging is part of the plan or follow-up Report of Findings workflow.</small>
+        </span>
+      </div>
+      <div class="s-fg">
+        <div class="s-field">
+          <label>X-ray status</label>
+          <input type="text" name="xray_status" value="{{ visit_report['xray_status'] if visit_report else '' }}" placeholder="Booked / reviewed / not indicated">
+        </div>
+        <div class="s-field">
+          <label>X-ray regions</label>
+          <input type="text" name="xray_regions" value="{{ visit_report['xray_regions'] if visit_report else '' }}" placeholder="Cervical AP/lateral">
+        </div>
+      </div>
+      <div class="s-fg">
+        <div class="s-field">
+          <label>Care plan</label>
+          <textarea name="care_plan" rows="3" placeholder="Visit frequency, techniques, re-exam cadence, treatment focus...">{{ visit_report["care_plan"] if visit_report else "" }}</textarea>
+        </div>
+        <div class="s-field">
+          <label>Home care</label>
+          <textarea name="home_care" rows="3" placeholder="Exercises, walking, recovery, ergonomics, hydration...">{{ visit_report["home_care"] if visit_report else "" }}</textarea>
+        </div>
+      </div>
+      <div class="s-fg">
+        <div class="s-field">
+          <label>Follow-up plan</label>
+          <textarea name="follow_up_plan" rows="3" placeholder="Re-test plan, next appointment goals, imaging review, milestones...">{{ visit_report["follow_up_plan"] if visit_report else "" }}</textarea>
+        </div>
+        <div class="s-field">
+          <label>Wrap-up notes</label>
+          <textarea name="wrap_up_notes" rows="3" placeholder="What the patient was told before leaving and what happens next.">{{ visit_report["wrap_up_notes"] if visit_report else "" }}</textarea>
+        </div>
+      </div>
+      <div class="s-field s-full">
+        <label>Triangle / handoff</label>
+        <textarea name="triangle_handoff" rows="2" placeholder="Front desk booking, consent handoff, CA notes...">{{ visit_report["triangle_handoff"] if visit_report else "" }}</textarea>
+      </div>
+      <div class="s-field s-full">
+        <label>Patient-facing summary</label>
+        <textarea name="patient_summary" rows="3" placeholder="Plain-language explanation of what was found and what it means for the patient.">{{ visit_report["patient_summary"] if visit_report else "" }}</textarea>
+      </div>
+      <div class="s-fg">
+        <div class="s-field">
+          <label>Patient key findings</label>
+          <textarea name="patient_key_findings" rows="3" placeholder="One plain-language takeaway per line.">{{ visit_report["patient_key_findings"] if visit_report else "" }}</textarea>
+        </div>
+        <div class="s-field">
+          <label>Patient recommendations</label>
+          <textarea name="patient_recommendations" rows="3" placeholder="One clear recommendation per line.">{{ visit_report["patient_recommendations"] if visit_report else "" }}</textarea>
+        </div>
+      </div>
+    </div>
+
+    {# ── FORM ACTIONS ── #}
+    <div class="summit-actions">
+      <button type="submit" name="action" value="draft" class="s-btn s-btn-outline">Save draft</button>
+      <button type="submit" name="action" value="published" class="s-btn s-btn-primary">Publish to portal</button>
+    </div>
+  </form>
+
+<script>
+/* ── Section scroll ── */
+function scrollToSec(id, btn) {
+  document.querySelectorAll('.section-tablink').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById(id).scrollIntoView({ behavior: 'smooth', block: 'start' });
+  return false;
+}
+
+/* ── Goals ── */
+function addGoal() {
+  var t = prompt('Enter goal:');
+  if (!t) return;
+  var area = document.getElementById('goalsArea');
+  var btn = area.querySelector('.add-goal');
+  var d = document.createElement('div');
+  d.className = 'goal-tag';
+  d.innerHTML = t + '<button type="button" onclick="this.parentElement.remove();syncGoals()">×</button>';
+  area.insertBefore(d, btn);
+  syncGoals();
+}
+function syncGoals() {
+  var tags = document.querySelectorAll('#goalsArea .goal-tag');
+  var lines = [];
+  tags.forEach(function(t) { lines.push(t.textContent.replace('×', '').trim()); });
+  document.getElementById('goalsHidden').value = lines.join('\n');
+}
+
+/* ── Health indicator toggle ── */
+function toggleHI(id) { document.getElementById(id).classList.toggle('open'); }
+
+/* ── Health indicator scoring ── */
+function setR(id, val, lbl, sub, st) {
+  var el = document.getElementById(id);
+  el.className = 'hi-result ' + st;
+  el.innerHTML = '<div class="hi-result-val">' + val + '</div><div><div class="hi-result-lbl">' + lbl + '</div><div class="hi-result-sub">' + sub + '</div></div>';
+}
+function scoreGrip() {
+  var l = +document.querySelector('[name=grip_left_kg]').value;
+  var r = +document.querySelector('[name=grip_right_kg]').value;
+  if (!l && !r) return;
+  var mx = Math.max(l || 0, r || 0);
+  var s, lb;
+  if (mx >= 44) { s = 'hi-healthy'; lb = 'Good'; }
+  else if (mx >= 35) { s = 'hi-warning'; lb = 'Below Avg'; }
+  else { s = 'hi-concern'; lb = 'Low — Elevated Risk'; }
+  setR('r_grip', mx + 'kg', lb, 'Best hand · 5kg decrease = 16% increase mortality', s);
+}
+function scoreBal() {
+  var l = +document.querySelector('[name=balance_left_sec]').value;
+  var r = +document.querySelector('[name=balance_right_sec]').value;
+  if (!l && !r) return;
+  var w = Math.min(l || 0, r || 0);
+  var s = w >= 10 ? 'hi-healthy' : w >= 5 ? 'hi-warning' : 'hi-concern';
+  setR('r_bal', w + 's', s === 'hi-healthy' ? 'Healthy' : s === 'hi-warning' ? 'Below Avg' : 'Deficit', 'Weakest side · Asymmetry: ' + Math.abs((l || 0) - (r || 0)) + 's', s);
+}
+function scoreCS() {
+  var reps = +document.querySelector('[name=chair_stand_reps_30s]').value;
+  if (!reps && reps !== 0) return;
+  var s, lb;
+  if (reps >= 15) { s = 'hi-healthy'; lb = 'Excellent'; }
+  else if (reps >= 12) { s = 'hi-healthy'; lb = 'Good'; }
+  else if (reps >= 8) { s = 'hi-warning'; lb = 'Below Avg'; }
+  else { s = 'hi-concern'; lb = 'Fall Risk'; }
+  setR('r_cs', reps + ' reps', lb, 'in 30s · Fall risk at 7 or fewer', s);
+}
+function scoreGait() {
+  var t = +document.querySelector('[name=gait_speed_time_10m]').value;
+  if (!t) return;
+  var sp = (10 / t).toFixed(2);
+  var s, lb;
+  if (sp >= 1.2) { s = 'hi-healthy'; lb = 'Excellent'; }
+  else if (sp >= 1.0) { s = 'hi-healthy'; lb = 'Normal'; }
+  else if (sp >= 0.8) { s = 'hi-warning'; lb = 'Below Avg'; }
+  else { s = 'hi-concern'; lb = 'Slow Gait — High Risk'; }
+  setR('r_gait', sp + ' m/s', lb, '10m in ' + t + 's', s);
+}
+function scoreSRT() {
+  var si = +document.querySelector('[name=srt_sit_score]').value;
+  var ri = +document.querySelector('[name=srt_rise_score]').value;
+  if (!si && si !== 0 && !ri && ri !== 0) return;
+  var tot = (si || 0) + (ri || 0);
+  var s, lb;
+  if (tot >= 8) { s = 'hi-healthy'; lb = 'Excellent'; }
+  else if (tot >= 6) { s = 'hi-healthy'; lb = 'Good'; }
+  else if (tot >= 3.5) { s = 'hi-warning'; lb = 'Below Avg'; }
+  else { s = 'hi-concern'; lb = 'High Risk'; }
+  setR('r_srt', tot + '/10', lb, 'Sit:' + (si || 0) + ' + Rise:' + (ri || 0), s);
+}
+function scoreRHR() {
+  var v = +document.querySelector('[name=resting_hr_bpm]').value;
+  if (!v) return;
+  var s, lb;
+  if (v < 60) { s = 'hi-healthy'; lb = 'Athletic'; }
+  else if (v <= 70) { s = 'hi-healthy'; lb = 'Good'; }
+  else if (v <= 80) { s = 'hi-warning'; lb = 'Average'; }
+  else { s = 'hi-concern'; lb = 'Elevated CV Risk'; }
+  setR('r_rhr', v + ' bpm', lb, '10 bpm increase = 10-20% increase mortality', s);
+}
+function scoreVO2() {
+  var age = +document.querySelector('[name=vo2_age]').value;
+  var rhr = +document.querySelector('[name=vo2_resting_hr]').value;
+  if (!age || !rhr) return;
+  var mhr = 208 - (0.7 * age);
+  var vo2 = (15.3 * (mhr / rhr)).toFixed(1);
+  var s, lb;
+  if (vo2 >= 46) { s = 'hi-healthy'; lb = 'Excellent'; }
+  else if (vo2 >= 38) { s = 'hi-healthy'; lb = 'Good'; }
+  else if (vo2 >= 30) { s = 'hi-warning'; lb = 'Average'; }
+  else { s = 'hi-concern'; lb = 'Low Fitness'; }
+  setR('r_vo2', vo2, lb, 'ml/kg/min (est)', s);
+}
+function scoreFTF() {
+  var el = document.querySelector('[name=fingertip_floor_cm]');
+  if (el.value === '') return;
+  var d = +el.value;
+  var s, lb;
+  if (d <= 0) { s = 'hi-healthy'; lb = 'Excellent'; }
+  else if (d <= 5) { s = 'hi-healthy'; lb = 'Normal'; }
+  else if (d <= 15) { s = 'hi-warning'; lb = 'Below Avg'; }
+  else { s = 'hi-concern'; lb = 'Restricted'; }
+  setR('r_ftf', d + 'cm', lb, 'Healthy: less than 5 cm', s);
+}
+
+/* ── ROM slider sync ── */
+function syncROM(slider) {
+  var row = slider.closest('.rom-row');
+  row.querySelector('.rom-val').textContent = slider.value + '°';
+  row.querySelector('.rom-hidden').value = slider.value;
+}
+
+/* ── Spine click ── */
+var spineColors = ['#e2e8f0', '#93c5fd', '#fbbf24', '#fb923c', '#ef4444', '#991b1b'];
+function cycleSpine(bar) {
+  var sel = bar.querySelector('select');
+  var v = (+sel.value + 1) % 6;
+  sel.value = v;
+  var fill = bar.querySelector('.spine-fill');
+  fill.style.width = (v / 5 * 100) + '%';
+  fill.style.background = spineColors[v];
+}
+
+/* ── Ortho count ── */
+function updateOrthoCount(regionKey) {
+  var region = document.getElementById('ortho_' + regionKey);
+  var selects = region.querySelectorAll('.ortho-select');
+  var done = 0;
+  selects.forEach(function(s) { if (s.value) done++; });
+  region.querySelector('.ortho-region-count').textContent = done + '/' + selects.length;
+}
+
+/* ── Weight distribution ── */
+function updateWD() {
+  var l = parseFloat(document.getElementById('wdLeft').value) || 0;
+  var r = parseFloat(document.getElementById('wdRight').value) || 0;
+  var d = Math.abs(l - r).toFixed(1);
+  document.getElementById('wdDiff').innerHTML = '<span style="color:' + (d < 2 ? 'var(--s-green)' : 'var(--s-red)') + ';">' + d + ' kg</span>';
+}
+
+/* ── Leg length ── */
+function updateLD() {
+  var l = parseFloat(document.getElementById('legL').value) || 0;
+  var r = parseFloat(document.getElementById('legR').value) || 0;
+  document.getElementById('ldDiff').innerHTML = 'Difference: <span class="val">' + Math.abs(l - r).toFixed(1) + '</span>';
+}
+
+/* ── Init: score existing values on load ── */
+document.addEventListener('DOMContentLoaded', function() {
+  scoreGrip(); scoreBal(); scoreCS(); scoreGait(); scoreSRT(); scoreRHR(); scoreVO2(); scoreFTF();
+  updateWD(); updateLD();
+});
+</script>
 {% endblock %}
