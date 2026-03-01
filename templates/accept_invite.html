@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block title %}Accept Invitation · Life Chiropractic{% endblock %}
+{% block body_class %}auth-body{% endblock %}
+{% block shell_class %}auth-shell{% endblock %}
+
+{% block content %}
+  <section class="auth-card">
+    {% if invalid %}
+      <div class="auth-eyebrow">Invitation unavailable</div>
+      <h1>This invite is no longer valid.</h1>
+      <p>The invitation may have expired or already been used. Contact the clinic if you need a fresh onboarding link.</p>
+      <div class="panel-actions">
+        <a class="secondary-button" href="{{ url_for('main.login') }}">Back to sign in</a>
+      </div>
+    {% else %}
+      <div class="auth-eyebrow">Clinic invitation</div>
+      <h1>Finish setting up your account</h1>
+      <p>This invite is for {{ invitation["first_name"] }} {{ invitation["last_name"] }} at {{ invitation["email"] }}{% if invitation["appointment_at"] %}, with an appointment on {{ invitation["appointment_at"].replace("T", " ") }}{% endif %}.</p>
+      {% if invitation["note"] %}
+        <div class="info-box">{{ invitation["note"] }}</div>
+      {% endif %}
+      <form method="post" class="auth-form">
+        <label>
+          <span>Create password</span>
+          <input type="password" name="password" autocomplete="new-password" minlength="8" required>
+        </label>
+        <label>
+          <span>Confirm password</span>
+          <input type="password" name="confirm_password" autocomplete="new-password" minlength="8" required>
+        </label>
+        <button type="submit" class="primary-button">Accept invitation</button>
+      </form>
+    {% endif %}
+  </section>
+{% endblock %}

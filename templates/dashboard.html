@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard · Life Chiropractic{% endblock %}
+
+{% block content %}
+  <section class="hero-panel">
+    <div>
+      <div class="auth-eyebrow">Client dashboard</div>
+      <h1>{{ g.user["first_name"] }}, your onboarding is ready.</h1>
+      <p>Start your intake, save a draft anytime, and return to view your baseline results after submission.</p>
+    </div>
+    <div class="status-card">
+      <span>Account email</span>
+      <strong>{{ g.user["email"] }}</strong>
+      <small>Secure local portal session</small>
+      {% if invitation and invitation["appointment_at"] %}
+        <small>Appointment scheduled: {{ invitation["appointment_at"].replace("T", " ") }}</small>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="dashboard-grid">
+    <article class="panel">
+      <div class="panel-label">Intake status</div>
+      {% if submission %}
+        <h2>{{ "Submitted" if submission["status"] == "submitted" else "Draft in progress" }}</h2>
+        <p>Last updated {{ submission["updated_at"][:10] }}.</p>
+        {% if visit_report and visit_report["report_status"] == "published" %}
+          <div class="info-box">Your chiropractor has published your initial consultation and physical exam results to the portal.</div>
+        {% endif %}
+        <div class="panel-actions">
+          <a class="primary-button" href="{{ url_for('main.intake') }}">{{ "Review intake" if submission["status"] == "submitted" else "Continue intake" }}</a>
+          <a class="secondary-button" href="{{ url_for('main.results') }}">View results</a>
+        </div>
+      {% else %}
+        <h2>Not started</h2>
+        <p>Your account is active, but the onboarding form has not been submitted yet.</p>
+        <div class="panel-actions">
+          <a class="primary-button" href="{{ url_for('main.intake') }}">Start intake</a>
+        </div>
+      {% endif %}
+    </article>
+
+    <article class="panel">
+      {% if invitation %}
+        <div class="panel-label">Appointment link</div>
+        <h2>{{ invitation["first_name"] }} {{ invitation["last_name"] }}</h2>
+        <p>Your account was linked to a clinic invitation{% if invitation["appointment_at"] %} for {{ invitation["appointment_at"].replace("T", " ") }}{% endif %}.</p>
+        {% if invitation["note"] %}
+          <div class="info-box">{{ invitation["note"] }}</div>
+        {% endif %}
+      {% else %}
+        <div class="panel-label">What this portal includes</div>
+        <ul class="check-list">
+          <li>Secure email/password client sign-in</li>
+          <li>Multi-step intake form with local persistence</li>
+          <li>Consent capture and digital signature</li>
+          <li>Initial consultation and physical exam results after publication</li>
+        </ul>
+      {% endif %}
+    </article>
+  </section>
+{% endblock %}

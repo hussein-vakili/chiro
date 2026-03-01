@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+
+{% block title %}New Invitation · Life Chiropractic{% endblock %}
+
+{% block content %}
+  <section class="hero-panel">
+    <div>
+      <div class="auth-eyebrow">Clinician workflow</div>
+      <h1>Create a patient onboarding invite.</h1>
+      <p>Generate an appointment-linked signup URL for a new client. The accepted invite is tied back to the patient record automatically.</p>
+    </div>
+    <div class="status-card">
+      <span>Invite policy</span>
+      <strong>14-day expiry</strong>
+      <small>Local MVP link generation</small>
+    </div>
+  </section>
+
+  <section class="dashboard-grid">
+    <article class="panel">
+      <div class="panel-label">New invite</div>
+      <form method="post" class="auth-form">
+        <div class="split">
+          <label>
+            <span>First name</span>
+            <input type="text" name="first_name" required>
+          </label>
+          <label>
+            <span>Last name</span>
+            <input type="text" name="last_name" required>
+          </label>
+        </div>
+        <label>
+          <span>Email</span>
+          <input type="email" name="email" required>
+        </label>
+        <label>
+          <span>Appointment date and time</span>
+          <input type="datetime-local" name="appointment_at">
+        </label>
+        <label>
+          <span>Internal note for the patient</span>
+          <textarea name="note" rows="4" placeholder="Arrival instructions, paperwork reminders, clinic-specific prep..."></textarea>
+        </label>
+        <button type="submit" class="primary-button">Create invitation</button>
+      </form>
+    </article>
+
+    <article class="panel">
+      <div class="panel-label">Latest invite</div>
+      {% if created_invitation %}
+        <h2>{{ created_invitation["first_name"] }} {{ created_invitation["last_name"] }}</h2>
+        <p>Copy this link into your email or SMS workflow.</p>
+        <div class="info-box">
+          <strong>Invite URL</strong><br>
+          <a href="{{ url_for('main.accept_invite', token=created_invitation['token'], _external=True) }}">{{ url_for('main.accept_invite', token=created_invitation['token'], _external=True) }}</a>
+        </div>
+        <ul class="check-list">
+          <li>Email: {{ created_invitation["email"] }}</li>
+          <li>Appointment: {{ created_invitation["appointment_at"].replace("T", " ") if created_invitation["appointment_at"] else "Not set" }}</li>
+          <li>Expires: {{ created_invitation["expires_at"][:10] }}</li>
+        </ul>
+      {% else %}
+        <h2>No invite created yet</h2>
+        <p>Once you submit the form, the generated onboarding link will appear here.</p>
+      {% endif %}
+    </article>
+  </section>
+{% endblock %}

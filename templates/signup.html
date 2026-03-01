@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block title %}Create Account · Life Chiropractic{% endblock %}
+{% block body_class %}auth-body{% endblock %}
+{% block shell_class %}auth-shell{% endblock %}
+
+{% block content %}
+  <section class="auth-card">
+    <div class="auth-eyebrow">New client</div>
+    <h1>Create your secure account</h1>
+    <p>This account holds your intake, consent, and future visit summaries for the clinic. If the clinic sent you an invite link, use that link instead so your appointment is attached automatically.</p>
+    <form method="post" class="auth-form">
+      <div class="split">
+        <label>
+          <span>First name</span>
+          <input type="text" name="first_name" autocomplete="given-name" required>
+        </label>
+        <label>
+          <span>Last name</span>
+          <input type="text" name="last_name" autocomplete="family-name" required>
+        </label>
+      </div>
+      <label>
+        <span>Email</span>
+        <input type="email" name="email" autocomplete="email" required>
+      </label>
+      <label>
+        <span>Password</span>
+        <input type="password" name="password" autocomplete="new-password" minlength="8" required>
+      </label>
+      <button type="submit" class="primary-button">Create account</button>
+    </form>
+    <div class="auth-footer">
+      <span>Already have an account?</span>
+      <a href="{{ url_for('main.login') }}">Sign in</a>
+    </div>
+  </section>
+{% endblock %}

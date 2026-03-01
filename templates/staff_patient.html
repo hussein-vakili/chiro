@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+
+{% block title %}Patient Detail · Life Chiropractic{% endblock %}
+
+{% block content %}
+  <section class="hero-panel">
+    <div>
+      <div class="auth-eyebrow">Clinician review</div>
+      <h1>{{ summary.full_name }}</h1>
+      <p>
+        {% if summary.age %}{{ summary.age }} years old · {% endif %}
+        {{ summary.patient.sex or "Sex not provided" }}
+        {% if summary.appointment_at %} · Appointment {{ summary.appointment_at }}{% endif %}
+      </p>
+    </div>
+    <div class="status-card">
+      <span>Intake status</span>
+      <strong>{{ summary.status.replace("_", " ") }}</strong>
+      <small>Updated {{ summary.updated_at or "not yet" }}</small>
+      <small>
+        Initial consult:
+        {{ summary.visit_report.status.replace("_", " ") if summary.visit_report else "not started" }}
+      </small>
+    </div>
+  </section>
+
+  <nav class="subnav" aria-label="Patient sections">
+    <a class="subnav-link {% if active_staff_tab == 'overview' %}active{% endif %}" href="{{ url_for('main.staff_patient_detail', user_id=patient['id']) }}">Overview</a>
+    <a class="subnav-link {% if active_staff_tab == 'assessment' %}active{% endif %}" href="{{ url_for('main.staff_patient_assessment', user_id=patient['id']) }}">Summit Assessment</a>
+  </nav>
+
+  <section class="dashboard-grid">
+    <article class="panel">
+      <div class="panel-label">Clinical snapshot</div>
+      {% if summary.flags %}
+        <div class="badge-stack">
+          {% for flag in summary.flags %}
+            <div class="danger-chip">{{ flag }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      <div class="section-block">
+        <h3>Chief complaint</h3>
+        <p>{{ summary.reason.chiefComplaint or "Not submitted yet." }}</p>
+      </div>
+
+      <div class="section-block">
+        <h3>Pain areas</h3>
+        <div class="tag-cloud">
+          {% for item in summary.pain.areas %}
+            <span class="mini-tag mini-tag-danger">{{ item }}</span>
+          {% else %}
+            <span class="muted-copy">No pain areas selected.</span>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Medical history</h3>
+        <div class="tag-cloud">
+          {% for item in summary.medical.conditions %}
+            <span class="mini-tag">{{ item }}</span>
+          {% else %}
+            <span class="muted-copy">No conditions listed.</span>
+          {% endfor %}
+        </div>
+        {% if summary.medical.previousInjuries and summary.medical.previousInjuries.details %}
+          <p>{{ summary.medical.previousInjuries.details }}</p>
+        {% endif %}
+      </div>
+
+      <div class="section-block">
+        <h3>Outcome scores</h3>
+        {% if summary.questionnaires %}
+          <div class="invite-stack">
+            {% for item in summary.questionnaires %}
+              <div class="mini-card">
+                <strong>{{ item.label }}</strong>
+                <small>{{ item.display_value }} · {{ item.interpretation }}</small>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p>No questionnaire scores saved yet.</p>
+        {% endif %}
+      </div>
+
+      <div class="section-block">
+        <h3>Lifestyle</h3>
+        <div class="detail-grid">
+          <div><strong>Work:</strong> {{ summary.lifestyle.occupation or "Not provided" }}{% if summary.lifestyle.workType %} · {{ summary.lifestyle.workType }}{% endif %}</div>
+          <div><strong>Sleep:</strong> {{ summary.lifestyle.sleepHours or "Not provided" }}{% if summary.lifestyle.sleepQuality %} · {{ summary.lifestyle.sleepQuality }}{% endif %}</div>
+          <div><strong>Stress:</strong> {{ summary.lifestyle.stressLevel if summary.lifestyle.stressLevel is not none else "—" }}/10</div>
+          <div><strong>Habits:</strong> {{ summary.habits|join(", ") if summary.habits else "None flagged" }}</div>
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Published patient summary</h3>
+        {% if summary.visit_report and summary.visit_report.status == "published" %}
+          <p>{{ summary.visit_report.patient_summary }}</p>
+          {% if summary.visit_report.patient_key_findings %}
+            <div class="tag-cloud" style="margin-top:12px">
+              {% for item in summary.visit_report.patient_key_findings %}
+                <span class="mini-tag">{{ item }}</span>
+              {% endfor %}
+            </div>
+          {% endif %}
+        {% elif summary.visit_report %}
+          <p>The initial consult report exists but is still a draft and not visible in the patient portal.</p>
+        {% else %}
+          <p>No initial consult report has been entered yet.</p>
+        {% endif %}
+      </div>
+
+      <div class="section-block">
+        <h3>Objective measures</h3>
+        {% if summary.visit_report and summary.visit_report.objective_metrics %}
+          <div class="metric-grid">
+            {% for metric in summary.visit_report.objective_metrics %}
+              <div class="metric-card">
+                <span>{{ metric.label }}</span>
+                <strong>{{ metric.value }}</strong>
+                <small>Captured from the Day 1 consultation and physical exam.</small>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p>No objective testing has been entered yet.</p>
+        {% endif %}
+      </div>
+    </article>
+
+    <article class="panel">
+      <div class="panel-label">Summit complete assessment</div>
+      <h2>Chiropractor assessment workspace</h2>
+      <p>
+        The full `Summit complete assessment (2)` workflow now lives on its own page so staff can complete the
+        assessment separately from the intake overview.
+      </p>
+      <div class="consult-summary" style="margin-top:16px">
+        <p>
+          Open the dedicated assessment page to record health indicators, functional tests, ROM, orthopedic findings,
+          spine mapping, and the publishable patient summary.
+        </p>
+      </div>
+      <div class="metric-grid" style="margin-top:18px">
+        <div class="metric-card">
+          <span>Assessment status</span>
+          <strong>{{ summary.visit_report.status.replace("_", " ") if summary.visit_report else "Not started" }}</strong>
+          <small>{% if summary.visit_report %}Last saved {{ summary.visit_report.visit_date or "recently" }}{% else %}No Summit assessment saved yet.{% endif %}</small>
+        </div>
+        <div class="metric-card">
+          <span>Vital indicators</span>
+          <strong>{{ summary.visit_report.health_indicator_summary.healthy_count if summary.visit_report else 0 }}/{{ summary.visit_report.health_indicator_summary.tested_count if summary.visit_report and summary.visit_report.health_indicator_summary.tested_count else 0 }}</strong>
+          <small>Healthy markers from the latest Summit assessment.</small>
+        </div>
+        <div class="metric-card">
+          <span>Objective findings</span>
+          <strong>{{ summary.visit_report.objective_metrics|length if summary.visit_report else 0 }}</strong>
+          <small>Published metrics available for the patient portal.</small>
+        </div>
+      </div>
+      <div class="panel-actions">
+        <a class="primary-button" href="{{ url_for('main.staff_patient_assessment', user_id=patient['id']) }}">Open Summit Assessment</a>
+        {% if summary.visit_report and summary.visit_report.status == "published" %}
+          <span class="secondary-button" style="cursor:default;opacity:.7">Published in patient portal</span>
+        {% endif %}
+      </div>
+    </article>
+  </section>
+
+  <section class="dashboard-grid" style="grid-template-columns:1fr">
+    <article class="panel">
+      <div class="panel-label">Private clinician notes</div>
+      <form method="post" action="{{ url_for('main.save_staff_patient_notes', user_id=patient['id']) }}" class="auth-form">
+        <label>
+          <span>Exam findings</span>
+          <textarea name="exam_findings" rows="4" placeholder="Posture, ROM, orthopedic tests, palpation findings...">{{ notes["exam_findings"] if notes else "" }}</textarea>
+        </label>
+        <label>
+          <span>Assessment</span>
+          <textarea name="assessment" rows="4" placeholder="Clinical impression, primary drivers, red/green flags...">{{ notes["assessment"] if notes else "" }}</textarea>
+        </label>
+        <label>
+          <span>Care plan</span>
+          <textarea name="care_plan" rows="4" placeholder="Adjustment plan, frequency, re-eval timing, home care...">{{ notes["care_plan"] if notes else "" }}</textarea>
+        </label>
+        <label>
+          <span>Next visit</span>
+          <input type="datetime-local" name="next_visit_at" value="{{ notes['next_visit_at'] if notes and notes['next_visit_at'] else '' }}">
+        </label>
+        <label>
+          <span>Internal note</span>
+          <textarea name="internal_notes" rows="4" placeholder="Communication preferences, admin notes, follow-up items...">{{ notes["internal_notes"] if notes else "" }}</textarea>
+        </label>
+        <button type="submit" class="primary-button">Save notes</button>
+      </form>
+    </article>
+  </section>
+{% endblock %}

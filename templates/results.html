@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Life Chiropractic — My Results</title>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;0,6..72,700;1,6..72,400&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#1c1917;--ink2:#44403c;--ink3:#78716c;--ink4:#a8a29e;--ink5:#d6d3d1;
+  --bg:#fdfcfa;--bg2:#f5f3f0;--card:#ffffff;
+  --bdr:#e7e5e4;--bdr-l:#f0eeec;
+  --life:#3b7a57;--life-l:#e8f5e9;--life-d:#2d5e43;--life-g:linear-gradient(135deg,#3b7a57,#5fa67a);
+  --warm:#b8860b;--warm-l:#fef9ee;
+  --sky:#2563eb;--sky-l:#dbeafe;
+  --rose:#be123c;--rose-l:#ffe4e6;
+  --amber:#d97706;--amber-l:#fef3c7;
+  --plum:#7c3aed;--plum-l:#ede9fe;
+  --teal:#0d9488;--teal-l:#ccfbf1;
+  --r:18px;--r-sm:12px;
+  --sh:0 1px 3px rgba(0,0,0,.03),0 4px 16px rgba(0,0,0,.03);
+  --sh-md:0 2px 6px rgba(0,0,0,.04),0 10px 36px rgba(0,0,0,.06);
+  --font:'Outfit',system-ui,sans-serif;
+  --serif:'Newsreader',Georgia,serif;
+  --ease:cubic-bezier(.22,1,.36,1);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:var(--font);background:radial-gradient(circle at top right,rgba(59,122,87,.08),transparent 20%),var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;min-height:100vh}
+::selection{background:var(--life-l);color:var(--life-d)}
+a{text-decoration:none;color:inherit}
+
+.portal-bar{position:sticky;top:0;z-index:90;background:rgba(253,252,250,.95);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid var(--bdr-l)}
+.portal-in{max-width:980px;margin:0 auto;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;gap:16px}
+.portal-brand{display:flex;align-items:center;gap:12px}
+.portal-mark{width:38px;height:38px;border-radius:12px;background:var(--life-g);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;box-shadow:0 10px 22px rgba(59,122,87,.18)}
+.portal-copy strong{display:block;font-size:15px}
+.portal-copy small{font-size:11px;color:var(--ink4);text-transform:uppercase;letter-spacing:.12em}
+.portal-nav{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.portal-nav a,.portal-nav button{font:500 13px var(--font);background:none;border:none;color:var(--ink3);cursor:pointer}
+.portal-nav a:hover,.portal-nav button:hover{color:var(--ink)}
+.portal-nav form{margin:0}
+
+.shell{max-width:920px;margin:0 auto;padding:0 20px 80px}
+.tab-bar{position:sticky;top:67px;z-index:50;background:rgba(253,252,250,.92);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid var(--bdr-l);padding:0;overflow-x:auto;-webkit-overflow-scrolling:touch;display:flex}
+.tab-bar::-webkit-scrollbar{display:none}
+.tab{padding:14px 20px;font-size:12.5px;font-weight:600;color:var(--ink4);cursor:pointer;white-space:nowrap;border-bottom:2.5px solid transparent;transition:all .2s;flex-shrink:0}
+.tab:hover{color:var(--ink3)}
+.tab.on{color:var(--life);border-bottom-color:var(--life)}
+.sec{display:none;animation:fadeUp .4s var(--ease)}
+.sec.on{display:block}
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+
+.hero{background:var(--life-g);border-radius:0 0 28px 28px;padding:36px 28px 28px;color:#fff;position:relative;overflow:hidden;margin-bottom:24px;box-shadow:var(--sh-md)}
+.hero::before{content:'';position:absolute;top:-60px;right:-60px;width:210px;height:210px;background:rgba(255,255,255,.06);border-radius:50%}
+.hero::after{content:'';position:absolute;bottom:-40px;left:15%;width:180px;height:180px;background:rgba(255,255,255,.04);border-radius:50%}
+.hero-top{display:flex;align-items:center;gap:14px;margin-bottom:18px;position:relative;z-index:1}
+.hero-avatar{width:58px;height:58px;border-radius:50%;background:rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:600;font-family:var(--serif);border:2px solid rgba(255,255,255,.25)}
+.hero-name{font-family:var(--serif);font-size:30px;font-weight:600;line-height:1.05}
+.hero-meta{font-size:13px;opacity:.84;margin-top:4px}
+.hero-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;position:relative;z-index:1}
+.hero-stat{background:rgba(255,255,255,.11);border-radius:var(--r-sm);padding:12px;text-align:center;backdrop-filter:blur(4px)}
+.hero-stat-n{font-family:var(--serif);font-size:22px;font-weight:600}
+.hero-stat-l{font-size:10px;opacity:.72;text-transform:uppercase;letter-spacing:.5px;margin-top:2px}
+
+.card{background:var(--card);border:1px solid var(--bdr);border-radius:var(--r);padding:22px;margin-bottom:14px;box-shadow:var(--sh)}
+.card-t{font-size:14px;font-weight:600;color:var(--ink);margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.card-sub{font-size:12px;color:var(--ink4);margin-top:8px}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+
+.tag-list{display:flex;flex-wrap:wrap;gap:6px}
+.tag{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;font-size:11px;font-weight:600}
+.tag-g{background:var(--life-l);color:var(--life-d)}
+.tag-r{background:var(--rose-l);color:var(--rose)}
+.tag-a{background:var(--amber-l);color:var(--amber)}
+.tag-b{background:var(--sky-l);color:var(--sky)}
+.tag-p{background:var(--plum-l);color:var(--plum)}
+.tag-t{background:var(--teal-l);color:var(--teal)}
+
+.ring-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+.ring-card{background:var(--card);border:1px solid var(--bdr);border-radius:var(--r);padding:20px 16px;text-align:center;box-shadow:var(--sh)}
+.ring-wrap{width:100px;height:100px;margin:0 auto 10px;position:relative}
+.ring-wrap svg{transform:rotate(-90deg)}
+.ring-bg{fill:none;stroke:var(--bdr);stroke-width:8}
+.ring-fg{fill:none;stroke-width:8;stroke-linecap:round}
+.ring-val{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:var(--serif);font-size:22px;font-weight:600}
+.ring-label{font-size:12px;font-weight:600;color:var(--ink2)}
+.ring-interp{font-size:11px;color:var(--ink4);margin-top:4px}
+
+.kv{display:grid;gap:10px}
+.kv-row{display:flex;justify-content:space-between;gap:14px;padding:10px 0;border-bottom:1px solid var(--bdr-l);font-size:13px}
+.kv-row:last-child{border-bottom:none}
+.kv-k{color:var(--ink3)}
+.kv-v{color:var(--ink);font-weight:500;text-align:right}
+
+.score-strip{display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:var(--r-sm);margin-bottom:10px}
+.score-big{font-family:var(--serif);font-size:28px;font-weight:600}
+.score-copy{flex:1}
+.score-copy strong{display:block;font-size:13px}
+.score-copy span{display:block;font-size:12px;color:var(--ink3);margin-top:2px}
+.score-bar{height:6px;border-radius:6px;background:rgba(28,25,23,.08);margin-top:8px;overflow:hidden}
+.score-fill{height:100%;border-radius:6px}
+
+.note-box{background:var(--warm-l);border:1px solid #e8d5a3;border-radius:var(--r-sm);padding:14px 16px;font-size:13px;color:var(--warm);line-height:1.6;margin-bottom:14px}
+.timeline{display:grid;gap:10px}
+.timeline-item{display:flex;gap:12px;padding:14px;border-radius:var(--r-sm);background:var(--bg2);border:1px solid var(--bdr-l)}
+.timeline-dot{width:26px;height:26px;border-radius:50%;background:var(--life-l);color:var(--life);display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0}
+.timeline-item p{font-size:13px;color:var(--ink2);line-height:1.6}
+
+.status-pill{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.status-pill.submitted{background:var(--life-l);color:var(--life)}
+.status-pill.draft{background:var(--amber-l);color:var(--amber)}
+.status-pill.published{background:var(--sky-l);color:var(--sky)}
+
+.tone-life{color:var(--life)}
+.tone-life-bg{background:var(--life-l)}
+.tone-amber{color:var(--amber)}
+.tone-amber-bg{background:var(--amber-l)}
+.tone-rose{color:var(--rose)}
+.tone-rose-bg{background:var(--rose-l)}
+.tone-sky{color:var(--sky)}
+.tone-sky-bg{background:var(--sky-l)}
+.tone-plum{color:var(--plum)}
+.tone-plum-bg{background:var(--plum-l)}
+
+.empty{text-align:center;padding:34px;color:var(--ink4);font-size:13px}
+.actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:18px}
+.btn{display:inline-flex;align-items:center;justify-content:center;padding:14px 20px;border-radius:999px;font:600 14px var(--font);border:none;cursor:pointer}
+.btn-pri{background:var(--life-g);color:#fff;box-shadow:0 14px 24px rgba(59,122,87,.2)}
+.btn-sec{background:#fff;color:var(--ink);border:1px solid var(--bdr)}
+
+@media(max-width:700px){
+  .portal-in{flex-direction:column;align-items:flex-start}
+  .tab-bar{top:103px}
+  .hero-stats,.grid-2,.grid-3{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<div class="portal-bar">
+  <div class="portal-in">
+    <a class="portal-brand" href="{{ url_for('main.dashboard') }}">
+      <span class="portal-mark">LC</span>
+      <span class="portal-copy">
+        <strong>Life Chiropractic</strong>
+        <small>Client Results</small>
+      </span>
+    </a>
+    <div class="portal-nav">
+      <a href="{{ url_for('main.dashboard') }}">Dashboard</a>
+      <a href="{{ url_for('main.intake') }}">Edit intake</a>
+      <form method="post" action="{{ url_for('main.logout') }}">
+        <button type="submit">Log out</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="tab-bar" id="tabBar">
+  <div class="tab on" onclick="showTab(0)">Overview</div>
+  <div class="tab" onclick="showTab(1)">Symptoms</div>
+  <div class="tab" onclick="showTab(2)">Outcome Scores</div>
+  <div class="tab" onclick="showTab(3)">Lifestyle</div>
+  <div class="tab" onclick="showTab(4)">Exam Results</div>
+  <div class="tab" onclick="showTab(5)">Care Plan</div>
+  <div class="tab" onclick="showTab(6)">Next Steps</div>
+</div>
+
+<div class="shell">
+
+<div class="sec on" id="t0">
+  <div class="hero">
+    <div class="hero-top">
+      <div class="hero-avatar">{{ summary.initials }}</div>
+      <div>
+        <div class="hero-name">{{ summary.full_name }}</div>
+        <div class="hero-meta">
+          {% if summary.age %}{{ summary.age }} years old · {% endif %}
+          {{ summary.patient.sex or "Sex not provided" }} · Updated {{ summary.updated_at or "today" }}
+        </div>
+      </div>
+    </div>
+    <div class="hero-stats">
+      <div class="hero-stat"><div class="hero-stat-n">{{ summary.pain.currentLevel if summary.pain.currentLevel is not none else "—" }}/10</div><div class="hero-stat-l">Current Pain</div></div>
+      <div class="hero-stat"><div class="hero-stat-n">{{ summary.pain.worstLevel if summary.pain.worstLevel is not none else "—" }}/10</div><div class="hero-stat-l">Worst Pain</div></div>
+      <div class="hero-stat"><div class="hero-stat-n">{{ summary.goals.commitmentLevel or "—" }}/10</div><div class="hero-stat-l">Commitment</div></div>
+      <div class="hero-stat">
+        <div class="hero-stat-n">
+          {{ summary.visit_report.objective_metrics|length if summary.visit_report and summary.visit_report.objective_metrics else summary.questionnaires|length }}
+        </div>
+        <div class="hero-stat-l">{{ "Objective Checks" if summary.visit_report and summary.visit_report.objective_metrics else "Outcome Tools" }}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-t">Chief Complaint</div>
+      <div style="font-family:var(--serif);font-size:16px;font-style:italic;color:var(--ink2);line-height:1.75;padding:4px 0">
+        {% if summary.reason.chiefComplaint %}
+          "{{ summary.reason.chiefComplaint }}"
+        {% else %}
+          No chief complaint has been recorded yet.
+        {% endif %}
+      </div>
+      {% if summary.reason_tags %}
+        <div class="tag-list" style="margin-top:12px">
+          {% for tag in summary.reason_tags %}
+            <span class="tag tag-g">{{ tag }}</span>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <div class="card-t">Portal Status</div>
+      <div class="status-pill {{ summary.status }}">{{ "Submitted" if summary.status == "submitted" else "Draft" }}</div>
+      <div class="kv" style="margin-top:14px">
+        <div class="kv-row"><span class="kv-k">Signed consent</span><span class="kv-v">{{ "Yes" if summary.consent.signature else "Not yet" }}</span></div>
+        <div class="kv-row"><span class="kv-k">Submitted</span><span class="kv-v">{{ summary.submitted_at or "Not recorded" }}</span></div>
+        <div class="kv-row"><span class="kv-k">Initial consult</span><span class="kv-v">{{ summary.visit_report.visit_date if summary.visit_report else "Not published yet" }}</span></div>
+        <div class="kv-row"><span class="kv-k">Phone</span><span class="kv-v">{{ summary.patient.phone or "Not provided" }}</span></div>
+        <div class="kv-row"><span class="kv-k">Email</span><span class="kv-v">{{ summary.patient.email }}</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-t">Your Goals</div>
+    {% if summary.goal_tags %}
+      <div class="tag-list" style="margin-bottom:12px">
+        {% for goal in summary.goal_tags %}
+          <span class="tag tag-g">{{ goal }}</span>
+        {% endfor %}
+      </div>
+    {% endif %}
+    <div style="font-size:13px;color:var(--ink2);line-height:1.7;padding:14px 16px;background:var(--bg2);border-radius:var(--r-sm)">
+      <strong>Primary activity goal:</strong>
+      {{ summary.goals.activityGoal or "Not provided yet." }}
+    </div>
+    {% if summary.goals.additionalNotes %}
+      <div class="card-sub">Additional note: {{ summary.goals.additionalNotes }}</div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <div class="card-t">Summit Assessment Status</div>
+    {% if summary.visit_report %}
+      <div class="status-pill published">Published</div>
+      <div class="card-sub">Assessment completed {{ summary.visit_report.visit_date }} and published to your portal.</div>
+      <div style="font-size:13px;color:var(--ink2);line-height:1.7;padding:14px 16px;background:var(--bg2);border-radius:var(--r-sm);margin-top:12px">
+        {{ summary.visit_report.patient_summary }}
+      </div>
+      {% if summary.visit_report.objective_metrics %}
+        <div class="tag-list" style="margin-top:12px">
+          {% for metric in summary.visit_report.objective_metrics %}
+            <span class="tag tag-b">{{ metric.label }}: {{ metric.value }}</span>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% else %}
+      <div class="note-box" style="margin-top:12px">
+        Your intake is complete. After your chiropractor finishes the initial consultation and physical exam, the clinical findings and care plan will appear here.
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="sec" id="t1">
+  <div style="margin:24px 0 16px">
+    <h2 style="font-family:var(--serif);font-size:24px;font-weight:600">Symptoms & Pain Snapshot</h2>
+    <p style="font-size:13px;color:var(--ink3);margin-top:4px">This section is generated from your intake and updates whenever you edit your responses.</p>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-t">Pain Locations</div>
+      {% if summary.pain_areas %}
+        <div class="tag-list">
+          {% for area in summary.pain_areas %}
+            <span class="tag tag-r">{{ area }}</span>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="empty">No pain areas selected yet.</div>
+      {% endif %}
+    </div>
+    <div class="card">
+      <div class="card-t">Symptom Timeline</div>
+      <div class="kv">
+        <div class="kv-row"><span class="kv-k">How long</span><span class="kv-v">{{ summary.reason.onset or "Not provided" }}</span></div>
+        <div class="kv-row"><span class="kv-k">Started how</span><span class="kv-v">{{ summary.reason.onsetType or "Not provided" }}</span></div>
+        <div class="kv-row"><span class="kv-k">Cause details</span><span class="kv-v">{{ summary.reason.causeDetail or "Not provided" }}</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-t">Pain Pattern</div>
+      <div class="score-strip tone-rose-bg">
+        <div class="score-big tone-rose">{{ summary.pain.currentLevel if summary.pain.currentLevel is not none else "—" }}/10</div>
+        <div class="score-copy">
+          <strong>Current pain</strong>
+          <span>How you rated yourself right now.</span>
+          <div class="score-bar"><div class="score-fill" style="width:{{ (summary.pain.currentLevel or 0) * 10 }}%;background:var(--rose)"></div></div>
+        </div>
+      </div>
+      <div class="score-strip tone-amber-bg">
+        <div class="score-big tone-amber">{{ summary.pain.worstLevel if summary.pain.worstLevel is not none else "—" }}/10</div>
+        <div class="score-copy">
+          <strong>Worst pain</strong>
+          <span>Your peak pain rating during this episode.</span>
+          <div class="score-bar"><div class="score-fill" style="width:{{ (summary.pain.worstLevel or 0) * 10 }}%;background:var(--amber)"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-t">What Changes It</div>
+      <div class="card-sub">Aggravating factors</div>
+      {% if summary.pain.aggravating %}
+        <div class="tag-list" style="margin:8px 0 16px">
+          {% for item in summary.pain.aggravating %}
+            <span class="tag tag-r">{{ item }}</span>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="empty" style="padding:18px 0">No aggravating factors listed.</div>
+      {% endif %}
+      <div class="card-sub">Relieving factors</div>
+      {% if summary.pain.relieving %}
+        <div class="tag-list" style="margin-top:8px">
+          {% for item in summary.pain.relieving %}
+            <span class="tag tag-g">{{ item }}</span>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="empty" style="padding:18px 0">No relieving factors listed.</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="sec" id="t2">
+  <div style="margin:24px 0 16px">
+    <h2 style="font-family:var(--serif);font-size:24px;font-weight:600">Baseline Outcome Scores</h2>
+    <p style="font-size:13px;color:var(--ink3);margin-top:4px">These questionnaires were selected automatically from your symptom profile so the clinic can track change over time.</p>
+  </div>
+
+  {% if summary.questionnaires %}
+    <div class="ring-grid">
+      {% for q in summary.questionnaires %}
+        <div class="ring-card">
+          <div class="ring-wrap">
+            <svg width="100" height="100" viewBox="0 0 100 100">
+              <circle class="ring-bg" cx="50" cy="50" r="42"></circle>
+              <circle class="ring-fg tone-{{ q.tone }}" cx="50" cy="50" r="42" stroke="currentColor" stroke-dasharray="264" stroke-dashoffset="{{ q.stroke_offset }}"></circle>
+            </svg>
+            <div class="ring-val tone-{{ q.tone }}">{{ q.display_value }}</div>
+          </div>
+          <div class="ring-label">{{ q.label }}</div>
+          <div class="ring-interp">{{ q.interpretation }}</div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="card">
+      <div class="empty">No outcome questionnaires were triggered yet. Update your symptom areas in the intake to generate baseline scoring.</div>
+    </div>
+  {% endif %}
+</div>
+
+<div class="sec" id="t3">
+  <div style="margin:24px 0 16px">
+    <h2 style="font-family:var(--serif);font-size:24px;font-weight:600">Lifestyle Snapshot</h2>
+    <p style="font-size:13px;color:var(--ink3);margin-top:4px">Your day-to-day patterns often shape both symptoms and care planning.</p>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-t">Daily Routine</div>
+      <div class="kv">
+        <div class="kv-row"><span class="kv-k">Occupation</span><span class="kv-v">{{ summary.lifestyle.occupation or "Not provided" }}</span></div>
+        <div class="kv-row"><span class="kv-k">Work type</span><span class="kv-v">{{ summary.lifestyle.workType or "Not provided" }}</span></div>
+        <div class="kv-row"><span class="kv-k">Work hours</span><span class="kv-v">{{ summary.lifestyle.workHours or "Not provided" }}</span></div>
+        <div class="kv-row"><span class="kv-k">Exercise</span><span class="kv-v">{{ summary.lifestyle.exerciseFrequency or "Not provided" }}{% if summary.lifestyle.exerciseType %} · {{ summary.lifestyle.exerciseType }}{% endif %}</span></div>
+        <div class="kv-row"><span class="kv-k">Sleep</span><span class="kv-v">{{ summary.lifestyle.sleepHours or "Not provided" }}{% if summary.lifestyle.sleepQuality %} · {{ summary.lifestyle.sleepQuality }}{% endif %}</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-t">Stress & Habits</div>
+      <div class="score-strip tone-amber-bg">
+        <div class="score-big tone-amber">{{ summary.lifestyle.stressLevel or "—" }}/10</div>
+        <div class="score-copy">
+          <strong>Stress rating</strong>
+          <span>Your self-reported stress baseline.</span>
+          <div class="score-bar"><div class="score-fill" style="width:{{ (summary.lifestyle.stressLevel or 0) * 10 }}%;background:var(--amber)"></div></div>
+        </div>
+      </div>
+      {% if summary.habits %}
+        <div class="tag-list">
+          {% for habit in summary.habits %}
+            <span class="tag tag-a">{{ habit }}</span>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="empty" style="padding:14px 0">No lifestyle habits were flagged.</div>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if summary.lifestyle.dailyImpact %}
+    <div class="card">
+      <div class="card-t">Daily Impact</div>
+      <div class="tag-list">
+        {% for item in summary.lifestyle.dailyImpact %}
+          <span class="tag tag-b">{{ item }}</span>
+        {% endfor %}
+      </div>
+    </div>
+  {% endif %}
+</div>
+
+<div class="sec" id="t4">
+  <div style="margin:24px 0 16px">
+    <h2 style="font-family:var(--serif);font-size:24px;font-weight:600">Summit Complete Assessment</h2>
+    <p style="font-size:13px;color:var(--ink3);margin-top:4px">These results come from your chiropractor's structured Summit initial consultation and highlight the objective measures recorded during the exam.</p>
+  </div>
+
+  {% if summary.visit_report %}
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-t">What We Found</div>
+        <div style="font-size:14px;color:var(--ink2);line-height:1.7">{{ summary.visit_report.patient_summary }}</div>
+        {% if summary.visit_report.patient_key_findings %}
+          <div class="tag-list" style="margin-top:14px">
+            {% for item in summary.visit_report.patient_key_findings %}
+              <span class="tag tag-b">{{ item }}</span>
+            {% endfor %}
+          </div>
+        {% endif %}
+      </div>
+      <div class="card">
+        <div class="card-t">Working Diagnosis</div>
+        {% if summary.visit_report.diagnosis_items %}
+          <div class="tag-list">
+            {% for item in summary.visit_report.diagnosis_items %}
+              <span class="tag tag-p">{{ item }}</span>
+            {% endfor %}
+          </div>
+        {% elif summary.visit_report.diagnosis %}
+          <div style="font-size:14px;color:var(--ink2);line-height:1.7">{{ summary.visit_report.diagnosis }}</div>
+        {% else %}
+          <div class="empty" style="padding:18px 0">No diagnosis has been published yet.</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-t">Assessment Snapshot</div>
+      <div class="kv">
+        <div class="kv-row"><span class="kv-k">Assessment date</span><span class="kv-v">{{ summary.visit_report.assessment_date or "Not recorded" }}</span></div>
+        <div class="kv-row"><span class="kv-k">Vital indicators passed</span><span class="kv-v">{{ summary.visit_report.health_indicator_summary.healthy_count }}/{{ summary.visit_report.health_indicator_summary.tested_count if summary.visit_report.health_indicator_summary.tested_count else 0 }}</span></div>
+        <div class="kv-row"><span class="kv-k">Average ROM</span><span class="kv-v">{{ summary.visit_report.rom_average if summary.visit_report.rom_average is not none else "—" }}{% if summary.visit_report.rom_average is not none %}%{% endif %}</span></div>
+        <div class="kv-row"><span class="kv-k">Orthopedic tests flagged</span><span class="kv-v">{{ summary.visit_report.positive_orthopedic_tests|length }}/{{ summary.visit_report.orthopedic_tested_count }}</span></div>
+        <div class="kv-row"><span class="kv-k">Spinal levels flagged</span><span class="kv-v">{{ summary.visit_report.spine_summary.flagged_count }}</span></div>
+        <div class="kv-row"><span class="kv-k">Leg-length difference</span><span class="kv-v">{{ summary.visit_report.leg_length.difference_cm if summary.visit_report.leg_length.difference_cm is not none else "—" }}{% if summary.visit_report.leg_length.difference_cm is not none %} cm{% endif %}</span></div>
+      </div>
+    </div>
+
+    {% if summary.visit_report.objective_metrics %}
+      <div class="card">
+        <div class="card-t">Objective Findings</div>
+        <div class="grid-3">
+          {% for metric in summary.visit_report.objective_metrics %}
+            <div style="padding:16px;border-radius:var(--r-sm);background:var(--bg2);border:1px solid var(--bdr-l)">
+              <div style="font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--ink4)">{{ metric.label }}</div>
+              <div style="font-family:var(--serif);font-size:24px;font-weight:600;margin-top:8px" class="tone-{{ metric.tone }}">{{ metric.value }}</div>
+              <div style="font-size:12px;color:var(--ink3);margin-top:6px">Measured or documented during the Day 1 exam.</div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+
+    <div class="card">
+      <div class="card-t">Vital Health Indicators</div>
+      <div class="grid-3">
+        {% for item in summary.visit_report.health_indicator_cards %}
+          <div class="score-strip tone-{{ item.tone }}-bg" style="margin-bottom:0">
+            <div class="score-big tone-{{ item.tone }}">{{ item.value }}</div>
+            <div class="score-copy">
+              <strong>{{ item.name }}</strong>
+              <span>{{ item.detail }}</span>
+              {% if item.supporting %}
+                <span>{{ item.supporting }}</span>
+              {% endif %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-t">Functional Tests</div>
+      <div class="grid-3">
+        {% for item in summary.visit_report.functional_cards %}
+          <div class="score-strip tone-{{ item.tone }}-bg" style="margin-bottom:0">
+            <div class="score-big tone-{{ item.tone }}">{{ item.value }}</div>
+            <div class="score-copy">
+              <strong>{{ item.name }}</strong>
+              <span>{{ item.detail }}</span>
+              {% if item.supporting %}
+                <span>{{ item.supporting }}</span>
+              {% endif %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-t">Range of Motion</div>
+      {% for section in summary.visit_report.rom_sections %}
+        <div class="section-block">
+          <h3 style="font-size:22px">{{ section.label }}</h3>
+          <div class="detail-grid">
+            {% for item in section["items"] %}
+              <div class="kv-row" style="padding:8px 0">
+                <span class="kv-k">{{ item.label }}</span>
+                <span class="kv-v">
+                  {% if item.measured is not none %}
+                    {{ item.measured }}/{{ item.max_norm }}&deg; · {{ item.percent }}%
+                  {% else %}
+                    Not tested
+                  {% endif %}
+                </span>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-t">Orthopedic Findings</div>
+        {% if summary.visit_report.positive_orthopedic_tests %}
+          <div class="timeline">
+            {% for item in summary.visit_report.positive_orthopedic_tests %}
+              <div class="timeline-item">
+                <div class="timeline-dot">{{ loop.index }}</div>
+                <p>
+                  <strong>{{ item.name }}</strong>
+                  {% if item.side and item.side != 'B' %} ({{ item.side }}){% endif %}
+                  {% if item.measure is not none %} · {{ item.measure }}{% endif %}
+                  <br>{{ item.target }}
+                  {% if item.notes %}<br>{{ item.notes }}{% endif %}
+                </p>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="empty">No symptom-provoking orthopedic findings were published.</div>
+        {% endif %}
+      </div>
+
+      <div class="card">
+        <div class="card-t">Spinal Involvement & Leg Length</div>
+        <div class="kv">
+          <div class="kv-row"><span class="kv-k">Highest involvement level</span><span class="kv-v">{{ summary.visit_report.spine_summary.highest_label }}</span></div>
+          <div class="kv-row"><span class="kv-k">Flagged spinal levels</span><span class="kv-v">{{ summary.visit_report.spine_summary.flagged_count }}</span></div>
+          <div class="kv-row"><span class="kv-k">Leg lengths</span><span class="kv-v">{{ summary.visit_report.leg_length.left_cm if summary.visit_report.leg_length.left_cm is not none else "—" }} / {{ summary.visit_report.leg_length.right_cm if summary.visit_report.leg_length.right_cm is not none else "—" }} cm</span></div>
+          <div class="kv-row"><span class="kv-k">Difference</span><span class="kv-v">{{ summary.visit_report.leg_length.difference_cm if summary.visit_report.leg_length.difference_cm is not none else "—" }}{% if summary.visit_report.leg_length.difference_cm is not none %} cm{% endif %}</span></div>
+        </div>
+        {% if summary.visit_report.spine_summary.highlighted_rows %}
+          <div class="tag-list" style="margin-top:14px">
+            {% for row in summary.visit_report.spine_summary.highlighted_rows %}
+              <span class="tag tag-a">{{ row.level }} · L {{ row.left_label }} / R {{ row.right_label }}</span>
+            {% endfor %}
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-t">Complaint & Assessment Notes</div>
+        <div class="card-sub">History snapshot</div>
+        <div class="kv">
+          <div class="kv-row"><span class="kv-k">Duration</span><span class="kv-v">{{ summary.visit_report.complaint_duration or "Not published" }}</span></div>
+          <div class="kv-row"><span class="kv-k">Frequency</span><span class="kv-v">{{ summary.visit_report.complaint_frequency or "Not published" }}</span></div>
+          <div class="kv-row"><span class="kv-k">Worst pain</span><span class="kv-v">{{ summary.visit_report.pain_worst if summary.visit_report.pain_worst is not none else "—" }}/10</span></div>
+          <div class="kv-row"><span class="kv-k">Work context</span><span class="kv-v">{{ summary.visit_report.summit_assessment.history.occupation or "Not documented" }}{% if summary.visit_report.summit_assessment.history.work_hours %} · {{ summary.visit_report.summit_assessment.history.work_hours }}{% endif %}</span></div>
+        </div>
+        <div class="card-sub" style="margin-top:14px">Clinical assessment</div>
+        <div style="font-size:14px;color:var(--ink2);line-height:1.7;white-space:pre-line">{{ summary.visit_report.assessment or "Assessment not published" }}</div>
+      </div>
+
+      <div class="card">
+        <div class="card-t">Posture, Neurology & Imaging</div>
+        <div class="card-sub">Posture findings</div>
+        <div style="font-size:14px;color:var(--ink2);line-height:1.7;white-space:pre-line">{{ summary.visit_report.posture_findings or "Posture findings have not been published yet." }}</div>
+        <div class="card-sub" style="margin-top:14px">Neurological findings</div>
+        <div style="font-size:14px;color:var(--ink2);line-height:1.7;white-space:pre-line">{{ summary.visit_report.neuro_findings or "Not published" }}</div>
+        <div class="card-sub" style="margin-top:14px">Imaging review</div>
+        <div style="font-size:14px;color:var(--ink2);line-height:1.7;white-space:pre-line">{{ summary.visit_report.imaging_review or "No imaging notes have been published yet." }}</div>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-t">Education Provided</div>
+        <div class="card-sub">What was explained during the visit</div>
+        <div style="font-size:14px;color:var(--ink2);line-height:1.7;white-space:pre-line">{{ summary.visit_report.education_summary or "Education notes have not been published yet." }}</div>
+      </div>
+
+      <div class="card">
+        <div class="card-t">Imaging Status</div>
+        <div class="kv">
+          <div class="kv-row"><span class="kv-k">X-ray recommended</span><span class="kv-v">{{ "Yes" if summary.visit_report.xray_recommended else "No" }}</span></div>
+          <div class="kv-row"><span class="kv-k">Status</span><span class="kv-v">{{ summary.visit_report.xray_status or "Not documented" }}</span></div>
+          <div class="kv-row"><span class="kv-k">Regions</span><span class="kv-v">{{ summary.visit_report.xray_regions or "Not documented" }}</span></div>
+        </div>
+      </div>
+    </div>
+  {% else %}
+    <div class="card">
+      <div class="empty">Your chiropractor has not published the initial consultation findings yet.</div>
+    </div>
+  {% endif %}
+</div>
+
+<div class="sec" id="t5">
+  <div style="margin:24px 0 16px">
+    <h2 style="font-family:var(--serif);font-size:24px;font-weight:600">Care Plan</h2>
+    <p style="font-size:13px;color:var(--ink3);margin-top:4px">This section summarizes the treatment direction and what to focus on between visits.</p>
+  </div>
+
+  {% if summary.visit_report %}
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-t">In-Clinic Plan</div>
+        <div style="font-size:14px;color:var(--ink2);line-height:1.7;white-space:pre-line">{{ summary.visit_report.care_plan or "No care plan has been published yet." }}</div>
+      </div>
+      <div class="card">
+        <div class="card-t">Home Care</div>
+        <div style="font-size:14px;color:var(--ink2);line-height:1.7;white-space:pre-line">{{ summary.visit_report.home_care or "No home care recommendations have been added yet." }}</div>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-t">Your Recommendations</div>
+        {% if summary.visit_report.patient_recommendations %}
+          <div class="timeline">
+            {% for item in summary.visit_report.patient_recommendations %}
+              <div class="timeline-item">
+                <div class="timeline-dot">{{ loop.index }}</div>
+                <p>{{ item }}</p>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="empty">No recommendations have been published yet.</div>
+        {% endif %}
+      </div>
+      <div class="card">
+        <div class="card-t">Follow-Up Plan</div>
+        <div style="font-size:14px;color:var(--ink2);line-height:1.7;white-space:pre-line">{{ summary.visit_report.follow_up_plan or "No follow-up plan has been published yet." }}</div>
+        {% if summary.visit_report.wrap_up_notes %}
+          <div class="card-sub" style="margin-top:14px">Wrap-up from Day 1</div>
+          <div style="font-size:14px;color:var(--ink2);line-height:1.7;white-space:pre-line">{{ summary.visit_report.wrap_up_notes }}</div>
+        {% endif %}
+      </div>
+    </div>
+  {% else %}
+    <div class="card">
+      <div class="empty">This section will populate after your chiropractor publishes the initial care plan.</div>
+    </div>
+  {% endif %}
+</div>
+
+<div class="sec" id="t6">
+  <div style="margin:24px 0 16px">
+    <h2 style="font-family:var(--serif);font-size:24px;font-weight:600">Next Steps</h2>
+    <p style="font-size:13px;color:var(--ink3);margin-top:4px">This is the handoff point between your digital onboarding and the clinic’s in-person exam.</p>
+  </div>
+
+  <div class="note-box">
+    {% if summary.visit_report %}
+      Your portal now includes both your intake and the published findings from the initial consultation. Future visits can extend this record over time.
+    {% else %}
+      Your saved intake now lives inside your account. Physical exam findings, imaging review, and care-plan recommendations can be added later without replacing your baseline responses.
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <div class="card-t">What happens next</div>
+    <div class="timeline">
+      {% for item in summary.next_steps %}
+        <div class="timeline-item">
+          <div class="timeline-dot">{{ loop.index }}</div>
+          <p>{{ item }}</p>
+        </div>
+      {% endfor %}
+    </div>
+    <div class="actions">
+      <a class="btn btn-pri" href="{{ url_for('main.intake') }}">Edit my intake</a>
+      <a class="btn btn-sec" href="{{ url_for('main.dashboard') }}">Back to dashboard</a>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<script>
+function showTab(n){
+  document.querySelectorAll('.sec').forEach(s=>s.classList.remove('on'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
+  document.getElementById('t'+n).classList.add('on');
+  document.querySelectorAll('.tab')[n].classList.add('on');
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+</script>
+</body>
+</html>

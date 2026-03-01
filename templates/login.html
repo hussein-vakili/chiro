@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block title %}Sign In · Life Chiropractic{% endblock %}
+{% block body_class %}auth-body{% endblock %}
+{% block shell_class %}auth-shell{% endblock %}
+
+{% block content %}
+  <section class="auth-card">
+    <div class="auth-eyebrow">Existing client</div>
+    <h1>Sign in to your intake portal</h1>
+    <p>Use the account tied to your appointment to continue onboarding, review your intake, and access your baseline results.</p>
+    <form method="post" class="auth-form">
+      <label>
+        <span>Email</span>
+        <input type="email" name="email" autocomplete="email" required>
+      </label>
+      <label>
+        <span>Password</span>
+        <input type="password" name="password" autocomplete="current-password" required>
+      </label>
+      <button type="submit" class="primary-button">Sign in</button>
+    </form>
+    <div class="auth-footer">
+      <a href="{{ url_for('main.forgot_password') }}">Forgot your password?</a>
+    </div>
+    <div class="auth-footer">
+      <span>New here?</span>
+      <a href="{{ url_for('main.signup') }}">Create an account</a>
+    </div>
+  </section>
+{% endblock %}

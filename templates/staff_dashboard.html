@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block title %}Staff Dashboard · Life Chiropractic{% endblock %}
+
+{% block content %}
+  <section class="hero-panel">
+    <div>
+      <div class="auth-eyebrow">Staff dashboard</div>
+      <h1>Clinic onboarding operations.</h1>
+      <p>Monitor patient intake completion, open appointment-linked invitations, and jump into a private patient summary before the first visit.</p>
+    </div>
+    <div class="status-card">
+      <span>At a glance</span>
+      <strong>{{ patient_count }} patients</strong>
+      <small>{{ submitted_count }} submitted intakes</small>
+      <small>{{ pending_invite_count }} active invites</small>
+    </div>
+  </section>
+
+  <section class="dashboard-grid">
+    <article class="panel">
+      <div class="panel-label">Patients</div>
+      {% if patients %}
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Patient</th>
+                <th>Intake</th>
+                <th>Appointment</th>
+                <th>Consult</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for patient in patients %}
+                <tr>
+                  <td>
+                    <a class="table-link" href="{{ url_for('main.staff_patient_detail', user_id=patient['id']) }}">{{ patient["first_name"] }} {{ patient["last_name"] }}</a>
+                    <small>{{ patient["email"] }}</small>
+                  </td>
+                  <td>
+                    <span class="status-dot {{ patient['intake_status'] or 'none' }}">{{ patient["intake_status"] or "not started" }}</span>
+                    {% if patient["intake_updated_at"] %}
+                      <small>{{ patient["intake_updated_at"][:10] }}</small>
+                    {% endif %}
+                  </td>
+                  <td>{{ patient["appointment_at"].replace("T", " ") if patient["appointment_at"] else "Not scheduled" }}</td>
+                  <td>
+                    <span class="status-dot {{ patient['visit_report_status'] or 'none' }}">{{ patient["visit_report_status"] or "not started" }}</span>
+                    {% if patient["visit_report_updated_at"] %}
+                      <small>{{ patient["visit_report_updated_at"][:10] }}</small>
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p>No patient accounts exist yet.</p>
+      {% endif %}
+    </article>
+
+    <article class="panel">
+      <div class="panel-label">Active invites</div>
+      <div class="panel-actions" style="margin-top:12px">
+        <a class="primary-button" href="{{ url_for('main.staff_new_invitation') }}">Create invite</a>
+      </div>
+      {% if active_invitations %}
+        <div class="invite-stack">
+          {% for invite in active_invitations %}
+            <div class="mini-card">
+              <strong>{{ invite["first_name"] }} {{ invite["last_name"] }}</strong>
+              <small>{{ invite["email"] }}</small>
+              <small>{{ invite["appointment_at"].replace("T", " ") if invite["appointment_at"] else "No appointment set" }}</small>
+              <a class="table-link" href="{{ url_for('main.accept_invite', token=invite['token'], _external=True) }}">Open invite link</a>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p>No active invites.</p>
+      {% endif %}
+    </article>
+  </section>
+{% endblock %}

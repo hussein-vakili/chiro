@@ -1,0 +1,1093 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Life Chiropractic — New Patient Intake</title>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;0,6..72,600;0,6..72,700;1,6..72,300;1,6..72,400&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#1c1917;--ink2:#44403c;--ink3:#78716c;--ink4:#a8a29e;--ink5:#d6d3d1;
+  --bg:#fdfcfa;--bg2:#f7f5f2;--card:#ffffff;--card-h:#fefdfb;
+  --border:#e7e5e4;--border-l:#f5f5f4;
+  --life:#3b7a57;--life-l:#e8f5e9;--life-d:#2d5e43;--life-g:linear-gradient(135deg,#3b7a57,#5fa67a);
+  --warm:#b8860b;--warm-l:#fef9ee;--warm-d:#8b6508;
+  --sky:#2563eb;--sky-l:#dbeafe;
+  --rose:#be123c;--rose-l:#ffe4e6;
+  --amber:#d97706;--amber-l:#fef3c7;
+  --plum:#7c3aed;--plum-l:#ede9fe;
+  --r:16px;--r-sm:10px;--r-xs:8px;
+  --sh:0 1px 2px rgba(28,25,23,.04),0 4px 16px rgba(28,25,23,.03);
+  --sh-md:0 2px 4px rgba(28,25,23,.04),0 8px 32px rgba(28,25,23,.05);
+  --sh-up:0 -1px 2px rgba(28,25,23,.03),0 -4px 20px rgba(28,25,23,.04);
+  --font:'Outfit',system-ui,sans-serif;
+  --serif:'Newsreader',Georgia,serif;
+  --ease:cubic-bezier(.22,1,.36,1);
+  --bounce:cubic-bezier(.34,1.56,.64,1);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{font-family:var(--font);background:var(--bg);color:var(--ink);line-height:1.65;min-height:100dvh;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+::selection{background:var(--life-l);color:var(--life-d)}
+
+/* ═══ LAYOUT ═══ */
+.shell{max-width:620px;margin:0 auto;padding:0 20px 140px}
+
+/* ═══ HERO HEADER ═══ */
+.hero{text-align:center;padding:52px 0 16px;position:relative}
+.hero::before{content:'';position:absolute;top:0;left:50%;transform:translateX(-50%);width:240px;height:240px;background:radial-gradient(circle,rgba(59,122,87,.06) 0%,transparent 70%);border-radius:50%;pointer-events:none}
+.logo{display:inline-flex;align-items:center;gap:12px;margin-bottom:10px}
+.logo-icon{width:44px;height:44px;background:var(--life-g);border-radius:12px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 12px rgba(59,122,87,.2);position:relative;overflow:hidden}
+.logo-icon::after{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,255,255,.2),transparent);border-radius:inherit}
+.logo-icon svg{width:24px;height:24px;fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;position:relative;z-index:1}
+.logo-text{font-family:var(--serif);font-size:24px;font-weight:600;color:var(--ink);letter-spacing:-.3px}
+.hero-sub{font-size:14.5px;color:var(--ink3);max-width:360px;margin:0 auto;line-height:1.6}
+
+/* ═══ PROGRESS ═══ */
+.prog-wrap{position:sticky;top:0;z-index:100;background:rgba(253,252,250,.92);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);padding:14px 0 10px;border-bottom:1px solid var(--border-l);transition:box-shadow .3s}
+.prog-wrap.scrolled{box-shadow:0 2px 12px rgba(28,25,23,.05)}
+.prog-bar{height:3px;background:var(--border);border-radius:3px;overflow:hidden;margin-bottom:10px}
+.prog-fill{height:100%;background:var(--life-g);border-radius:3px;transition:width .6s var(--ease)}
+.prog-dots{display:flex;justify-content:space-between;gap:2px}
+.pdot{display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer}
+.pdot-c{width:22px;height:22px;border-radius:50%;border:2px solid var(--border);background:var(--card);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600;color:var(--ink4);transition:all .3s var(--ease)}
+.pdot.done .pdot-c{background:var(--life);border-color:var(--life);color:#fff;transform:scale(.9)}
+.pdot.active .pdot-c{border-color:var(--life);color:var(--life);box-shadow:0 0 0 4px rgba(59,122,87,.1);transform:scale(1.05)}
+.pdot-l{font-size:8px;font-weight:600;color:var(--ink5);text-transform:uppercase;letter-spacing:.6px;white-space:nowrap;transition:color .3s}
+.pdot.done .pdot-l,.pdot.active .pdot-l{color:var(--life)}
+@media(max-width:480px){.pdot-l{display:none}}
+
+/* ═══ STEP ═══ */
+.step{display:none;animation:fadeUp .5s var(--ease) both}
+.step.active{display:block}
+@keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+.step-hd{margin:32px 0 24px}
+.step-n{font-size:11px;font-weight:600;color:var(--life);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:6px}
+.step-t{font-family:var(--serif);font-size:28px;font-weight:600;color:var(--ink);line-height:1.2;letter-spacing:-.5px}
+.step-d{font-size:14px;color:var(--ink3);margin-top:8px;line-height:1.6}
+
+/* ═══ CARDS ═══ */
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:24px;margin-bottom:14px;box-shadow:var(--sh);transition:border-color .25s,box-shadow .25s}
+.card:focus-within{border-color:rgba(59,122,87,.3);box-shadow:var(--sh),0 0 0 3px rgba(59,122,87,.06)}
+.card-label{font-size:14px;font-weight:600;color:var(--ink);margin-bottom:4px;display:flex;align-items:center;gap:6px}
+.card-label .req{color:var(--rose);font-size:14px}
+.card-hint{font-size:12.5px;color:var(--ink4);margin-bottom:12px;line-height:1.55}
+.card-sub{font-size:10.5px;color:var(--ink4);font-weight:600;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}
+
+/* ═══ INPUTS ═══ */
+input[type="text"],input[type="email"],input[type="tel"],input[type="date"],input[type="number"],select,textarea{
+  font-family:var(--font);font-size:15px;padding:12px 14px;border:1.5px solid var(--border);border-radius:var(--r-sm);
+  background:var(--bg2);color:var(--ink);width:100%;transition:all .2s;display:block}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--life);box-shadow:0 0 0 3px rgba(59,122,87,.08);background:var(--card)}
+textarea{resize:vertical;min-height:100px;line-height:1.6}
+select{cursor:pointer;-webkit-appearance:none;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath fill='%2378716c' d='M1.41.59 6 5.17 10.59.59 12 2 6 8 0 2z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center;padding-right:36px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+@media(max-width:480px){.row,.row3{grid-template-columns:1fr}}
+.fld{display:flex;flex-direction:column;gap:5px}
+.fld>label{font-size:12px;font-weight:500;color:var(--ink3)}
+
+/* ═══ CHIPS ═══ */
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{padding:10px 16px;border:1.5px solid var(--border);border-radius:40px;font-size:13px;font-weight:500;color:var(--ink2);cursor:pointer;transition:all .2s var(--ease);user-select:none;background:var(--card);-webkit-tap-highlight-color:transparent}
+.chip:hover{border-color:var(--ink5);background:var(--card-h)}
+.chip:active{transform:scale(.97)}
+.chip.on{background:var(--life-l);border-color:var(--life);color:var(--life-d);font-weight:600}
+.chip.on::before{content:'✓ '}
+
+/* ═══ TOGGLES ═══ */
+.trow{display:flex;align-items:center;justify-content:space-between;padding:14px 0;border-bottom:1px solid var(--border-l)}
+.trow:last-child{border-bottom:none}
+.trow-label{font-size:14px;color:var(--ink2);font-weight:500;flex:1}
+.trow-label small{display:block;font-size:12px;color:var(--ink4);font-weight:400;margin-top:1px}
+.tgl{position:relative;width:48px;height:28px;flex-shrink:0}
+.tgl input{opacity:0;width:0;height:0;position:absolute}
+.tgl-tr{position:absolute;inset:0;background:var(--ink5);border-radius:28px;transition:background .25s;cursor:pointer}
+.tgl-tr::after{content:'';position:absolute;top:3px;left:3px;width:22px;height:22px;background:#fff;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,.12);transition:transform .25s var(--bounce)}
+.tgl input:checked+.tgl-tr{background:var(--life)}
+.tgl input:checked+.tgl-tr::after{transform:translateX(20px)}
+
+/* ═══ PAIN SLIDER ═══ */
+.slider-wrap{display:flex;align-items:center;gap:16px;padding:8px 0}
+.slider{-webkit-appearance:none;appearance:none;flex:1;height:8px;border-radius:8px;background:linear-gradient(90deg,#86efac,#fbbf24,#ef4444);outline:none;border:none}
+.slider::-webkit-slider-thumb{-webkit-appearance:none;width:30px;height:30px;border-radius:50%;background:#fff;border:3px solid var(--life);cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.12);transition:box-shadow .2s}
+.slider::-webkit-slider-thumb:hover{box-shadow:0 2px 12px rgba(59,122,87,.3)}
+.slider-val{font-family:var(--serif);font-size:34px;font-weight:600;color:var(--life);width:46px;text-align:center;line-height:1}
+.slider-labels{display:flex;justify-content:space-between;font-size:11px;color:var(--ink4);margin-top:-2px;padding:0 2px}
+
+/* ═══ RATING SCALE ═══ */
+.rating{display:flex;gap:6px;flex-wrap:wrap}
+.rate-o{width:44px;height:44px;border-radius:var(--r-sm);border:1.5px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;color:var(--ink3);cursor:pointer;transition:all .15s;background:var(--card)}
+.rate-o:hover{border-color:var(--ink5);background:var(--card-h)}
+.rate-o.on{background:var(--life);border-color:var(--life);color:#fff;transform:scale(1.05)}
+
+/* ═══ RADIO OPTIONS (questionnaire) ═══ */
+.qopt{display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--border-l);cursor:pointer;-webkit-tap-highlight-color:transparent;transition:background .15s}
+.qopt:hover{background:rgba(59,122,87,.02);border-radius:var(--r-xs)}
+.qopt:last-child{border-bottom:none}
+.qradio{width:22px;height:22px;border-radius:50%;border:2px solid var(--border);flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .2s var(--ease);margin-top:1px}
+.qradio.on{border-color:var(--life);background:var(--life)}
+.qradio.on::after{content:'';width:8px;height:8px;border-radius:50%;background:#fff}
+.qopt-text{font-size:13.5px;color:var(--ink2);line-height:1.5}
+
+/* ═══ QUESTIONNAIRE CARD ═══ */
+.q-head{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+.q-head-icon{font-size:20px}
+.q-head-info{flex:1}
+.q-head-title{font-size:14px;font-weight:600;color:var(--ink)}
+.q-head-ver{font-size:11px;color:var(--ink4)}
+.q-badge{padding:4px 10px;border-radius:16px;font-size:10px;font-weight:600;white-space:nowrap}
+.q-cite{font-size:10px;color:var(--ink4);line-height:1.5;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border-l);font-style:italic}
+.q-result{margin-top:16px;padding:14px 16px;border-radius:var(--r-sm);font-size:13px;text-align:center;transition:all .3s var(--ease)}
+.q-score-num{font-family:var(--serif);font-size:24px;font-weight:600}
+
+/* ═══ CONDITIONAL ═══ */
+.cond{max-height:0;overflow:hidden;transition:max-height .4s var(--ease),opacity .3s;opacity:0}
+.cond.open{max-height:500px;opacity:1}
+
+/* ═══ INLINE NOTE ═══ */
+.note{border-radius:var(--r-sm);padding:14px 16px;font-size:13px;line-height:1.55;margin-bottom:14px;display:flex;gap:10px;align-items:flex-start}
+.note-warm{background:var(--warm-l);color:var(--warm-d)}
+.note-info{background:var(--sky-l);color:var(--sky)}
+
+/* ═══ REVIEW ═══ */
+.rev-sec{margin-bottom:18px}
+.rev-sec-t{font-size:11px;font-weight:600;color:var(--life);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border-l)}
+.rev-row{display:flex;justify-content:space-between;align-items:baseline;padding:7px 0;font-size:13.5px;gap:12px}
+.rev-k{color:var(--ink3);flex-shrink:0}
+.rev-v{color:var(--ink);font-weight:500;text-align:right;word-break:break-word}
+.rev-chips{display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end}
+.rev-chip{padding:3px 10px;border-radius:16px;font-size:11px;font-weight:500;background:var(--life-l);color:var(--life-d)}
+.rev-chip.pain{background:var(--rose-l);color:var(--rose)}
+
+/* ═══ CONSENT ═══ */
+.consent-box{background:var(--warm-l);border:1px solid #e8d5a3;border-radius:var(--r);padding:20px;font-size:13px;line-height:1.7;color:var(--ink2);max-height:200px;overflow-y:auto;margin-bottom:16px}
+.consent-box h4{font-family:var(--serif);font-size:14px;font-weight:600;margin-bottom:6px;color:var(--ink)}
+.ccheck{display:flex;align-items:flex-start;gap:10px;padding:12px 0}
+.ccheck input[type="checkbox"]{width:20px;height:20px;margin-top:2px;accent-color:var(--life);flex-shrink:0;cursor:pointer}
+.ccheck label{font-size:14px;color:var(--ink2);cursor:pointer;line-height:1.5}
+
+/* ═══ THANK YOU ═══ */
+.ty{text-align:center;padding:64px 20px;animation:fadeUp .5s var(--ease) both}
+.ty-icon{width:76px;height:76px;border-radius:50%;background:var(--life-l);display:flex;align-items:center;justify-content:center;margin:0 auto 20px;font-size:38px;animation:pop .5s var(--bounce) .2s both}
+@keyframes pop{from{transform:scale(0)}to{transform:scale(1)}}
+.ty-t{font-family:var(--serif);font-size:30px;font-weight:600;margin-bottom:8px}
+.ty-d{font-size:15px;color:var(--ink3);max-width:380px;margin:0 auto;line-height:1.6}
+
+/* ═══ NAV FOOTER ═══ */
+.nav{position:fixed;bottom:0;left:0;right:0;background:rgba(255,255,255,.95);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-top:1px solid var(--border-l);padding:14px 20px;z-index:100;box-shadow:var(--sh-up)}
+.nav-in{max-width:620px;margin:0 auto;display:flex;justify-content:space-between;align-items:center}
+.btn{padding:13px 28px;border-radius:40px;font-size:14px;font-weight:600;cursor:pointer;border:none;font-family:var(--font);transition:all .25s var(--ease);display:inline-flex;align-items:center;gap:8px;-webkit-tap-highlight-color:transparent}
+.btn-ghost{background:transparent;color:var(--ink3);padding:13px 16px}
+.btn-ghost:hover{color:var(--ink)}
+.btn-pri{background:var(--life-g);color:#fff;box-shadow:0 2px 12px rgba(59,122,87,.2)}
+.btn-pri:hover{transform:translateY(-1px);box-shadow:0 4px 20px rgba(59,122,87,.3)}
+.btn-pri:active{transform:scale(.98)}
+.btn-big{padding:16px 40px;font-size:15px;box-shadow:0 4px 24px rgba(59,122,87,.25)}
+.btn:disabled{opacity:.35;pointer-events:none}
+.nav-count{font-size:12px;color:var(--ink4);font-weight:500}
+
+/* ═══ MISC ═══ */
+.divider{height:1px;background:var(--border-l);margin:12px 0}
+@media(max-width:400px){.chip{padding:9px 13px;font-size:12px}.btn{padding:12px 22px;font-size:13px}}
+
+/* ═══ CLINICIAN PROFILE ═══ */
+.prof-hero{background:var(--life-g);border-radius:var(--r);padding:28px 24px;color:#fff;margin-bottom:14px;position:relative;overflow:hidden}
+.prof-hero::before{content:'';position:absolute;top:-40px;right:-40px;width:140px;height:140px;background:rgba(255,255,255,.06);border-radius:50%}
+.prof-hero-name{font-family:var(--serif);font-size:26px;font-weight:600;margin-bottom:2px}
+.prof-hero-meta{font-size:13px;opacity:.8;display:flex;flex-wrap:wrap;gap:12px;margin-top:6px}
+.prof-hero-meta span{display:flex;align-items:center;gap:4px}
+.prof-sec{margin-bottom:14px}
+.prof-sec-head{font-size:11px;font-weight:700;color:var(--life);text-transform:uppercase;letter-spacing:.8px;padding:10px 0 8px;border-bottom:2px solid var(--life-l);margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.prof-sec-head .sec-icon{width:22px;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:11px}
+.prof-row{display:flex;justify-content:space-between;padding:6px 0;font-size:13px;border-bottom:1px solid var(--border-l)}
+.prof-row:last-child{border-bottom:none}
+.prof-k{color:var(--ink3);min-width:120px}
+.prof-v{color:var(--ink);font-weight:500;text-align:right;flex:1;word-break:break-word}
+.prof-tags{display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end}
+.prof-tag{padding:3px 10px;border-radius:14px;font-size:11px;font-weight:500}
+.prof-tag-green{background:var(--life-l);color:var(--life-d)}
+.prof-tag-red{background:var(--rose-l);color:var(--rose)}
+.prof-tag-amber{background:var(--amber-l);color:var(--amber)}
+.prof-tag-plum{background:var(--plum-l);color:var(--plum)}
+.prof-tag-sky{background:var(--sky-l);color:var(--sky)}
+.prof-flag{background:var(--rose-l);border:1px solid rgba(190,18,60,.15);border-radius:var(--r-sm);padding:12px 16px;margin-bottom:10px;font-size:13px;color:var(--rose);display:flex;align-items:flex-start;gap:8px}
+.prof-flag-icon{font-size:16px;flex-shrink:0}
+.prof-score{display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:var(--r-sm);margin-bottom:8px}
+.prof-score-num{font-family:var(--serif);font-size:22px;font-weight:600}
+.prof-score-label{font-size:12px;font-weight:500}
+.prof-score-bar{flex:1;height:6px;background:var(--border);border-radius:6px;overflow:hidden}
+.prof-score-fill{height:100%;border-radius:6px;transition:width .5s var(--ease)}
+</style>
+</head>
+<body>
+
+<div class="shell">
+
+<!-- ═══════ HERO ═══════ -->
+<div class="hero">
+  <div class="logo">
+    <div class="logo-icon"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" stroke-width="0" fill="rgba(255,255,255,.15)"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg></div>
+    <div class="logo-text">Life Chiropractic</div>
+  </div>
+  <div class="hero-sub">Welcome! Please complete this form before your visit so we can make the most of our time together.</div>
+</div>
+
+<!-- ═══════ PROGRESS ═══════ -->
+<div class="prog-wrap" id="progWrap">
+  <div class="prog-bar"><div class="prog-fill" id="progFill" style="width:0%"></div></div>
+  <div class="prog-dots" id="progDots"></div>
+</div>
+
+<!-- ══════════════════════════════════════ -->
+<!-- STEP 1: ABOUT YOU                     -->
+<!-- ══════════════════════════════════════ -->
+<div class="step active" data-step="0">
+  <div class="step-hd">
+    <div class="step-n">Step 1 of 8</div>
+    <div class="step-t">About You</div>
+    <div class="step-d">Let's start with the basics so we know who's coming in.</div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">Full Name <span class="req">*</span></div>
+    <div class="row" style="margin-top:10px">
+      <div class="fld"><label>First</label><input type="text" id="f_first" required></div>
+      <div class="fld"><label>Last</label><input type="text" id="f_last" required></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row3">
+      <div class="fld"><label>Date of Birth <span style="color:var(--rose)">*</span></label><input type="date" id="f_dob" required></div>
+      <div class="fld"><label>Sex <span style="color:var(--rose)">*</span></label><select id="f_sex"><option value="">Select…</option><option>Male</option><option>Female</option><option>Other</option><option>Prefer not to say</option></select></div>
+      <div class="fld"><label>Pronoun</label><select id="f_pronoun"><option value="">Optional</option><option>He/Him</option><option>She/Her</option><option>They/Them</option><option>Other</option></select></div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <div class="fld"><label>Height</label><div class="row" style="gap:6px"><input type="number" id="f_hFt" placeholder="ft" min="1" max="8" style="width:50%"><input type="number" id="f_hIn" placeholder="in" min="0" max="11" style="width:50%"></div></div>
+      <div class="fld"><label>Weight</label><input type="text" id="f_weight" placeholder="e.g. 75 kg or 165 lbs"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">Contact Details <span class="req">*</span></div>
+    <div class="row" style="margin-top:10px">
+      <div class="fld"><label>Email</label><input type="email" id="f_email" required></div>
+      <div class="fld"><label>Phone</label><input type="tel" id="f_phone" required></div>
+    </div>
+    <div class="fld" style="margin-top:12px"><label>Address</label><input type="text" id="f_address" placeholder="Street, City, State, Zip"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">Emergency Contact</div>
+    <div class="row" style="margin-top:10px">
+      <div class="fld"><label>Name</label><input type="text" id="f_emName"></div>
+      <div class="fld"><label>Relationship</label><input type="text" id="f_emRel" placeholder="e.g. Spouse"></div>
+    </div>
+    <div class="fld" style="margin-top:12px"><label>Phone</label><input type="tel" id="f_emPhone"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">How did you hear about us?</div>
+    <div class="chips" style="margin-top:10px" data-f="referral" data-m="single">
+      <div class="chip" data-v="Doctor referral">Doctor referral</div>
+      <div class="chip" data-v="Friend / Family">Friend / Family</div>
+      <div class="chip" data-v="Google">Google</div>
+      <div class="chip" data-v="Social media">Social media</div>
+      <div class="chip" data-v="Other">Other</div>
+    </div>
+    <div class="fld" style="margin-top:10px"><label>Referring provider (if any)</label><input type="text" id="f_refDoc" placeholder="Dr. …"></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════ -->
+<!-- STEP 2: REASON FOR VISITING           -->
+<!-- ══════════════════════════════════════ -->
+<div class="step" data-step="1">
+  <div class="step-hd">
+    <div class="step-n">Step 2 of 8</div>
+    <div class="step-t">Your Reason for Visiting</div>
+    <div class="step-d">Help us understand what brought you here. There are no wrong answers.</div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">What's your main reason for seeking care? <span class="req">*</span></div>
+    <div class="chips" style="margin-top:10px" data-f="visitReason" data-m="multi">
+      <div class="chip" data-v="Pain / discomfort">Pain / discomfort</div>
+      <div class="chip" data-v="Headaches / migraines">Headaches / migraines</div>
+      <div class="chip" data-v="Injury recovery">Injury recovery</div>
+      <div class="chip" data-v="Posture concerns">Posture concerns</div>
+      <div class="chip" data-v="Preventive / wellness">Preventive / wellness</div>
+      <div class="chip" data-v="Stiffness / limited motion">Stiffness / limited motion</div>
+      <div class="chip" data-v="Numbness / tingling">Numbness / tingling</div>
+      <div class="chip" data-v="Sports performance">Sports performance</div>
+      <div class="chip" data-v="Other">Other</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">In your own words, what's bothering you most? <span class="req">*</span></div>
+    <div class="card-hint">Describe the problem, where you feel it, and how it affects your day.</div>
+    <textarea id="f_cc" placeholder="e.g. I've had lower back pain for about 6 months. It's worst when I sit at my desk for more than an hour. Some days I can barely bend forward to put on my shoes…"></textarea>
+  </div>
+
+  <div class="card">
+    <div class="card-label">When did this start?</div>
+    <div class="row" style="margin-top:10px">
+      <div class="fld"><label>How long ago</label><input type="text" id="f_onset" placeholder="e.g. 6 months"></div>
+      <div class="fld"><label>Started how?</label><select id="f_onsetType"><option value="">Select…</option><option>Suddenly (specific event)</option><option>Gradually over time</option><option>I'm not sure</option></select></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">Was there a specific event or cause?</div>
+    <div class="chips" style="margin-top:10px" data-f="cause" data-m="multi">
+      <div class="chip" data-v="Car accident">Car accident</div>
+      <div class="chip" data-v="Work injury">Work injury</div>
+      <div class="chip" data-v="Sports injury">Sports injury</div>
+      <div class="chip" data-v="Fall">Fall</div>
+      <div class="chip" data-v="Repetitive strain">Repetitive strain</div>
+      <div class="chip" data-v="Pregnancy / postpartum">Pregnancy / postpartum</div>
+      <div class="chip" data-v="No specific event">No specific event</div>
+      <div class="chip" data-v="Other">Other</div>
+    </div>
+    <div class="fld" style="margin-top:10px"><label>Details</label><input type="text" id="f_causeDetail" placeholder="What happened…"></div>
+  </div>
+
+
+</div>
+
+<!-- ══════════════════════════════════════ -->
+<!-- STEP 3: PAIN PROFILE                  -->
+<!-- ══════════════════════════════════════ -->
+<div class="step" data-step="2">
+  <div class="step-hd">
+    <div class="step-n">Step 3 of 8</div>
+    <div class="step-t">Where Does It Hurt?</div>
+    <div class="step-d">Tap all the areas where you feel pain, discomfort, or tightness.</div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">Select your problem areas</div>
+    <div class="chips" style="margin-top:10px" data-f="painAreas" data-m="multi">
+      <div class="chip" data-v="Head">🧠 Head</div>
+      <div class="chip" data-v="Neck">Neck</div>
+      <div class="chip" data-v="Upper back">Upper back</div>
+      <div class="chip" data-v="Mid back">Mid back</div>
+      <div class="chip" data-v="Lower back">Lower back</div>
+      <div class="chip" data-v="Left shoulder">L Shoulder</div>
+      <div class="chip" data-v="Right shoulder">R Shoulder</div>
+      <div class="chip" data-v="Left arm / hand">L Arm/Hand</div>
+      <div class="chip" data-v="Right arm / hand">R Arm/Hand</div>
+      <div class="chip" data-v="Chest / ribs">Chest / Ribs</div>
+      <div class="chip" data-v="Hips / pelvis">Hips / Pelvis</div>
+      <div class="chip" data-v="Left leg">L Leg</div>
+      <div class="chip" data-v="Right leg">R Leg</div>
+      <div class="chip" data-v="Left foot">L Foot</div>
+      <div class="chip" data-v="Right foot">R Foot</div>
+      <div class="chip" data-v="Jaw / TMJ">Jaw / TMJ</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">Pain right now <span class="req">*</span></div>
+    <div class="slider-wrap"><input type="range" class="slider" id="f_painNow" min="0" max="10" value="5" oninput="V('painNowV',this.value)"><div class="slider-val" id="painNowV">5</div></div>
+    <div class="slider-labels"><span>0 — None</span><span>10 — Worst imaginable</span></div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">At its worst</div>
+    <div class="slider-wrap"><input type="range" class="slider" id="f_painWorst" min="0" max="10" value="7" oninput="V('painWorstV',this.value)"><div class="slider-val" id="painWorstV">7</div></div>
+    <div class="slider-labels"><span>0 — None</span><span>10 — Worst imaginable</span></div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">What does the pain feel like?</div>
+    <div class="chips" style="margin-top:10px" data-f="painType" data-m="multi">
+      <div class="chip" data-v="Sharp">Sharp</div><div class="chip" data-v="Dull / aching">Dull / aching</div><div class="chip" data-v="Burning">Burning</div><div class="chip" data-v="Shooting">Shooting</div><div class="chip" data-v="Throbbing">Throbbing</div><div class="chip" data-v="Stiff">Stiff</div><div class="chip" data-v="Tingling">Tingling</div><div class="chip" data-v="Numbness">Numbness</div><div class="chip" data-v="Cramping">Cramping</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">How often?</div>
+    <div class="chips" style="margin-top:10px" data-f="painFreq" data-m="single">
+      <div class="chip" data-v="Constant">Constant</div><div class="chip" data-v="Daily">Daily</div><div class="chip" data-v="Several times a week">Several × /week</div><div class="chip" data-v="Few times a month">Few × /month</div><div class="chip" data-v="Occasionally">Occasionally</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">What makes it worse?</div>
+    <div class="chips" style="margin-top:10px" data-f="painWorse" data-m="multi">
+      <div class="chip" data-v="Sitting">Sitting</div><div class="chip" data-v="Standing">Standing</div><div class="chip" data-v="Walking">Walking</div><div class="chip" data-v="Bending">Bending</div><div class="chip" data-v="Lifting">Lifting</div><div class="chip" data-v="Driving">Driving</div><div class="chip" data-v="Sleeping">Sleeping</div><div class="chip" data-v="Exercise">Exercise</div><div class="chip" data-v="Stress">Stress</div><div class="chip" data-v="Morning stiffness">Morning</div><div class="chip" data-v="End of day">End of day</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">What makes it better?</div>
+    <div class="chips" style="margin-top:10px" data-f="painBetter" data-m="multi">
+      <div class="chip" data-v="Rest">Rest</div><div class="chip" data-v="Heat">Heat</div><div class="chip" data-v="Ice">Ice</div><div class="chip" data-v="Stretching">Stretching</div><div class="chip" data-v="Medication">Medication</div><div class="chip" data-v="Massage">Massage</div><div class="chip" data-v="Movement">Movement</div><div class="chip" data-v="Position change">Position change</div><div class="chip" data-v="Nothing helps">Nothing helps</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════ -->
+<!-- STEP 4: MEDICAL HISTORY               -->
+<!-- ══════════════════════════════════════ -->
+<div class="step" data-step="3">
+  <div class="step-hd">
+    <div class="step-n">Step 4 of 8</div>
+    <div class="step-t">Medical History</div>
+    <div class="step-d">Understanding your health background helps us keep you safe and tailor your care.</div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">Have you been diagnosed with any of the following?</div>
+    <div class="card-hint">Select all that apply — leave blank if none.</div>
+    <div class="chips" style="margin-top:6px" data-f="conditions" data-m="multi">
+      <div class="chip" data-v="Arthritis">Arthritis</div><div class="chip" data-v="Osteoporosis">Osteoporosis</div><div class="chip" data-v="Disc herniation">Disc herniation</div><div class="chip" data-v="Scoliosis">Scoliosis</div><div class="chip" data-v="Spinal stenosis">Spinal stenosis</div><div class="chip" data-v="Fibromyalgia">Fibromyalgia</div><div class="chip" data-v="Diabetes">Diabetes</div><div class="chip" data-v="High blood pressure">High BP</div><div class="chip" data-v="Heart disease">Heart disease</div><div class="chip" data-v="Stroke">Stroke</div><div class="chip" data-v="Cancer">Cancer</div><div class="chip" data-v="Autoimmune">Autoimmune</div><div class="chip" data-v="Seizures / epilepsy">Seizures</div><div class="chip" data-v="Depression / anxiety">Depression / anxiety</div><div class="chip" data-v="Migraines">Migraines</div><div class="chip" data-v="Currently pregnant">Pregnant</div>
+    </div>
+    <div class="fld" style="margin-top:12px"><label>Other conditions</label><input type="text" id="f_condOther" placeholder="Anything else…"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">Past surgeries</div>
+    <div class="trow"><div class="trow-label">I've had surgeries</div><label class="tgl"><input type="checkbox" id="f_surgY" onchange="TC('surgC',this.checked)"><span class="tgl-tr"></span></label></div>
+    <div class="cond" id="surgC"><textarea id="f_surg" placeholder="List surgeries + dates&#10;e.g. Knee arthroscopy (2019)" style="margin-top:12px"></textarea></div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">Fractures or broken bones</div>
+    <div class="trow"><div class="trow-label">I've had fractures</div><label class="tgl"><input type="checkbox" id="f_fracY" onchange="TC('fracC',this.checked)"><span class="tgl-tr"></span></label></div>
+    <div class="cond" id="fracC"><textarea id="f_frac" placeholder="Which bones + when" style="margin-top:12px"></textarea></div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">Previous injuries (before this current episode)</div>
+    <div class="card-hint">Any past injuries — even old ones — can affect how your body moves and heals today.</div>
+    <div class="trow"><div class="trow-label">I've had previous injuries</div><label class="tgl"><input type="checkbox" id="f_injY" onchange="TC('injC',this.checked)"><span class="tgl-tr"></span></label></div>
+    <div class="cond" id="injC">
+      <div class="chips" style="margin-top:12px" data-f="prevInjTypes" data-m="multi">
+        <div class="chip" data-v="Car accident">Car accident</div><div class="chip" data-v="Sports injury">Sports injury</div><div class="chip" data-v="Work injury">Work injury</div><div class="chip" data-v="Fall">Fall</div><div class="chip" data-v="Whiplash">Whiplash</div><div class="chip" data-v="Concussion">Concussion</div><div class="chip" data-v="Back injury">Back injury</div><div class="chip" data-v="Neck injury">Neck injury</div><div class="chip" data-v="Shoulder injury">Shoulder injury</div><div class="chip" data-v="Knee injury">Knee injury</div><div class="chip" data-v="Other">Other</div>
+      </div>
+      <textarea id="f_prevInj" placeholder="Describe each injury, roughly when it happened, and how it was treated&#10;e.g. Whiplash from car accident (2018) — had physio for 3 months&#10;Sprained ankle playing football (2020) — healed on its own" style="margin-top:12px"></textarea>
+      <div class="fld" style="margin-top:12px"><label>Did you fully recover from these injuries?</label>
+        <div class="chips" style="margin-top:6px" data-f="prevInjRecovery" data-m="single">
+          <div class="chip" data-v="Yes, fully recovered">Yes, fully</div><div class="chip" data-v="Mostly recovered">Mostly</div><div class="chip" data-v="Still have some issues">Still have issues</div><div class="chip" data-v="Never fully recovered">Never fully recovered</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">Medications & supplements</div>
+    <div class="trow"><div class="trow-label">I take medications / supplements</div><label class="tgl"><input type="checkbox" id="f_medY" onchange="TC('medC',this.checked)"><span class="tgl-tr"></span></label></div>
+    <div class="cond" id="medC"><textarea id="f_med" placeholder="Medication — what it's for&#10;e.g. Ibuprofen (headaches)" style="margin-top:12px"></textarea></div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">Allergies</div>
+    <div class="trow"><div class="trow-label">I have allergies</div><label class="tgl"><input type="checkbox" id="f_algY" onchange="TC('algC',this.checked)"><span class="tgl-tr"></span></label></div>
+    <div class="cond" id="algC"><input type="text" id="f_alg" placeholder="e.g. Penicillin, Latex" style="margin-top:12px"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">Previous chiropractic care</div>
+    <div class="chips" style="margin-top:10px" data-f="priorChiro" data-m="single">
+      <div class="chip" data-v="First time">First time</div><div class="chip" data-v="Yes, recently">Yes, recently</div><div class="chip" data-v="Yes, a while ago">Yes, a while ago</div>
+    </div>
+    <div class="fld" style="margin-top:10px"><label>Other treatments tried for this issue</label><input type="text" id="f_priorTx" placeholder="e.g. Physio, acupuncture, massage…"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">Imaging on file</div>
+    <div class="chips" style="margin-top:10px" data-f="imaging" data-m="multi">
+      <div class="chip" data-v="X-ray">X-ray</div><div class="chip" data-v="MRI">MRI</div><div class="chip" data-v="CT scan">CT scan</div><div class="chip" data-v="None">None</div><div class="chip" data-v="Unsure">Unsure</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════ -->
+<!-- STEP 5: LIFESTYLE                     -->
+<!-- ══════════════════════════════════════ -->
+<div class="step" data-step="4">
+  <div class="step-hd">
+    <div class="step-n">Step 5 of 8</div>
+    <div class="step-t">Daily Life & Lifestyle</div>
+    <div class="step-d">Your daily habits give us important clues about what's contributing to your symptoms.</div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">Occupation</div>
+    <div class="row" style="margin-top:10px">
+      <div class="fld"><label>Job title</label><input type="text" id="f_occ" placeholder="e.g. Accountant"></div>
+      <div class="fld"><label>Work type</label><select id="f_workType"><option value="">Select…</option><option>Desk / computer</option><option>Standing / walking</option><option>Manual / physical</option><option>Driving</option><option>Mixed</option><option>Retired</option><option>Student</option></select></div>
+    </div>
+    <div class="fld" style="margin-top:12px"><label>Hours per day at work</label><input type="text" id="f_workHrs" placeholder="e.g. 8"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">How does this affect your daily life?</div>
+    <div class="chips" style="margin-top:10px" data-f="dailyImpact" data-m="multi">
+      <div class="chip" data-v="Work">Work</div><div class="chip" data-v="Sleep">Sleep</div><div class="chip" data-v="Exercise">Exercise</div><div class="chip" data-v="Housework">Housework</div><div class="chip" data-v="Childcare">Childcare</div><div class="chip" data-v="Driving">Driving</div><div class="chip" data-v="Social life">Social life</div><div class="chip" data-v="Mood">Mood</div><div class="chip" data-v="Concentration">Concentration</div><div class="chip" data-v="None">Not affected</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">Exercise & Movement</div>
+    <div class="row" style="margin-top:10px">
+      <div class="fld"><label>How often?</label><select id="f_exFreq"><option value="">Select…</option><option>Never</option><option>1–2 × /week</option><option>3–4 × /week</option><option>5+ × /week</option><option>Daily</option></select></div>
+      <div class="fld"><label>What kind?</label><input type="text" id="f_exType" placeholder="Walking, gym, yoga…"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">Sleep</div>
+    <div class="row" style="margin-top:10px">
+      <div class="fld"><label>Hours per night</label><select id="f_sleepHrs"><option value="">Select…</option><option>&lt; 5 hours</option><option>5–6 hours</option><option>6–7 hours</option><option>7–8 hours</option><option>8+ hours</option></select></div>
+      <div class="fld"><label>Quality</label><select id="f_sleepQual"><option value="">Select…</option><option>Good — I wake rested</option><option>Fair — could be better</option><option>Poor — I wake tired</option><option>Very poor — pain/frequent waking</option></select></div>
+    </div>
+    <div style="margin-top:12px"><div class="card-sub">Sleep position</div>
+      <div class="chips" data-f="sleepPos" data-m="single"><div class="chip" data-v="Back">Back</div><div class="chip" data-v="Side">Side</div><div class="chip" data-v="Stomach">Stomach</div><div class="chip" data-v="Varies">Varies</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">Stress Level</div>
+    <div class="slider-wrap"><input type="range" class="slider" id="f_stress" min="1" max="10" value="5" oninput="V('stressV',this.value)"><div class="slider-val" id="stressV">5</div></div>
+    <div class="slider-labels"><span>1 — Very relaxed</span><span>10 — Extremely stressed</span></div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">Lifestyle Habits</div>
+    <div class="card-hint">Completely optional — helps us see the full picture.</div>
+    <div class="trow"><div class="trow-label">I smoke or use tobacco</div><label class="tgl"><input type="checkbox" id="f_smoke"><span class="tgl-tr"></span></label></div>
+    <div class="trow"><div class="trow-label">I drink alcohol regularly</div><label class="tgl"><input type="checkbox" id="f_alcohol"><span class="tgl-tr"></span></label></div>
+    <div class="trow"><div class="trow-label">3+ caffeinated drinks daily</div><label class="tgl"><input type="checkbox" id="f_caffeine"><span class="tgl-tr"></span></label></div>
+    <div class="trow"><div class="trow-label">I sit more than 6 hours a day</div><label class="tgl"><input type="checkbox" id="f_longSit"><span class="tgl-tr"></span></label></div>
+    <div class="trow"><div class="trow-label">Screen time 4+ hours daily</div><label class="tgl"><input type="checkbox" id="f_screen"><span class="tgl-tr"></span></label></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════ -->
+<!-- STEP 6: OUTCOME QUESTIONNAIRES        -->
+<!-- ══════════════════════════════════════ -->
+<div class="step" data-step="5">
+  <div class="step-hd">
+    <div class="step-n">Step 6 of 8</div>
+    <div class="step-t">How Is It Affecting You?</div>
+    <div class="step-d">Based on your symptoms, we've selected the right questionnaires. These help us measure your progress over time.</div>
+  </div>
+  <div class="note note-warm">ℹ️ These are validated clinical tools. Answer honestly — there are no right or wrong answers. You'll answer them again at future visits to track improvement.</div>
+  <div id="qContainer"></div>
+  <div class="card" id="qNone" style="display:none;text-align:center;padding:36px"><div style="font-size:36px;opacity:.25;margin-bottom:8px">📋</div><div style="font-size:14px;color:var(--ink3)">No specific questionnaires matched your symptoms. We'll assess function in person at your visit.</div></div>
+</div>
+
+<!-- ══════════════════════════════════════ -->
+<!-- STEP 7: GOALS                         -->
+<!-- ══════════════════════════════════════ -->
+<div class="step" data-step="6">
+  <div class="step-hd">
+    <div class="step-n">Step 7 of 8</div>
+    <div class="step-t">Your Goals</div>
+    <div class="step-d">What does success look like for you? This helps us build your care plan around what matters most.</div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">What do you hope to achieve?</div>
+    <div class="chips" style="margin-top:10px" data-f="goals" data-m="multi">
+      <div class="chip" data-v="Reduce pain">Reduce pain</div><div class="chip" data-v="Fewer headaches">Fewer headaches</div><div class="chip" data-v="Better mobility">Better mobility</div><div class="chip" data-v="Improve posture">Improve posture</div><div class="chip" data-v="Return to exercise">Return to exercise</div><div class="chip" data-v="Sleep better">Sleep better</div><div class="chip" data-v="Reduce medication">Reduce medication</div><div class="chip" data-v="Prevention">Prevention</div><div class="chip" data-v="Quality of life">Quality of life</div><div class="chip" data-v="Better focus">Better focus</div><div class="chip" data-v="Return to work">Return to work</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">What's the one thing you'd love to be able to do again?</div>
+    <textarea id="f_goalActivity" placeholder="e.g. Play with my kids without pain, run a 5K, sit through a movie comfortably…"></textarea>
+  </div>
+
+  <div class="card">
+    <div class="card-label">How committed are you to following a care plan?</div>
+    <div class="card-hint">Including home exercises, lifestyle changes, and keeping appointments.</div>
+    <div class="rating" style="margin-top:10px" data-f="commitment" data-m="single">
+      <div class="rate-o" data-v="1">1</div><div class="rate-o" data-v="2">2</div><div class="rate-o" data-v="3">3</div><div class="rate-o" data-v="4">4</div><div class="rate-o" data-v="5">5</div><div class="rate-o" data-v="6">6</div><div class="rate-o" data-v="7">7</div><div class="rate-o" data-v="8">8</div><div class="rate-o" data-v="9">9</div><div class="rate-o" data-v="10">10</div>
+    </div>
+    <div class="slider-labels" style="margin-top:4px"><span>Not very</span><span>Fully committed</span></div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">Anything else you'd like us to know?</div>
+    <textarea id="f_notes" placeholder="Concerns, fears about treatment, questions for the doctor…"></textarea>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════ -->
+<!-- STEP 8: REVIEW & CONSENT              -->
+<!-- ══════════════════════════════════════ -->
+<div class="step" data-step="7">
+  <div class="step-hd">
+    <div class="step-n">Step 8 of 8</div>
+    <div class="step-t">Review & Consent</div>
+    <div class="step-d">Almost done. Review your information and provide consent below.</div>
+  </div>
+  <div id="reviewBox"></div>
+  <div class="card">
+    <div class="card-label">Informed Consent</div>
+    <div class="consent-box">
+      <h4>Consent to Chiropractic Care</h4>
+      <p>I understand that the chiropractor will use their hands or a mechanical instrument to move my joints. I understand that adjustments may produce an audible release. Possible risks include soreness, stiffness, and in rare cases, disc injuries or vascular events. The doctor will screen for contraindications during examination.</p>
+      <h4 style="margin-top:12px">Privacy Notice (HIPAA)</h4>
+      <p>The information I provide is confidential and will be used solely for treatment, payment, and healthcare operations as permitted by law. I may request access to my records at any time.</p>
+    </div>
+    <div class="ccheck"><input type="checkbox" id="c1"><label for="c1">I have read and understand the consent for chiropractic care and accept the potential risks.</label></div>
+    <div class="ccheck"><input type="checkbox" id="c2"><label for="c2">I acknowledge the privacy notice and consent to the use of my information for treatment.</label></div>
+    <div class="ccheck"><input type="checkbox" id="c3"><label for="c3">I confirm the information in this form is accurate to the best of my knowledge.</label></div>
+  </div>
+  <div class="card">
+    <div class="card-label">Digital Signature</div>
+    <div class="card-hint">Type your full name as your electronic signature.</div>
+    <input type="text" id="f_sig" placeholder="Your full legal name" style="font-family:var(--serif);font-size:22px;font-style:italic;padding:16px;letter-spacing:.3px">
+    <div class="fld" style="margin-top:12px"><label>Today's Date</label><input type="date" id="f_sigDate"></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════ -->
+<!-- STEP 9: CLINICIAN PROFILE (chiro only)-->
+<!-- ══════════════════════════════════════ -->
+<div class="step" data-step="8">
+  <div class="step-hd">
+    <div class="step-n">Clinician View</div>
+    <div class="step-t">Patient Profile</div>
+    <div class="step-d">This summary is generated for the chiropractor only. The patient does not see this page.</div>
+  </div>
+  <div class="note note-info">🔒 <strong>Clinician eyes only</strong> — this profile is compiled from the patient's intake responses and will be available on the clinician dashboard.</div>
+  <div id="profileBox"></div>
+  <div style="text-align:center;margin-top:24px">
+    <button class="btn btn-pri btn-big" onclick="exportJSON()" style="margin-bottom:12px">💾 Download Full JSON</button>
+    <div style="font-size:12px;color:var(--ink4)">JSON includes all intake data + this profile summary</div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════ -->
+<!-- THANK YOU                             -->
+<!-- ══════════════════════════════════════ -->
+<div class="step" data-step="9">
+  <div class="ty">
+    <div class="ty-icon">✓</div>
+    <div class="ty-t">You're All Set!</div>
+    <div class="ty-d">Thank you for completing your intake form. We've received your information and look forward to seeing you at your appointment.</div>
+    <div style="margin-top:32px"><button class="btn btn-pri btn-big" onclick="exportJSON()">💾 Download My Responses</button></div>
+  </div>
+</div>
+
+</div><!-- /shell -->
+
+<!-- NAV -->
+<div class="nav" id="navBar">
+  <div class="nav-in">
+    <button class="btn btn-ghost" id="btnBack" onclick="go(cur-1)" style="visibility:hidden">← Back</button>
+    <span class="nav-count" id="navCount">1 / 8</span>
+    <button class="btn btn-pri" id="btnNext" onclick="go(cur+1)">Continue →</button>
+  </div>
+</div>
+
+<script>
+// ═══════ STATE ═══════
+let cur = 0;
+const TOTAL = 9;
+const NAMES = ['You','Reason','Pain','Medical','Life','Function','Goals','Consent','Profile'];
+const CS = {}; // chip state
+
+// ═══════ HELPERS ═══════
+const $=s=>document.getElementById(s);
+const V=(id,v)=>{$(id).textContent=v};
+const gv=id=>$(id)?.value?.trim()||'';
+const gc=f=>CS[f]||[];
+function TC(id,show){$(id).classList.toggle('open',show)}
+
+// ═══════ PROGRESS ═══════
+(function buildProg(){
+  const c=$('progDots');
+  NAMES.forEach((n,i)=>{const d=document.createElement('div');d.className='pdot'+(i===0?' active':'');d.id='pd_'+i;d.innerHTML=`<div class="pdot-c">${i+1}</div><div class="pdot-l">${n}</div>`;d.onclick=()=>{if(i<cur)go(i)};c.appendChild(d)})
+})();
+function updProg(){
+  const pct=cur>=TOTAL?100:(cur/TOTAL*100);$('progFill').style.width=pct+'%';
+  NAMES.forEach((_,i)=>{$('pd_'+i).className='pdot'+(i<cur?' done':i===cur?' active':'')});
+}
+
+// Sticky shadow
+window.addEventListener('scroll',()=>{$('progWrap').classList.toggle('scrolled',window.scrollY>10)});
+
+// ═══════ NAVIGATION ═══════
+function go(n){
+  if(n<0)return;
+  // Consent validation when leaving step 7
+  if(cur===7&&n>7){if(!$('c1').checked||!$('c2').checked||!$('c3').checked){alert('Please check all consent boxes.');return}if(!gv('f_sig')){alert('Please type your name as a digital signature.');return}}
+  if(n===7)buildReview();
+  if(n===5)buildQuestionnaires();
+  if(n===8)buildProfile();
+  // Skip profile for patient — in production, role check here. For demo, show it.
+  document.querySelectorAll('.step').forEach(s=>s.classList.remove('active'));
+  const t=document.querySelector(`.step[data-step="${n}"]`);
+  if(t){t.classList.add('active');cur=n}
+  updProg();updNav();window.scrollTo({top:0,behavior:'smooth'});
+}
+function updNav(){
+  const nav=$('navBar');
+  if(cur>=TOTAL){nav.style.display='none';$('progWrap').style.display='none';return}
+  nav.style.display='';$('btnBack').style.visibility=cur>0?'visible':'hidden';
+  $('navCount').textContent=(cur+1)+' / '+TOTAL;
+  const b=$('btnNext');
+  if(cur===TOTAL-1){b.textContent='Done ✓';b.className='btn btn-pri btn-big'}
+  else if(cur===TOTAL-2){b.textContent='View Profile →';b.className='btn btn-pri'}
+  else{b.textContent='Continue →';b.className='btn btn-pri'}
+}
+updNav();
+
+// ═══════ CHIPS ═══════
+document.addEventListener('click',e=>{
+  const ch=e.target.closest('.chip');if(!ch)return;
+  const g=ch.parentElement,f=g.dataset.f,m=g.dataset.m;if(!f)return;
+  if(m==='single'){g.querySelectorAll('.chip').forEach(c=>c.classList.remove('on'));ch.classList.add('on');CS[f]=[ch.dataset.v]}
+  else{ch.classList.toggle('on');CS[f]=Array.from(g.querySelectorAll('.chip.on')).map(c=>c.dataset.v)}
+});
+document.addEventListener('click',e=>{
+  const o=e.target.closest('.rate-o');if(!o)return;
+  o.parentElement.querySelectorAll('.rate-o').forEach(x=>x.classList.remove('on'));o.classList.add('on');
+  const f=o.parentElement.dataset.f;if(f)CS[f]=[o.dataset.v];
+});
+
+// ═══════════════════════════════════════════════════════
+// UNIFIED QUESTIONNAIRE ENGINE
+// ═══════════════════════════════════════════════════════
+
+const ROUTES=[
+  {match:['Neck','Head','Headaches / migraines','Jaw / TMJ','Upper back'],q:['ndi']},
+  {match:['Head','Headaches / migraines'],q:['hit6']},
+  {match:['Lower back','Hips / pelvis','Mid back'],q:['odi']},
+  {match:['Left shoulder','Right shoulder','Left arm / hand','Right arm / hand','Chest / ribs'],q:['qdash']},
+  {match:['Left leg','Right leg','Left foot','Right foot'],q:['odi']},
+];
+
+// Questionnaire definitions
+const QDEFS={
+ndi:{id:'ndi',name:'Neck Disability Index (NDI)',ver:'2.0',cite:'Vernon H, Mior S. JMPT 1991;14(7):409–415.',icon:'🔵',color:'sky',
+  score:{type:'pct',max:50},
+  bands:[{min:0,max:8,l:'No disability',c:'life'},{min:9,max:28,l:'Mild disability',c:'life'},{min:29,max:48,l:'Moderate disability',c:'amber'},{min:49,max:68,l:'Severe disability',c:'rose'},{min:69,max:100,l:'Complete disability',c:'rose'}],
+  qs:[
+    {p:'Pain Intensity',o:['I have no pain right now','The pain is very mild','The pain is moderate','The pain is fairly severe','The pain is very severe','The pain is the worst imaginable']},
+    {p:'Personal Care (washing, dressing)',o:['I can look after myself normally','I can look after myself but it causes extra pain','It is painful and I am slow and careful','I need some help but manage most of it','I need help every day with most of my care','I cannot get dressed, I wash with difficulty']},
+    {p:'Lifting',o:['I can lift heavy weights without extra pain','I can lift heavy weights but it causes extra pain','Pain prevents heavy weights off the floor','Pain prevents heavy weights but I manage light–medium','I can only lift very light weights','I cannot lift or carry anything']},
+    {p:'Reading / Screen Work',o:['I can do this as long as I want — no problem','I can do this as long as I want — slight pain','I can do this as long as I want — moderate pain','Pain prevents me doing this as long as I want','I can hardly do this because of pain','I cannot do this at all']},
+    {p:'Headaches',o:['I have no headaches at all','Slight headaches, infrequently','Moderate headaches, infrequently','Moderate headaches, frequently','Severe headaches, frequently','Headaches almost all the time']},
+    {p:'Concentration',o:['I can concentrate fully — no difficulty','I can concentrate fully — slight difficulty','Fair degree of difficulty concentrating','A lot of difficulty concentrating','Great deal of difficulty concentrating','I cannot concentrate at all']},
+    {p:'Work / Daily Tasks',o:['I can do as much work as I want','I can only do my usual work, no more','I can do most of my usual work, no more','I cannot do my usual work','I can hardly do any work','I cannot do any work']},
+    {p:'Driving / Travel',o:['I can drive/travel with no pain','I can drive/travel with slight pain','I can drive/travel with moderate pain','Pain limits driving to under 1 hour','I can barely drive at all','I cannot drive or travel at all']},
+    {p:'Sleep',o:['No trouble sleeping','Sleep slightly disturbed (< 1 hr)','Sleep mildly disturbed (1–2 hrs)','Sleep moderately disturbed (2–3 hrs)','Sleep greatly disturbed (3–5 hrs)','Sleep completely disturbed (5+ hrs)']},
+    {p:'Recreation / Hobbies',o:['All activities — no pain','All activities — some pain','Most but not all activities — pain','Only a few activities — pain','Hardly any activities — pain','No activities at all']}
+  ]},
+
+odi:{id:'odi',name:'Oswestry Disability Index (ODI)',ver:'2.1a',cite:'Fairbank JCT, Pynsent PB. Spine 2000;25(22):2940–2953.',icon:'🟢',color:'life',
+  score:{type:'pct',max:50},
+  bands:[{min:0,max:20,l:'Minimal disability',c:'life'},{min:21,max:40,l:'Moderate disability',c:'amber'},{min:41,max:60,l:'Severe disability',c:'rose'},{min:61,max:80,l:'Crippling back pain',c:'rose'},{min:81,max:100,l:'Bed-bound / exaggerating',c:'rose'}],
+  qs:[
+    {p:'Pain Intensity',o:['I have no pain right now','The pain is very mild','The pain is moderate','The pain is fairly severe','The pain is very severe','The pain is the worst imaginable']},
+    {p:'Personal Care',o:['I can look after myself normally — no extra pain','I can look after myself — causes extra pain','It is painful; I am slow and careful','I need some help but manage most of self-care','I need help every day in most self-care','I do not get dressed, wash with difficulty']},
+    {p:'Lifting',o:['I can lift heavy weights — no extra pain','Heavy weights give extra pain','Pain prevents heavy weights off floor, OK if placed conveniently','Pain prevents heavy weights; I manage light–medium','I can only lift very light weights','I cannot lift or carry anything']},
+    {p:'Walking',o:['Pain does not prevent walking any distance','Pain prevents walking more than 1 mile','Pain prevents walking more than ½ mile','Pain prevents walking more than 100 yards','I can only walk using a stick or crutches','I am in bed most of the time']},
+    {p:'Sitting',o:['I can sit in any chair as long as I like','I can sit in my favourite chair as long as I like','Pain prevents sitting more than 1 hour','Pain prevents sitting more than 30 minutes','Pain prevents sitting more than 10 minutes','Pain prevents me sitting at all']},
+    {p:'Standing',o:['I can stand as long as I want — no extra pain','I can stand as long as I want — gives extra pain','Pain prevents standing more than 1 hour','Pain prevents standing more than 30 minutes','Pain prevents standing more than 10 minutes','Pain prevents me standing at all']},
+    {p:'Sleep',o:['Sleep is never disturbed by pain','Sleep is occasionally disturbed','Less than 6 hours sleep due to pain','Less than 4 hours sleep due to pain','Less than 2 hours sleep due to pain','Pain prevents any sleep at all']},
+    {p:'Social Life',o:['Normal social life — no extra pain','Normal social life — increases pain','Pain limits energetic interests','Pain has restricted social life; less outings','Pain restricted social life to home','No social life because of pain']},
+    {p:'Travelling',o:['I can travel anywhere — no pain','I can travel anywhere — gives extra pain','Pain is bad but I manage journeys over 2 hours','Pain restricts to journeys under 1 hour','Pain restricts to short journeys under 30 min','Pain prevents travelling except for treatment']},
+    {p:'Employment / Homemaking',o:['Normal activities — no extra pain','Normal activities — extra pain','I can do most activities but pain prevents demanding ones','Pain limits me to light duties only','Pain prevents even light duties','Pain prevents any job/homemaking']}
+  ]},
+
+hit6:{id:'hit6',name:'Headache Impact Test (HIT-6)',ver:'1.0',cite:'Kosinski M et al. Qual Life Res 2003;12:963–974.',icon:'🟣',color:'plum',
+  score:{type:'hit6',vals:[6,8,10,11,13]},
+  bands:[{min:36,max:49,l:'Little or no impact',c:'life'},{min:50,max:55,l:'Some impact',c:'amber'},{min:56,max:59,l:'Substantial impact',c:'amber'},{min:60,max:78,l:'Severe impact',c:'rose'}],
+  qs:[
+    {p:'When you have headaches, how often is the pain severe?',o:['Never','Rarely','Sometimes','Very often','Always']},
+    {p:'How often do headaches limit your ability to do usual daily activities?',o:['Never','Rarely','Sometimes','Very often','Always']},
+    {p:'When you have a headache, how often do you wish you could lie down?',o:['Never','Rarely','Sometimes','Very often','Always']},
+    {p:'In the past 4 weeks, how often have you felt too tired to do work or daily activities because of headaches?',o:['Never','Rarely','Sometimes','Very often','Always']},
+    {p:'In the past 4 weeks, how often have you felt fed up or irritated because of headaches?',o:['Never','Rarely','Sometimes','Very often','Always']},
+    {p:'In the past 4 weeks, how often did headaches limit your ability to concentrate?',o:['Never','Rarely','Sometimes','Very often','Always']}
+  ]},
+
+qdash:{id:'qdash',name:'QuickDASH',ver:'1.0',cite:'Beaton DE et al. J Hand Ther 2005;18(2):191–199.',icon:'🟠',color:'amber',
+  score:{type:'dash'},
+  bands:[{min:0,max:25,l:'Mild disability',c:'life'},{min:26,max:50,l:'Moderate disability',c:'amber'},{min:51,max:75,l:'Severe disability',c:'rose'},{min:76,max:100,l:'Extreme disability',c:'rose'}],
+  qs:[
+    {p:'Open a tight or new jar',o:['No difficulty','Mild difficulty','Moderate difficulty','Severe difficulty','Unable']},
+    {p:'Do heavy household chores (washing walls, floors)',o:['No difficulty','Mild difficulty','Moderate difficulty','Severe difficulty','Unable']},
+    {p:'Carry a shopping bag or briefcase',o:['No difficulty','Mild difficulty','Moderate difficulty','Severe difficulty','Unable']},
+    {p:'Wash your back',o:['No difficulty','Mild difficulty','Moderate difficulty','Severe difficulty','Unable']},
+    {p:'Use a knife to cut food',o:['No difficulty','Mild difficulty','Moderate difficulty','Severe difficulty','Unable']},
+    {p:'Recreational activities requiring force through arm/shoulder/hand',o:['No difficulty','Mild difficulty','Moderate difficulty','Severe difficulty','Unable']},
+    {p:'Arm/shoulder/hand interference with social activities this past week?',o:['Not at all','Slightly','Moderately','Quite a bit','Extremely']},
+    {p:'Limited in work/daily activities due to arm/shoulder/hand this past week?',o:['Not limited','Slightly limited','Moderately limited','Very limited','Unable']},
+    {p:'Arm/shoulder/hand pain severity this past week',o:['None','Mild','Moderate','Severe','Extreme']},
+    {p:'Tingling in arm/shoulder/hand this past week',o:['None','Mild','Moderate','Severe','Extreme']},
+    {p:'Difficulty sleeping from arm/shoulder/hand pain this past week',o:['No difficulty','Mild','Moderate','Severe','So much I can\'t sleep']}
+  ]}
+};
+
+// Response state (preserved across rebuilds)
+const QR={}; // {qId:{ans:[],done:null}}
+const QArchive=[];
+let prevQIds=[];
+
+function getQIds(){
+  const all=[...gc('visitReason'),...gc('painAreas')];
+  const ids=new Set();
+  ROUTES.forEach(r=>{if(r.match.some(m=>all.includes(m)))r.q.forEach(q=>ids.add(q))});
+  if(ids.size===0&&all.length>0){ids.add('ndi');ids.add('odi')}
+  return[...ids];
+}
+
+function ensureQR(qId){
+  if(!QR[qId])QR[qId]={ans:new Array(QDEFS[qId].qs.length).fill(-1),done:null,archived:false};
+  const need=QDEFS[qId].qs.length;while(QR[qId].ans.length<need)QR[qId].ans.push(-1);
+}
+
+function scoreQ(qId){
+  const D=QDEFS[qId],a=QR[qId]?.ans||[];
+  const cnt=a.filter(x=>x>=0).length;
+  if(cnt===0)return{raw:0,pct:0,ok:false,n:cnt};
+  if(D.score.type==='hit6'){const raw=a.reduce((s,v)=>s+(v>=0?D.score.vals[v]:6),0);return{raw,pct:Math.round((raw-36)/42*100),ok:cnt===D.qs.length,n:cnt}}
+  if(D.score.type==='dash'){const vals=a.filter(x=>x>=0).map(x=>x+1);const mean=vals.reduce((s,v)=>s+v,0)/vals.length;const pct=Math.round((mean-1)/4*100);return{raw:vals.reduce((s,v)=>s+v,0),pct,ok:cnt===D.qs.length,n:cnt}}
+  const raw=a.reduce((s,v)=>s+(v>=0?v:0),0);return{raw,pct:Math.round(raw/D.score.max*100),ok:cnt===D.qs.length,n:cnt};
+}
+
+function getBand(qId,s){
+  const D=QDEFS[qId],val=D.score.type==='hit6'?s.raw:s.pct;
+  for(const b of D.bands)if(val>=b.min&&val<=b.max)return b;
+  return D.bands[D.bands.length-1];
+}
+
+const cMap={life:'--life',amber:'--amber',rose:'--rose',sky:'--sky',plum:'--plum'};
+const cBg={life:'--life-l',amber:'--amber-l',rose:'--rose-l',sky:'--sky-l',plum:'--plum-l'};
+
+function buildQuestionnaires(){
+  const box=$('qContainer'),none=$('qNone');
+  const ids=getQIds();
+  // Archive removed
+  prevQIds.forEach(old=>{if(!ids.includes(old)&&QR[old]&&!QR[old].archived){QArchive.push({...QR[old],qId:old,at:new Date().toISOString()});QR[old].archived=true}});
+  ids.forEach(id=>{if(QR[id]?.archived)QR[id].archived=false});
+  prevQIds=[...ids];
+  box.innerHTML='';
+  if(!ids.length){none.style.display='';return}
+  none.style.display='none';
+
+  ids.forEach(qId=>{
+    const D=QDEFS[qId];ensureQR(qId);const ans=QR[qId].ans;
+    let h=`<div class="card" id="qc_${qId}">`;
+    h+=`<div class="q-head"><span class="q-head-icon">${D.icon}</span><div class="q-head-info"><div class="q-head-title">${D.name}</div><div class="q-head-ver">v${D.ver}</div></div><div class="q-badge" id="qb_${qId}"></div></div>`;
+    h+=`<div class="q-cite">${D.cite}</div>`;
+    D.qs.forEach((q,qi)=>{
+      h+=`<div style="margin-top:${qi?14:0}px"><div class="card-sub">${qi+1}. ${q.p}</div>`;
+      q.o.forEach((opt,oi)=>{
+        const on=ans[qi]===oi;
+        h+=`<div class="qopt" onclick="pickQ('${qId}',${qi},${oi},this)"><div class="qradio${on?' on':''}"></div><div class="qopt-text">${opt}</div></div>`;
+      });
+      h+=`</div>`;
+    });
+    h+=`<div class="q-result" id="qr_${qId}"></div></div>`;
+    box.innerHTML+=h;
+    renderQScore(qId);
+  });
+}
+
+function pickQ(qId,qi,oi,el){
+  ensureQR(qId);QR[qId].ans[qi]=oi;
+  if(QR[qId].ans.filter(x=>x>=0).length===QDEFS[qId].qs.length)QR[qId].done=new Date().toISOString();
+  const parent=el.parentElement;
+  parent.querySelectorAll('.qopt').forEach((o,i)=>{const r=o.querySelector('.qradio');if(i===oi)r.classList.add('on');else r.classList.remove('on')});
+  renderQScore(qId);
+}
+
+function renderQScore(qId){
+  const D=QDEFS[qId],s=scoreQ(qId);
+  const el=$('qr_'+qId),badge=$('qb_'+qId);
+  if(!s.ok){
+    el.style.background='var(--bg2)';el.style.border='1.5px dashed var(--border)';el.style.color='var(--ink4)';
+    el.textContent=`${s.n} / ${D.qs.length} answered`;
+    badge.textContent='Incomplete';badge.style.background='var(--bg2)';badge.style.color='var(--ink4)';return;
+  }
+  const b=getBand(qId,s);
+  const cv=`var(${cMap[b.c]||'--ink4'})`,bg=`var(${cBg[b.c]||'--bg2'})`;
+  el.style.background=bg;el.style.border=`1.5px solid ${cv}`;el.style.color=cv;
+  badge.textContent=b.l;badge.style.background=bg;badge.style.color=cv;
+  if(D.score.type==='hit6')el.innerHTML=`<span class="q-score-num">${s.raw}</span><span style="opacity:.5"> / 78</span> — <strong>${b.l}</strong>`;
+  else if(D.score.type==='dash')el.innerHTML=`<span class="q-score-num">${s.pct}%</span> — <strong>${b.l}</strong>`;
+  else el.innerHTML=`<span class="q-score-num">${s.pct}%</span> — <strong>${b.l}</strong> <span style="font-size:11px;opacity:.5">(${s.raw}/${D.score.max})</span>`;
+}
+
+// ═══════ REVIEW ═══════
+function buildReview(){
+  let h='';
+  const sec=t=>{h+=`<div class="rev-sec"><div class="rev-sec-t">${t}</div>`};
+  const row=(k,v)=>{if(v)h+=`<div class="rev-row"><span class="rev-k">${k}</span><span class="rev-v">${v}</span></div>`};
+  const chips=(k,vs,cls)=>{if(vs.length)h+=`<div class="rev-row"><span class="rev-k">${k}</span><div class="rev-chips">${vs.map(v=>`<span class="rev-chip ${cls||''}">${v}</span>`).join('')}</div></div>`};
+  const end=()=>{h+=`</div>`};
+
+  sec('About You');row('Name',gv('f_first')+' '+gv('f_last'));row('DOB',gv('f_dob'));row('Sex',gv('f_sex'));row('Email',gv('f_email'));row('Phone',gv('f_phone'));end();
+  sec('Reason for Visit');chips('Reasons',gc('visitReason'));row('Chief Complaint',gv('f_cc'));row('Onset',gv('f_onset')+' — '+gv('f_onsetType'));chips('Cause',gc('cause'));end();
+  sec('Pain Profile');chips('Areas',gc('painAreas'),'pain');row('Current',gv('f_painNow')+'/10');row('Worst',gv('f_painWorst')+'/10');chips('Type',gc('painType'));row('Frequency',gc('painFreq').join(', '));end();
+  sec('Medical History');chips('Conditions',gc('conditions'));if($('f_surgY').checked)row('Surgeries',gv('f_surg'));if($('f_fracY').checked)row('Fractures',gv('f_frac'));
+  if($('f_injY').checked){chips('Previous Injuries',gc('prevInjTypes'),'pain');row('Injury Details',gv('f_prevInj'));row('Recovery',gc('prevInjRecovery').join(', '))}
+  if($('f_medY').checked)row('Medications',gv('f_med'));if($('f_algY').checked)row('Allergies',gv('f_alg'));chips('Imaging',gc('imaging'));end();
+  sec('Lifestyle');row('Occupation',gv('f_occ')+' — '+gv('f_workType'));row('Exercise',gv('f_exFreq')+' — '+gv('f_exType'));row('Sleep',gv('f_sleepHrs')+' · '+gv('f_sleepQual'));row('Stress',gv('f_stress')+'/10');end();
+
+  sec('Outcome Measures');
+  const ids=getQIds();
+  ids.forEach(qId=>{const D=QDEFS[qId],s=scoreQ(qId);if(s.ok){const b=getBand(qId,s);row(D.name,D.score.type==='hit6'?s.raw+'/78 — '+b.l:s.pct+'% — '+b.l)}else row(D.name,s.n+'/'+D.qs.length+' answered')});
+  end();
+
+  sec('Goals');chips('Goals',gc('goals'));row('Activity Goal',gv('f_goalActivity'));row('Commitment',gc('commitment').join('')+'/10');if(gv('f_notes'))row('Notes',gv('f_notes'));end();
+
+  $('reviewBox').innerHTML=h;
+}
+
+// ═══════ EXPORT ═══════
+function exportJSON(){
+  const data={
+    _app:'Life Chiropractic Intake',_version:'1.0',submittedAt:new Date().toISOString(),
+    patient:{firstName:gv('f_first'),lastName:gv('f_last'),dob:gv('f_dob'),sex:gv('f_sex'),pronoun:gv('f_pronoun'),heightFt:+gv('f_hFt')||null,heightIn:+gv('f_hIn')||null,weight:gv('f_weight'),email:gv('f_email'),phone:gv('f_phone'),address:gv('f_address'),emergencyContact:{name:gv('f_emName'),relationship:gv('f_emRel'),phone:gv('f_emPhone')},referralSource:gc('referral'),referringProvider:gv('f_refDoc')},
+    reasonForVisit:{reasons:gc('visitReason'),chiefComplaint:gv('f_cc'),onset:gv('f_onset'),onsetType:gv('f_onsetType'),cause:gc('cause'),causeDetail:gv('f_causeDetail')},
+    pain:{areas:gc('painAreas'),currentLevel:+gv('f_painNow'),worstLevel:+gv('f_painWorst'),type:gc('painType'),frequency:gc('painFreq'),aggravating:gc('painWorse'),relieving:gc('painBetter')},
+    medicalHistory:{conditions:gc('conditions'),conditionsOther:gv('f_condOther'),surgeries:$('f_surgY').checked?gv('f_surg'):null,fractures:$('f_fracY').checked?gv('f_frac'):null,previousInjuries:$('f_injY').checked?{types:gc('prevInjTypes'),details:gv('f_prevInj'),recoveryStatus:gc('prevInjRecovery')}:null,medications:$('f_medY').checked?gv('f_med'):null,allergies:$('f_algY').checked?gv('f_alg'):null,priorChiropractic:gc('priorChiro'),priorTreatments:gv('f_priorTx'),imaging:gc('imaging')},
+    lifestyle:{occupation:gv('f_occ'),workType:gv('f_workType'),workHours:gv('f_workHrs'),dailyImpact:gc('dailyImpact'),exerciseFrequency:gv('f_exFreq'),exerciseType:gv('f_exType'),sleepHours:gv('f_sleepHrs'),sleepQuality:gv('f_sleepQual'),sleepPosition:gc('sleepPos'),stressLevel:+gv('f_stress'),habits:{smoker:$('f_smoke').checked,alcohol:$('f_alcohol').checked,highCaffeine:$('f_caffeine').checked,prolongedSitting:$('f_longSit').checked,highScreenTime:$('f_screen').checked}},
+    functionalOutcomeMeasures:{
+      routing:{selectedComplaints:[...gc('visitReason'),...gc('painAreas')],questionnairesShown:getQIds()},
+      questionnaires:getQIds().map(qId=>{const D=QDEFS[qId],s=scoreQ(qId),b=s.ok?getBand(qId,s):{l:'Incomplete',c:'ink4'};return{questionnaireId:D.id,displayName:D.name,version:D.ver,citationText:D.cite,completedAt:QR[qId]?.done,rawScore:s.raw,percent:s.pct,interpretation:b.l,missingItems:D.qs.length-s.n,responses:D.qs.map((q,i)=>({questionId:`${D.id}_q${i}`,prompt:q.p,selectedValue:QR[qId]?.ans[i]>=0?QR[qId].ans[i]:null,selectedLabel:QR[qId]?.ans[i]>=0?q.o[QR[qId].ans[i]]:null}))}}),
+      archived:QArchive
+    },
+    goals:{goals:gc('goals'),activityGoal:gv('f_goalActivity'),commitmentLevel:gc('commitment').length?+gc('commitment')[0]:null,additionalNotes:gv('f_notes')},
+    consent:{chiropracticCare:$('c1').checked,privacyNotice:$('c2').checked,accuracyConfirmation:$('c3').checked,signature:gv('f_sig'),signatureDate:gv('f_sigDate')}
+  };
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download=`life-chiro-intake_${data.patient.lastName||'patient'}_${new Date().toISOString().slice(0,10)}.json`;a.click();
+}
+
+// ═══════ CLINICIAN PROFILE ═══════
+function buildProfile(){
+  const box=$('profileBox');
+  let h='';
+
+  // ── Hero card ──
+  const age=gv('f_dob')?Math.floor((Date.now()-new Date(gv('f_dob')))/31557600000):'—';
+  h+=`<div class="prof-hero"><div class="prof-hero-name">${gv('f_first')} ${gv('f_last')}</div><div class="prof-hero-meta"><span>📅 Age: ${age}</span><span>⚤ ${gv('f_sex')||'—'}</span><span>📏 ${gv('f_hFt')?gv('f_hFt')+"'"+gv('f_hIn')+'"':'—'}</span><span>⚖️ ${gv('f_weight')||'—'}</span></div></div>`;
+
+  // ── Red flags ──
+  const flags=[];
+  const conds=gc('conditions');
+  if(conds.includes('Osteoporosis'))flags.push('Osteoporosis — fracture risk with manipulation');
+  if(conds.includes('Cancer'))flags.push('Cancer history — rule out metastatic involvement');
+  if(conds.includes('Stroke'))flags.push('Stroke history — vascular precaution');
+  if(conds.includes('Currently pregnant'))flags.push('Currently pregnant — modified positioning & techniques');
+  if(conds.includes('Heart disease'))flags.push('Heart disease — monitor vitals');
+  if(conds.includes('Seizures / epilepsy'))flags.push('Seizure history');
+  if(+gv('f_painNow')>=8)flags.push('High current pain ('+gv('f_painNow')+'/10)');
+  if(gc('prevInjRecovery').includes('Never fully recovered'))flags.push('Previous injuries — never fully recovered');
+  if(flags.length){flags.forEach(f=>{h+=`<div class="prof-flag"><span class="prof-flag-icon">⚠️</span><div>${f}</div></div>`})}
+
+  // ── Chief Complaint Summary ──
+  h+=`<div class="card"><div class="prof-sec-head"><span class="sec-icon" style="background:var(--rose-l)">🎯</span>Chief Complaint</div>`;
+  h+=`<div style="font-size:14px;color:var(--ink);line-height:1.6;padding:4px 0">"${gv('f_cc')}"</div>`;
+  const pr=(k,v)=>{if(v&&v!=='—'&&v!==' — ')h+=`<div class="prof-row"><span class="prof-k">${k}</span><span class="prof-v">${v}</span></div>`};
+  const pt=(k,vs,cls)=>{if(vs.length)h+=`<div class="prof-row"><span class="prof-k">${k}</span><div class="prof-tags">${vs.map(v=>`<span class="prof-tag ${cls}">${v}</span>`).join('')}</div></div>`};
+  pr('Onset',gv('f_onset')+(gv('f_onsetType')?' — '+gv('f_onsetType'):''));
+  pt('Cause',gc('cause'),'prof-tag-amber');
+  pt('Visit Reasons',gc('visitReason'),'prof-tag-green');
+  h+=`</div>`;
+
+  // ── Pain Profile ──
+  h+=`<div class="card"><div class="prof-sec-head"><span class="sec-icon" style="background:var(--rose-l)">🔴</span>Pain Profile</div>`;
+  pt('Locations',gc('painAreas'),'prof-tag-red');
+  const painNow=+gv('f_painNow'),painWorst=+gv('f_painWorst');
+  const painC=painNow>=7?'rose':painNow>=4?'amber':'life';
+  h+=`<div class="prof-score" style="background:var(--${painC}-l)"><div class="prof-score-num" style="color:var(--${painC})">${painNow}</div><div style="flex:1"><div class="prof-score-label" style="color:var(--${painC})">Current Pain /10</div><div class="prof-score-bar"><div class="prof-score-fill" style="width:${painNow*10}%;background:var(--${painC})"></div></div></div></div>`;
+  h+=`<div class="prof-score" style="background:var(--rose-l)"><div class="prof-score-num" style="color:var(--rose)">${painWorst}</div><div style="flex:1"><div class="prof-score-label" style="color:var(--rose)">Worst Pain /10</div><div class="prof-score-bar"><div class="prof-score-fill" style="width:${painWorst*10}%;background:var(--rose)"></div></div></div></div>`;
+  pt('Quality',gc('painType'),'prof-tag-amber');
+  pr('Frequency',gc('painFreq').join(', '));
+  pt('Aggravating',gc('painWorse'),'prof-tag-red');
+  pt('Relieving',gc('painBetter'),'prof-tag-green');
+  h+=`</div>`;
+
+  // ── Medical History ──
+  h+=`<div class="card"><div class="prof-sec-head"><span class="sec-icon" style="background:var(--amber-l)">📋</span>Medical History</div>`;
+  pt('Conditions',gc('conditions'),'prof-tag-amber');
+  if(gv('f_condOther'))pr('Other',gv('f_condOther'));
+  if($('f_surgY').checked)pr('Surgeries',gv('f_surg'));
+  if($('f_fracY').checked)pr('Fractures',gv('f_frac'));
+  if($('f_medY').checked)pr('Medications',gv('f_med'));
+  if($('f_algY').checked)pr('Allergies','⚠️ '+gv('f_alg'));
+  pr('Prior Chiro',gc('priorChiro').join(', '));
+  if(gv('f_priorTx'))pr('Prior Treatments',gv('f_priorTx'));
+  pt('Imaging',gc('imaging'),'prof-tag-sky');
+  h+=`</div>`;
+
+  // ── Previous Injuries ──
+  if($('f_injY').checked){
+    h+=`<div class="card"><div class="prof-sec-head"><span class="sec-icon" style="background:var(--rose-l)">🩹</span>Previous Injuries (pre-current episode)</div>`;
+    pt('Injury Types',gc('prevInjTypes'),'prof-tag-red');
+    if(gv('f_prevInj'))h+=`<div style="font-size:13px;color:var(--ink2);line-height:1.6;padding:8px 0;white-space:pre-line">${gv('f_prevInj')}</div>`;
+    const rec=gc('prevInjRecovery');
+    if(rec.length){const recC=rec.includes('Never fully recovered')?'prof-tag-red':rec.includes('Still have issues')?'prof-tag-amber':'prof-tag-green';pt('Recovery Status',rec,recC)}
+    h+=`</div>`;
+  }
+
+  // ── Lifestyle Snapshot ──
+  h+=`<div class="card"><div class="prof-sec-head"><span class="sec-icon" style="background:var(--life-l)">🌿</span>Lifestyle</div>`;
+  pr('Occupation',gv('f_occ')+(gv('f_workType')?' — '+gv('f_workType'):''));
+  pr('Work Hours',gv('f_workHrs')?gv('f_workHrs')+' hrs/day':'');
+  pt('Daily Impact',gc('dailyImpact'),'prof-tag-amber');
+  pr('Exercise',gv('f_exFreq')+(gv('f_exType')?' — '+gv('f_exType'):''));
+  pr('Sleep',gv('f_sleepHrs')+(gv('f_sleepQual')?' · '+gv('f_sleepQual'):''));
+  pr('Sleep Position',gc('sleepPos').join(', '));
+  const stress=+gv('f_stress');
+  const stressC=stress>=7?'rose':stress>=4?'amber':'life';
+  h+=`<div class="prof-score" style="background:var(--${stressC}-l)"><div class="prof-score-num" style="color:var(--${stressC})">${stress}</div><div style="flex:1"><div class="prof-score-label" style="color:var(--${stressC})">Stress Level /10</div><div class="prof-score-bar"><div class="prof-score-fill" style="width:${stress*10}%;background:var(--${stressC})"></div></div></div></div>`;
+  const habits=[];
+  if($('f_smoke').checked)habits.push('🚬 Smoker');
+  if($('f_alcohol').checked)habits.push('🍷 Alcohol');
+  if($('f_caffeine').checked)habits.push('☕ High caffeine');
+  if($('f_longSit').checked)habits.push('🪑 Prolonged sitting');
+  if($('f_screen').checked)habits.push('📱 High screen time');
+  if(habits.length)pt('Habits',habits,'prof-tag-amber');
+  h+=`</div>`;
+
+  // ── Outcome Measures ──
+  const ids=getQIds();
+  if(ids.length){
+    h+=`<div class="card"><div class="prof-sec-head"><span class="sec-icon" style="background:var(--plum-l)">📊</span>Baseline Outcome Measures</div>`;
+    ids.forEach(qId=>{
+      const D=QDEFS[qId],s=scoreQ(qId);
+      if(!s.ok){pr(D.name,s.n+'/'+D.qs.length+' incomplete');return}
+      const b=getBand(qId,s);
+      const bc=b.c||'life';
+      const display=D.score.type==='hit6'?s.raw+'/78':s.pct+'%';
+      h+=`<div class="prof-score" style="background:var(--${bc}-l)"><div class="prof-score-num" style="color:var(--${bc})">${display}</div><div style="flex:1"><div class="prof-score-label" style="color:var(--${bc})">${D.name} — ${b.l}</div><div class="prof-score-bar"><div class="prof-score-fill" style="width:${D.score.type==='hit6'?Math.round((s.raw-36)/42*100):s.pct}%;background:var(--${bc})"></div></div></div></div>`;
+    });
+    h+=`</div>`;
+  }
+
+  // ── Goals ──
+  h+=`<div class="card"><div class="prof-sec-head"><span class="sec-icon" style="background:var(--life-l)">🎯</span>Patient Goals</div>`;
+  pt('Goals',gc('goals'),'prof-tag-green');
+  if(gv('f_goalActivity'))h+=`<div style="font-size:14px;color:var(--ink);line-height:1.6;padding:8px 0;border-top:1px solid var(--border-l);margin-top:4px"><strong>Activity goal:</strong> "${gv('f_goalActivity')}"</div>`;
+  const commit=gc('commitment').length?+gc('commitment')[0]:0;
+  const commitC=commit>=7?'life':commit>=4?'amber':'rose';
+  h+=`<div class="prof-score" style="background:var(--${commitC}-l)"><div class="prof-score-num" style="color:var(--${commitC})">${commit}</div><div style="flex:1"><div class="prof-score-label" style="color:var(--${commitC})">Commitment Level /10</div><div class="prof-score-bar"><div class="prof-score-fill" style="width:${commit*10}%;background:var(--${commitC})"></div></div></div></div>`;
+  if(gv('f_notes'))pr('Additional Notes',gv('f_notes'));
+  h+=`</div>`;
+
+  box.innerHTML=h;
+}
+
+// Init
+$('f_sigDate').valueAsDate=new Date();
+</script>
+</body>
+</html>

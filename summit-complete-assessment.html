@@ -1,0 +1,921 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Summit Chiropractic — Complete Patient Assessment</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,700&family=Fraunces:ital,wght@0,300;0,500;0,600;0,700;1,300&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0f172a;--ink2:#334155;--ink3:#64748b;--ink4:#94a3b8;
+  --bg:#f1f5f9;--card:#fff;--border:#e2e8f0;
+  --blue:#2563eb;--blue-l:#dbeafe;--blue-d:#1e40af;
+  --green:#16a34a;--green-l:#dcfce7;
+  --amber:#d97706;--amber-l:#fef3c7;
+  --red:#dc2626;--red-l:#fee2e2;
+  --purple:#7c3aed;--purple-l:#ede9fe;
+  --teal:#0d9488;--teal-l:#ccfbf1;
+  --r:12px;
+  --sh:0 1px 3px rgba(0,0,0,.04),0 4px 16px rgba(0,0,0,.06);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--ink);line-height:1.6}
+@media print{body{background:#fff}.no-print{display:none!important}.card{break-inside:avoid;box-shadow:none;border:1px solid #ddd}}
+
+/* HEADER */
+.hdr{background:var(--ink);padding:16px 0;color:#fff;position:sticky;top:0;z-index:100}
+.hdr-in{max-width:1200px;margin:0 auto;padding:0 24px;display:flex;align-items:center;justify-content:space-between}
+.logo{font-family:'Fraunces',serif;font-size:20px;font-weight:700}.logo span{color:#60a5fa}
+.hdr-actions{display:flex;gap:8px}
+.hdr-btn{padding:8px 16px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:none;font-family:'DM Sans',sans-serif;transition:all .2s}
+.hdr-btn.outline{background:transparent;color:#fff;border:1.5px solid rgba(255,255,255,.25)}
+.hdr-btn.outline:hover{border-color:#fff}
+.hdr-btn.primary{background:var(--blue);color:#fff}
+.hdr-btn.primary:hover{background:var(--blue-d)}
+
+/* MODE TOGGLE */
+.mode-toggle{display:flex;background:rgba(255,255,255,.1);border-radius:8px;overflow:hidden}
+.mode-btn{padding:8px 20px;font-size:12px;font-weight:600;cursor:pointer;border:none;background:transparent;color:rgba(255,255,255,.5);font-family:'DM Sans',sans-serif;transition:all .2s}
+.mode-btn.active{background:var(--blue);color:#fff;border-radius:6px}
+
+/* TABS */
+.tab-bar{background:var(--card);border-bottom:1px solid var(--border);position:sticky;top:52px;z-index:90;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.tab-bar::-webkit-scrollbar{display:none}
+.tab-bar-in{max-width:1200px;margin:0 auto;padding:0 24px;display:flex;gap:0}
+.tab{padding:12px 16px;font-size:12px;font-weight:500;color:var(--ink4);border:none;background:none;cursor:pointer;white-space:nowrap;border-bottom:2px solid transparent;transition:all .2s}
+.tab:hover{color:var(--ink2)}
+.tab.active{color:var(--blue);border-bottom-color:var(--blue)}
+
+/* CONTAINER */
+.wrap{max-width:1200px;margin:0 auto;padding:24px 24px 80px}
+
+/* VIEW TOGGLING */
+.view{display:none}.view.active{display:block}
+
+/* ====== INTAKE FORM STYLES ====== */
+.form-section{background:var(--card);border-radius:var(--r);box-shadow:var(--sh);padding:28px;margin-bottom:20px;animation:fadeUp .4s ease both}
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.sec-hdr{display:flex;align-items:center;gap:10px;margin-bottom:20px;padding-bottom:14px;border-bottom:1px solid var(--border)}
+.sec-icon{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0}
+.sec-title{font-family:'Fraunces',serif;font-size:18px;font-weight:600}
+.sec-sub{font-size:12px;color:var(--ink3)}
+.fg{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.fg.three{grid-template-columns:1fr 1fr 1fr}
+.fg.four{grid-template-columns:1fr 1fr 1fr 1fr}
+.full{grid-column:1/-1}
+@media(max-width:640px){.fg,.fg.three,.fg.four{grid-template-columns:1fr}}
+.field{display:flex;flex-direction:column;gap:5px}
+.field label{font-size:12px;font-weight:500;color:var(--ink3)}
+.field label .unit{font-weight:400;color:var(--ink4)}
+.field label .healthy{font-weight:400;color:var(--green);font-size:10px;display:block;margin-top:1px}
+input,select,textarea{font-family:'DM Sans',sans-serif;font-size:14px;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--bg);color:var(--ink);width:100%;transition:border-color .2s,box-shadow .2s}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(37,99,235,.1)}
+textarea{resize:vertical;min-height:70px}
+
+/* GOALS */
+.goals-area{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+.goal-tag{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;background:var(--blue-l);color:var(--blue-d);border-radius:20px;font-size:12px;font-weight:500}
+.goal-tag button{background:none;border:none;color:var(--blue);cursor:pointer;font-size:15px;padding:0;line-height:1}
+.add-goal{display:inline-flex;align-items:center;gap:4px;padding:7px 14px;background:var(--bg);border:1.5px dashed var(--border);border-radius:20px;font-size:12px;color:var(--ink4);cursor:pointer;transition:all .2s}
+.add-goal:hover{border-color:var(--blue);color:var(--blue)}
+
+/* ROM */
+.rom-group{background:var(--bg);border:1px solid var(--border);border-radius:var(--r);padding:18px;margin-top:8px}
+.rom-group-title{font-family:'Fraunces',serif;font-size:15px;font-weight:600;margin-bottom:14px}
+.rom-row{display:grid;grid-template-columns:120px 1fr 50px 40px;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border)}
+.rom-row:last-child{border-bottom:none}
+.rom-label{font-size:12px;font-weight:500;color:var(--ink3)}
+.rom-label .rm{font-size:10px;color:var(--ink4);font-weight:400}
+.rom-slider{-webkit-appearance:none;appearance:none;height:5px;border-radius:3px;background:var(--border);outline:none;border:none;padding:0}
+.rom-slider::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--blue);cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.2)}
+.rom-val{font-size:13px;font-weight:700;text-align:center;color:var(--blue-d)}
+.rom-mx{font-size:10px;color:var(--ink4);text-align:center}
+@media(max-width:640px){.rom-row{grid-template-columns:1fr 50px}.rom-label{grid-column:1/-1}.rom-slider{grid-column:1}}
+
+/* SPINE */
+.spine-area{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:8px}
+@media(max-width:640px){.spine-area{grid-template-columns:1fr}}
+.spine-side{background:var(--bg);border:1px solid var(--border);border-radius:var(--r);padding:16px}
+.spine-side-title{font-weight:600;font-size:13px;text-align:center;margin-bottom:10px;color:var(--ink3)}
+.spine-row{display:flex;align-items:center;gap:8px;padding:3px 0}
+.spine-lbl{font-size:11px;font-weight:500;width:24px;color:var(--ink4);text-align:right;flex-shrink:0}
+.spine-bar{flex:1;height:18px;background:var(--border);border-radius:3px;cursor:pointer;position:relative;overflow:hidden;transition:background .15s}
+.spine-bar:hover{background:#d4d3d0}
+.spine-fill{position:absolute;left:0;top:0;bottom:0;border-radius:3px;transition:width .2s,background .2s}
+.spine-region-div{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--ink4);padding:6px 0 2px;text-align:center;font-weight:500}
+
+/* LEG LENGTH */
+.leg-display{display:flex;align-items:center;justify-content:center;gap:28px;padding:16px;background:var(--bg);border:1px solid var(--border);border-radius:var(--r);margin-top:8px}
+.leg-col{text-align:center}
+.leg-col label{font-size:12px;color:var(--ink4);font-weight:500}
+.leg-col input{width:90px;text-align:center;font-size:22px;font-weight:700;font-family:'Fraunces',serif;margin-top:4px}
+.leg-diff{font-size:11px;color:var(--ink4);text-align:center;margin-top:6px;font-weight:500}
+.leg-diff .val{font-weight:700;color:var(--blue-d)}
+
+/* HEALTH INDICATOR INPUT CARD */
+.hi-card{background:var(--card);border-radius:var(--r);box-shadow:var(--sh);overflow:hidden;margin-bottom:16px}
+.hi-top{padding:16px 20px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--border);cursor:pointer;user-select:none;transition:background .15s}
+.hi-top:hover{background:var(--bg)}
+.hi-icon{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0}
+.hi-title{font-family:'Fraunces',serif;font-size:16px;font-weight:600;flex:1}
+.hi-badge{padding:3px 10px;border-radius:12px;font-size:10px;font-weight:600}
+.hi-arrow{font-size:14px;color:var(--ink4);transition:transform .2s}
+.hi-body{padding:0 20px;max-height:0;overflow:hidden;transition:max-height .3s ease,padding .3s ease}
+.hi-card.open .hi-body{max-height:600px;padding:16px 20px 20px}
+.hi-card.open .hi-arrow{transform:rotate(180deg)}
+.hi-how{font-size:12px;color:var(--ink3);margin-bottom:12px;line-height:1.6}
+.hi-how ol{padding-left:18px}
+.hi-how ol li{margin-bottom:3px}
+.hi-input-row{display:flex;gap:10px;margin-bottom:12px}
+.hi-input-row .field{flex:1}
+.hi-result{padding:12px 16px;border-radius:8px;display:flex;align-items:center;gap:12px;min-height:50px;transition:all .3s}
+.hi-result.empty{background:var(--bg);border:1.5px dashed var(--border)}
+.hi-result.healthy{background:var(--green-l);border:1.5px solid #86efac}
+.hi-result.warning{background:var(--amber-l);border:1.5px solid #fcd34d}
+.hi-result.concern{background:var(--red-l);border:1.5px solid #fca5a5}
+.hi-result-val{font-family:'Fraunces',serif;font-size:26px;font-weight:700;line-height:1}
+.hi-result-lbl{font-size:12px;font-weight:500}
+.hi-result-sub{font-size:10px;color:var(--ink3);margin-top:1px}
+.hi-cite{font-size:10px;color:var(--ink4);margin-top:10px;line-height:1.4}
+
+/* ====== PROFILE VIEW STYLES ====== */
+.hero{background:var(--card);border-radius:var(--r);box-shadow:var(--sh);overflow:hidden;margin-bottom:20px}
+.hero-top{background:linear-gradient(135deg,#1e3a5f,#0f172a);padding:32px 36px 28px;color:#fff;display:flex;align-items:flex-start;gap:20px}
+.avatar{width:64px;height:64px;border-radius:50%;background:linear-gradient(135deg,#3b82f6,#8b5cf6);display:flex;align-items:center;justify-content:center;font-family:'Fraunces',serif;font-size:24px;font-weight:600;color:#fff;flex-shrink:0;box-shadow:0 4px 12px rgba(0,0,0,.3)}
+.hero-name{font-family:'Fraunces',serif;font-size:26px;font-weight:700;letter-spacing:-.5px}
+.hero-meta{display:flex;flex-wrap:wrap;gap:16px;margin-top:6px;font-size:13px;color:rgba(255,255,255,.6)}
+.hero-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.hero-chip{padding:5px 12px;background:rgba(255,255,255,.1);border-radius:16px;font-size:11px;font-weight:500}
+.hero-stats{display:grid;grid-template-columns:repeat(5,1fr);border-top:1px solid var(--border)}
+.hero-stat{text-align:center;padding:14px 12px;border-right:1px solid var(--border)}
+.hero-stat:last-child{border-right:none}
+.hero-stat-val{font-family:'Fraunces',serif;font-size:24px;font-weight:700}
+.hero-stat-val.g{color:var(--green)}.hero-stat-val.a{color:var(--amber)}.hero-stat-val.r{color:var(--red)}
+.hero-stat-lbl{font-size:10px;color:var(--ink3);margin-top:2px;font-weight:500}
+@media(max-width:700px){.hero-top{flex-direction:column;padding:20px}.hero-stats{grid-template-columns:repeat(3,1fr)}.hero-stat{border-bottom:1px solid var(--border)}}
+
+/* PROFILE GRID */
+.pg{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+@media(max-width:700px){.pg{grid-template-columns:1fr}}
+.card{background:var(--card);border-radius:var(--r);box-shadow:var(--sh);padding:24px;animation:fadeUp .4s ease both}
+.card-hdr{display:flex;align-items:center;gap:10px;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+.card-icon{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0}
+
+/* TEST RESULT ROW */
+.tr-row{display:grid;grid-template-columns:1fr 80px 80px;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--border);font-size:13px}
+.tr-row:last-child{border-bottom:none}
+.tr-name{font-weight:500;color:var(--ink2)}.tr-name small{display:block;font-size:10px;color:var(--ink4);font-weight:400}
+.tr-val{font-family:'Fraunces',serif;font-size:16px;font-weight:600;text-align:right}
+.badge{display:inline-flex;padding:3px 9px;border-radius:16px;font-size:10px;font-weight:600}
+.badge-g{background:var(--green-l);color:var(--green)}.badge-a{background:var(--amber-l);color:var(--amber)}.badge-r{background:var(--red-l);color:var(--red)}
+
+/* ROM BAR */
+.rom-bar-row{display:grid;grid-template-columns:90px 1fr 45px;align-items:center;gap:8px;margin-bottom:6px}
+.rom-bar-lbl{font-size:11px;color:var(--ink3);font-weight:500}
+.rom-bar-track{height:8px;background:var(--border);border-radius:4px;overflow:hidden}
+.rom-bar-fill{height:100%;border-radius:4px;transition:width 1s ease}
+.rom-bar-val{font-size:11px;font-weight:700;color:var(--ink2);text-align:right}
+
+/* SPINE MAP PROFILE */
+.spine-map{display:grid;grid-template-columns:1fr 36px 1fr;gap:0}
+.sp-col{display:flex;flex-direction:column;gap:1px}
+.sp-col-hdr{font-size:10px;font-weight:600;color:var(--ink4);text-transform:uppercase;text-align:center;padding-bottom:6px}
+.sp-center{display:flex;flex-direction:column;align-items:center;gap:1px;padding-top:20px}
+.sp-center-lbl{font-size:9px;font-weight:600;color:var(--ink4);width:30px;height:19px;display:flex;align-items:center;justify-content:center}
+.sp-center-region{font-size:8px;text-transform:uppercase;letter-spacing:.5px;color:var(--ink4);padding:4px 0 1px;font-weight:500}
+.sp-bar-cell{height:19px;display:flex;align-items:center}
+.sp-bar-cell.left{justify-content:flex-end;padding-right:3px}
+.sp-bar-cell.right{justify-content:flex-start;padding-left:3px}
+.sp-bar{height:12px;border-radius:2px;min-width:2px}
+.sp-region-label{height:22px;display:flex;align-items:center;font-size:8px;text-transform:uppercase;letter-spacing:.5px;color:var(--ink4);font-weight:500}
+.sp-region-label.left{justify-content:flex-end;padding-right:3px}
+
+/* NOTE BOX */
+.note-box{background:var(--bg);border-left:3px solid var(--blue);padding:12px 16px;border-radius:0 8px 8px 0;font-size:12px;color:var(--ink2);line-height:1.6;margin-top:14px}
+.note-box strong{color:var(--ink)}
+
+/* LEG VIS */
+.leg-vis{display:flex;align-items:flex-end;justify-content:center;gap:36px;padding:16px 0}
+.leg-bar-w{text-align:center}
+.leg-b{width:36px;border-radius:5px 5px 0 0;margin:0 auto 6px}
+.leg-b.l{background:linear-gradient(180deg,#3b82f6,#1d4ed8)}.leg-b.r{background:linear-gradient(180deg,#8b5cf6,#6d28d9)}
+.lv{font-family:'Fraunces',serif;font-size:18px;font-weight:700}
+.ll{font-size:11px;color:var(--ink3);margin-top:2px}
+
+/* HEALTH INDICATOR PROFILE CARDS */
+.hi-profile-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+@media(max-width:900px){.hi-profile-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:500px){.hi-profile-grid{grid-template-columns:1fr}}
+.hi-pcard{background:var(--bg);border-radius:10px;padding:16px;text-align:center;border:1.5px solid var(--border);transition:border-color .2s}
+.hi-pcard.healthy{border-color:#86efac;background:var(--green-l)}
+.hi-pcard.warning{border-color:#fcd34d;background:var(--amber-l)}
+.hi-pcard.concern{border-color:#fca5a5;background:var(--red-l)}
+.hi-pcard-icon{font-size:24px;margin-bottom:6px}
+.hi-pcard-val{font-family:'Fraunces',serif;font-size:28px;font-weight:700;line-height:1}
+.hi-pcard-name{font-size:12px;font-weight:600;color:var(--ink2);margin-top:4px}
+.hi-pcard-status{font-size:10px;font-weight:600;margin-top:4px}
+
+/* PROGRESS PLACEHOLDER */
+.timeline-empty{text-align:center;padding:28px 16px;color:var(--ink4);font-size:13px}
+
+/* FORM ACTIONS */
+.form-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:24px}
+.btn{padding:11px 24px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:none;font-family:'DM Sans',sans-serif;transition:all .2s}
+.btn-primary{background:var(--blue);color:#fff;box-shadow:0 2px 8px rgba(37,99,235,.25)}
+.btn-primary:hover{background:var(--blue-d);transform:translateY(-1px)}
+.btn-outline{background:transparent;color:var(--ink3);border:1.5px solid var(--border)}
+.btn-outline:hover{border-color:var(--ink4)}
+
+/* ORTHO TESTS */
+.ortho-region{border:1px solid var(--border);border-radius:10px;margin-bottom:10px;overflow:hidden}
+.ortho-region-hdr{display:flex;align-items:center;gap:10px;padding:14px 18px;background:var(--bg);font-size:14px;font-weight:600;color:var(--ink2);transition:background .15s}
+.ortho-region-hdr:hover{background:#e8e7e4}
+.ortho-region-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.ortho-region-title{flex:1}
+.ortho-region-count{font-size:11px;font-weight:500;color:var(--ink4);background:var(--card);padding:2px 8px;border-radius:10px}
+.ortho-region-body{max-height:0;overflow:hidden;transition:max-height .4s ease}
+.ortho-region.open .ortho-region-body{max-height:3000px}
+.ortho-region.open .hi-arrow{transform:rotate(180deg)}
+.ortho-test{padding:14px 18px;border-top:1px solid var(--border)}
+.ortho-test-hdr{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.ortho-test-name{font-size:14px;font-weight:600;color:var(--ink)}
+.ortho-test-target{font-size:11px;color:var(--ink4);font-style:italic}
+.ortho-test-detail{font-size:12px;color:var(--ink3);margin:6px 0;line-height:1.5}
+.ortho-test-evidence{font-size:10px;color:var(--blue);font-weight:500;margin-bottom:8px}
+.ortho-test-inputs{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.ortho-select{width:110px;font-size:12px;padding:6px 8px}
+.ortho-side{width:80px;font-size:12px;padding:6px 8px}
+.ortho-measure{font-size:12px;padding:6px 8px}
+.ortho-note{flex:1;min-width:120px;font-size:12px;padding:6px 10px}
+select.ortho-select option[value="+"]{color:var(--red)}
+select.ortho-select option[value="−"]{color:var(--green)}
+
+/* TOAST */
+.toast{position:fixed;bottom:20px;right:20px;background:var(--ink);color:#fff;padding:12px 22px;border-radius:10px;font-size:13px;font-weight:500;box-shadow:0 8px 32px rgba(0,0,0,.2);transform:translateY(100px);opacity:0;transition:all .3s;z-index:200}
+.toast.show{transform:translateY(0);opacity:1}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="hdr no-print">
+  <div class="hdr-in">
+    <div class="logo"><span>Summit</span> Chiropractic</div>
+    <div style="display:flex;align-items:center;gap:16px">
+      <div class="mode-toggle">
+        <button class="mode-btn active" id="modeIntake" onclick="switchView('intake')">📝 Intake</button>
+        <button class="mode-btn" id="modeProfile" onclick="switchView('profile')">👤 Profile</button>
+      </div>
+      <div class="hdr-actions">
+        <button class="hdr-btn outline" onclick="window.print()">🖨 Print</button>
+        <button class="hdr-btn primary" onclick="exportJSON()">💾 Export</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== INTAKE VIEW ==================== -->
+<div class="view active" id="intakeView">
+
+  <!-- INTAKE TABS -->
+  <div class="tab-bar no-print">
+    <div class="tab-bar-in">
+      <button class="tab active" onclick="scrollTo('sec-patient',this)">Patient</button>
+      <button class="tab" onclick="scrollTo('sec-history',this)">History</button>
+      <button class="tab" onclick="scrollTo('sec-health',this)">Health Indicators</button>
+      <button class="tab" onclick="scrollTo('sec-functional',this)">Functional Tests</button>
+      <button class="tab" onclick="scrollTo('sec-rom',this)">Range of Motion</button>
+      <button class="tab" onclick="scrollTo('sec-ortho',this)">Ortho Tests</button>
+      <button class="tab" onclick="scrollTo('sec-spine',this)">Spine</button>
+    </div>
+  </div>
+
+  <div class="wrap">
+
+    <!-- PATIENT INFO -->
+    <div class="form-section" id="sec-patient">
+      <div class="sec-hdr">
+        <div class="sec-icon" style="background:var(--blue-l)">👤</div>
+        <div><div class="sec-title">Patient Information</div><div class="sec-sub">Demographics, visit date, and goals</div></div>
+      </div>
+      <div class="fg">
+        <div class="field"><label>Full Name</label><input type="text" id="f_name" placeholder="Michelle Anderson"></div>
+        <div class="field"><label>Date of Assessment</label><input type="date" id="f_date"></div>
+        <div class="field"><label>Date of Birth</label><input type="date" id="f_dob"></div>
+        <div class="field"><label>Sex</label><select id="f_sex"><option value="F">Female</option><option value="M">Male</option></select></div>
+        <div class="field"><label>Age</label><input type="number" id="f_age" min="1" max="120" placeholder="40"></div>
+        <div class="field"><label>Referring Provider <span class="unit">(optional)</span></label><input type="text" id="f_ref" placeholder="Dr. ..."></div>
+        <div class="field full">
+          <label>Patient Goals</label>
+          <div class="goals-area" id="goalsArea">
+            <div class="goal-tag">Reduce headache frequency<button onclick="this.parentElement.remove()">×</button></div>
+            <div class="goal-tag">Get off medication<button onclick="this.parentElement.remove()">×</button></div>
+            <div class="goal-tag">Remove stigma of headache<button onclick="this.parentElement.remove()">×</button></div>
+            <button class="add-goal" onclick="addGoal()">+ Add Goal</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- HISTORY -->
+    <div class="form-section" id="sec-history">
+      <div class="sec-hdr">
+        <div class="sec-icon" style="background:var(--amber-l)">📋</div>
+        <div><div class="sec-title">History & Presentation</div><div class="sec-sub">Chief complaint and lifestyle context</div></div>
+      </div>
+      <div class="fg">
+        <div class="field"><label>Chief Complaint</label><input type="text" id="f_complaint" placeholder="Headaches"></div>
+        <div class="field"><label>Duration <span class="unit">(years)</span></label><input type="number" id="f_duration" step="0.5" min="0" placeholder="3"></div>
+        <div class="field"><label>Occupation</label><input type="text" id="f_occ" placeholder="Desk job"></div>
+        <div class="field"><label>Daily Work Hours</label><input type="text" id="f_hours" placeholder="6-7 hrs"></div>
+        <div class="field">
+          <label>Pain Level <span class="unit">(0–10)</span></label>
+          <div style="display:flex;align-items:center;gap:10px">
+            <input type="range" class="rom-slider" min="0" max="10" value="7" id="f_pain" style="flex:1" oninput="document.getElementById('painDisp').textContent=this.value">
+            <span id="painDisp" style="font-size:18px;font-weight:700;font-family:'Fraunces',serif;color:var(--blue-d);width:24px;text-align:center">7</span><span style="font-size:11px;color:var(--ink4)">/10</span>
+          </div>
+        </div>
+        <div class="field"><label>Frequency <span class="unit">(per 10 days)</span></label><input type="number" id="f_freq" min="0" max="10" value="3"></div>
+        <div class="field full"><label>Additional Notes</label><textarea id="f_notes" placeholder="Eye glasses, medication use..."></textarea></div>
+      </div>
+    </div>
+
+    <!-- HEALTH INDICATORS -->
+    <div class="form-section" id="sec-health">
+      <div class="sec-hdr">
+        <div class="sec-icon" style="background:var(--green-l)">💪</div>
+        <div><div class="sec-title">Vital Health Indicators</div><div class="sec-sub">8 research-backed tests that predict mortality, fall risk, and functional health</div></div>
+      </div>
+
+      <!-- GRIP -->
+      <div class="hi-card open" id="hi_grip">
+        <div class="hi-top" onclick="toggleHI('hi_grip')">
+          <div class="hi-icon" style="background:var(--blue-l)">✊</div>
+          <div class="hi-title">Grip Strength</div>
+          <div class="hi-badge" style="background:var(--green-l);color:var(--green)">● Strong Evidence</div>
+          <div class="hi-arrow">▼</div>
+        </div>
+        <div class="hi-body">
+          <div class="hi-how"><ol><li>Dynamometer, arm at side, elbow 90°</li><li>Squeeze max 3–5s, test each hand twice, record highest</li></ol></div>
+          <div class="hi-input-row">
+            <div class="field"><label>Left (kg)</label><input type="number" id="h_gripL" min="0" step="0.5" oninput="scoreGrip()"></div>
+            <div class="field"><label>Right (kg)</label><input type="number" id="h_gripR" min="0" step="0.5" oninput="scoreGrip()"></div>
+          </div>
+          <div class="hi-result empty" id="r_grip"><div class="hi-result-lbl" style="color:var(--ink4)">Enter values</div></div>
+          <div class="hi-cite">PURE Study (Lancet, 2015): each 5kg ↓ = 16% ↑ all-cause mortality across 140,000 adults.</div>
+        </div>
+      </div>
+
+      <!-- BALANCE -->
+      <div class="hi-card" id="hi_bal">
+        <div class="hi-top" onclick="toggleHI('hi_bal')">
+          <div class="hi-icon" style="background:var(--purple-l)">🦩</div>
+          <div class="hi-title">10-Second Balance</div>
+          <div class="hi-badge" style="background:var(--green-l);color:var(--green)">● Strong Evidence</div>
+          <div class="hi-arrow">▼</div>
+        </div>
+        <div class="hi-body">
+          <div class="hi-how"><ol><li>Hands on hips, eyes open</li><li>Raise foot to opposite calf, time each leg (max 30s)</li></ol></div>
+          <div class="hi-input-row">
+            <div class="field"><label>Left (sec)</label><input type="number" id="h_balL" min="0" max="120" oninput="scoreBal()"></div>
+            <div class="field"><label>Right (sec)</label><input type="number" id="h_balR" min="0" max="120" oninput="scoreBal()"></div>
+          </div>
+          <div class="hi-result empty" id="r_bal"><div class="hi-result-lbl" style="color:var(--ink4)">Enter values</div></div>
+          <div class="hi-cite">BJSM (2022): inability to hold 10s = 84% higher mortality risk over 7 years.</div>
+        </div>
+      </div>
+
+      <!-- CHAIR STAND -->
+      <div class="hi-card" id="hi_cs">
+        <div class="hi-top" onclick="toggleHI('hi_cs')">
+          <div class="hi-icon" style="background:var(--green-l)">🪑</div>
+          <div class="hi-title">30-Second Chair Stand</div>
+          <div class="hi-badge" style="background:var(--green-l);color:var(--green)">● Strong Evidence</div>
+          <div class="hi-arrow">▼</div>
+        </div>
+        <div class="hi-body">
+          <div class="hi-how"><ol><li>Standard chair (43cm), arms crossed over chest</li><li>Stand fully, sit fully, repeat 30 seconds — count total</li></ol></div>
+          <div class="hi-input-row">
+            <div class="field"><label>Reps in 30s</label><input type="number" id="h_csReps" min="0" max="40" oninput="scoreCS()"></div>
+          </div>
+          <div class="hi-result empty" id="r_cs"><div class="hi-result-lbl" style="color:var(--ink4)">Enter value</div></div>
+          <div class="hi-cite">Fall risk cut-off: ≤7 reps. AUC 0.67, 97% sensitivity (PLOS One, 2017).</div>
+        </div>
+      </div>
+
+      <!-- GAIT SPEED -->
+      <div class="hi-card" id="hi_gait">
+        <div class="hi-top" onclick="toggleHI('hi_gait')">
+          <div class="hi-icon" style="background:var(--amber-l)">🚶</div>
+          <div class="hi-title">Gait Speed (10m Walk)</div>
+          <div class="hi-badge" style="background:var(--green-l);color:var(--green)">● Strong Evidence</div>
+          <div class="hi-arrow">▼</div>
+        </div>
+        <div class="hi-body">
+          <div class="hi-how"><ol><li>Mark 10m with 2m buffer at each end</li><li>Walk at comfortable pace, time the 10m section</li></ol></div>
+          <div class="hi-input-row">
+            <div class="field"><label>Time for 10m (sec)</label><input type="number" id="h_gaitT" min="1" max="60" step="0.1" oninput="scoreGait()"></div>
+          </div>
+          <div class="hi-result empty" id="r_gait"><div class="hi-result-lbl" style="color:var(--ink4)">Enter value</div></div>
+          <div class="hi-cite">JAMA (2011): gait speed predicted survival as well as age, sex, and chronic conditions combined. "6th vital sign."</div>
+        </div>
+      </div>
+
+      <!-- SRT -->
+      <div class="hi-card" id="hi_srt">
+        <div class="hi-top" onclick="toggleHI('hi_srt')">
+          <div class="hi-icon" style="background:var(--red-l)">🧘</div>
+          <div class="hi-title">Sitting-Rising Test</div>
+          <div class="hi-badge" style="background:var(--green-l);color:var(--green)">● Strong Evidence</div>
+          <div class="hi-arrow">▼</div>
+        </div>
+        <div class="hi-body">
+          <div class="hi-how"><ol><li>Start standing, lower to cross-legged sit, rise back up</li><li>Score /10 — deduct 1pt per hand/knee used, 0.5pt for unsteadiness</li></ol></div>
+          <div class="hi-input-row">
+            <div class="field"><label>Sit score (0–5)</label><input type="number" id="h_srtSit" min="0" max="5" step="0.5" oninput="scoreSRT()"></div>
+            <div class="field"><label>Rise score (0–5)</label><input type="number" id="h_srtRise" min="0" max="5" step="0.5" oninput="scoreSRT()"></div>
+          </div>
+          <div class="hi-result empty" id="r_srt"><div class="hi-result-lbl" style="color:var(--ink4)">Enter values</div></div>
+          <div class="hi-cite">Eur J Cardiovasc Prev (2012): score 0–3 = 6.5× mortality vs 8–10 over 6 years.</div>
+        </div>
+      </div>
+
+      <!-- RHR -->
+      <div class="hi-card" id="hi_rhr">
+        <div class="hi-top" onclick="toggleHI('hi_rhr')">
+          <div class="hi-icon" style="background:var(--red-l)">❤️</div>
+          <div class="hi-title">Resting Heart Rate</div>
+          <div class="hi-badge" style="background:var(--green-l);color:var(--green)">● Strong Evidence</div>
+          <div class="hi-arrow">▼</div>
+        </div>
+        <div class="hi-body">
+          <div class="hi-how"><ol><li>Sit quietly 5 min, count pulse for 20s × 3</li><li>Ideally test first thing in the morning</li></ol></div>
+          <div class="hi-input-row">
+            <div class="field"><label>RHR (bpm)</label><input type="number" id="h_rhr" min="30" max="150" oninput="scoreRHR()"></div>
+          </div>
+          <div class="hi-result empty" id="r_rhr"><div class="hi-result-lbl" style="color:var(--ink4)">Enter value</div></div>
+          <div class="hi-cite">JAMA (2005): RHR ≥76 bpm = 26% higher coronary event risk in 129,000+ women.</div>
+        </div>
+      </div>
+
+      <!-- VO2 MAX -->
+      <div class="hi-card" id="hi_vo2">
+        <div class="hi-top" onclick="toggleHI('hi_vo2')">
+          <div class="hi-icon" style="background:var(--green-l)">🫁</div>
+          <div class="hi-title">VO₂ Max Estimate</div>
+          <div class="hi-badge" style="background:var(--green-l);color:var(--green)">● Strong Evidence</div>
+          <div class="hi-arrow">▼</div>
+        </div>
+        <div class="hi-body">
+          <div class="hi-how"><ol><li>Uses resting HR method: VO₂max ≈ 15.3 × (MaxHR ÷ RHR)</li><li>MaxHR ≈ 208 − (0.7 × age)</li></ol></div>
+          <div class="hi-input-row">
+            <div class="field"><label>Age</label><input type="number" id="h_vo2Age" min="18" max="100" oninput="scoreVO2()"></div>
+            <div class="field"><label>Resting HR (bpm)</label><input type="number" id="h_vo2RHR" min="30" max="150" oninput="scoreVO2()"></div>
+          </div>
+          <div class="hi-result empty" id="r_vo2"><div class="hi-result-lbl" style="color:var(--ink4)">Enter age + resting HR</div></div>
+          <div class="hi-cite">Cleveland Clinic / JAMA (2018): 122K patients — elite fitness = 80% lower mortality vs low fitness.</div>
+        </div>
+      </div>
+
+      <!-- FINGERTIP -->
+      <div class="hi-card" id="hi_ftf">
+        <div class="hi-top" onclick="toggleHI('hi_ftf')">
+          <div class="hi-icon" style="background:var(--amber-l)">🤸</div>
+          <div class="hi-title">Fingertip-to-Floor</div>
+          <div class="hi-badge" style="background:var(--amber-l);color:var(--amber)">● Moderate Evidence</div>
+          <div class="hi-arrow">▼</div>
+        </div>
+        <div class="hi-body">
+          <div class="hi-how"><ol><li>Stand, bend forward with straight knees</li><li>Measure distance from fingertips to floor (cm)</li></ol></div>
+          <div class="hi-input-row">
+            <div class="field"><label>Distance (cm)</label><input type="number" id="h_ftf" min="0" max="50" step="0.5" oninput="scoreFTF()"></div>
+          </div>
+          <div class="hi-result empty" id="r_ftf"><div class="hi-result-lbl" style="color:var(--ink4)">Enter value</div></div>
+          <div class="hi-cite">Standard orthopedic measure for hamstring + lumbar flexibility. Healthy: &lt;5cm.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FUNCTIONAL TESTS -->
+    <div class="form-section" id="sec-functional">
+      <div class="sec-hdr">
+        <div class="sec-icon" style="background:var(--teal-l)">⚡</div>
+        <div><div class="sec-title">Chiropractic Functional Tests</div><div class="sec-sub">Balance, coordination, weight distribution</div></div>
+      </div>
+      <div class="fg">
+        <div class="field"><label>Marching Test <span class="unit">(cm deviation)</span><span class="healthy">Healthy = on the T</span></label><input type="number" id="f_marchDist" min="0" placeholder="88"></div>
+        <div class="field"><label>Marching Direction</label><select id="f_marchDir"><option value="">Select...</option><option value="L">Left</option><option value="R">Right</option><option value="center">Center</option></select></div>
+        <div class="field"><label>Heel-Toe Walk <span class="unit">(steady steps)</span><span class="healthy">Healthy = 10</span></label><input type="number" id="f_heelToe" min="0" max="20" placeholder="10"></div>
+        <div class="field"><label>Weight Distribution — Left <span class="unit">(kg)</span></label><input type="number" id="f_weightL" min="0" step="0.1" oninput="updateWD()"></div>
+        <div class="field"><label>Weight Distribution — Right <span class="unit">(kg)</span><span class="healthy">Healthy: &lt;2kg diff</span></label><input type="number" id="f_weightR" min="0" step="0.1" oninput="updateWD()"></div>
+        <div class="field"><label>Weight Diff</label><div id="wdDiff" style="font-size:14px;font-weight:700;padding:10px;color:var(--ink3)">—</div></div>
+      </div>
+    </div>
+
+    <!-- ROM -->
+    <div class="form-section" id="sec-rom">
+      <div class="sec-hdr">
+        <div class="sec-icon" style="background:var(--purple-l)">🔄</div>
+        <div><div class="sec-title">Range of Motion</div><div class="sec-sub">Degrees — drag sliders or click to adjust</div></div>
+      </div>
+      <div class="rom-group"><div class="rom-group-title">Cervical (Neck)</div><div id="romCervicalInput"></div></div>
+      <div class="rom-group" style="margin-top:12px"><div class="rom-group-title">Lumbar (Low Back)</div><div id="romLumbarInput"></div></div>
+    </div>
+
+    <!-- ORTHOPEDIC TESTS -->
+    <div class="form-section" id="sec-ortho">
+      <div class="sec-hdr">
+        <div class="sec-icon" style="background:var(--red-l)">🩻</div>
+        <div><div class="sec-title">Orthopedic / Special Tests</div><div class="sec-sub">Provocative tests by spinal region — click regions to expand, record +/− and notes</div></div>
+      </div>
+      <div id="orthoContainer"></div>
+    </div>
+
+    <!-- SPINE -->
+    <div class="form-section" id="sec-spine">
+      <div class="sec-hdr">
+        <div class="sec-icon" style="background:var(--amber-l)">🦴</div>
+        <div><div class="sec-title">Spine Assessment</div><div class="sec-sub">Click bars to cycle involvement level (0–5). Leg length below.</div></div>
+      </div>
+      <div class="spine-area" id="spineInput"></div>
+      <div style="margin-top:20px">
+        <label style="font-size:13px;font-weight:600;color:var(--ink3)">Leg Length <span style="font-weight:400">(cm/mm)</span></label>
+        <div class="leg-display">
+          <div class="leg-col"><label>Left</label><br><input type="number" id="f_legL" step="0.1" value="39.9" oninput="updateLD()"></div>
+          <div style="font-size:20px;color:var(--ink4)">⟷</div>
+          <div class="leg-col"><label>Right</label><br><input type="number" id="f_legR" step="0.1" value="49.5" oninput="updateLD()"></div>
+        </div>
+        <div class="leg-diff" id="ldDiff">Difference: <span class="val">9.6</span></div>
+      </div>
+    </div>
+
+    <!-- ACTIONS -->
+    <div class="form-actions">
+      <button class="btn btn-outline" onclick="if(confirm('Clear all?')){location.reload()}">Clear</button>
+      <button class="btn btn-primary" onclick="switchView('profile')">👤 Generate Profile →</button>
+    </div>
+
+  </div>
+</div>
+
+<!-- ==================== PROFILE VIEW ==================== -->
+<div class="view" id="profileView">
+  <div class="wrap">
+
+    <!-- HERO -->
+    <div class="hero" id="profileHero"><!-- filled by JS --></div>
+
+    <!-- HEALTH INDICATORS SNAPSHOT -->
+    <div class="card full" style="margin-bottom:20px" id="hiSnapshot">
+      <div class="card-hdr">
+        <div class="card-icon" style="background:var(--green-l)">💪</div>
+        <div class="sec-title">Vital Health Indicators</div>
+      </div>
+      <div class="hi-profile-grid" id="hiProfileGrid"><!-- filled by JS --></div>
+    </div>
+
+    <div class="pg">
+      <!-- FUNCTIONAL TESTS -->
+      <div class="card" id="profileFunctional"><!-- filled by JS --></div>
+      <!-- ORTHO TESTS -->
+      <div class="card" id="profileOrtho"><!-- filled by JS --></div>
+      <!-- ROM -->
+      <div class="card" id="profileROM"><!-- filled by JS --></div>
+      <!-- SPINE -->
+      <div class="card" id="profileSpine"><!-- filled by JS --></div>
+      <!-- LEG + TIMELINE -->
+      <div class="card" id="profileLeg"><!-- filled by JS --></div>
+    </div>
+
+    <div class="form-actions" style="justify-content:center">
+      <button class="btn btn-outline" onclick="switchView('intake')">← Back to Intake</button>
+      <button class="btn btn-outline" onclick="window.print()">🖨 Print Profile</button>
+      <button class="btn btn-primary" onclick="exportJSON()">💾 Export Full JSON</button>
+    </div>
+
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ========== STATE ==========
+const spineRegions=[{l:'Cervical',levels:['C1','C2','C3','C4','C5','C6','C7']},{l:'Thoracic',levels:['T1','T2','T3','T4','T5','T6','T7','T8','T9','T10','T11','T12']},{l:'Lumbar',levels:['L1','L2','L3','L4','L5']},{l:'Sacral',levels:['S1','S2']}];
+const spineData={left:{},right:{}};
+const spineColors=['#e2e8f0','#93c5fd','#fbbf24','#fb923c','#ef4444','#991b1b'];
+const cervicalDef=[{n:'Flexion',m:90,v:70},{n:'Extension',m:80,v:70},{n:'L Rotation',m:90,v:70},{n:'R Rotation',m:90,v:76},{n:'L Lat Flex',m:50,v:30},{n:'R Lat Flex',m:50,v:40}];
+const lumbarDef=[{n:'Flexion',m:90,v:80},{n:'Extension',m:80,v:30},{n:'L Rotation',m:90,v:80},{n:'R Rotation',m:90,v:80},{n:'L Lat Flex',m:50,v:40},{n:'R Lat Flex',m:50,v:40},{n:'Sit & Reach',m:70,v:60}];
+
+// ========== VIEW SWITCH ==========
+function switchView(v){
+  document.querySelectorAll('.view').forEach(el=>el.classList.remove('active'));
+  document.getElementById(v+'View').classList.add('active');
+  document.getElementById('modeIntake').classList.toggle('active',v==='intake');
+  document.getElementById('modeProfile').classList.toggle('active',v==='profile');
+  if(v==='profile') buildProfile();
+  window.scrollTo(0,0);
+}
+function scrollTo(id,btn){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById(id).scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+// ========== GOALS ==========
+function addGoal(){const t=prompt('Enter goal:');if(!t)return;const a=document.getElementById('goalsArea');const b=a.querySelector('.add-goal');const d=document.createElement('div');d.className='goal-tag';d.innerHTML=`${t}<button onclick="this.parentElement.remove()">×</button>`;a.insertBefore(d,b)}
+
+// ========== ORTHO TESTS DATA ==========
+const orthoTests={
+  cervical:{color:'var(--blue)',label:'Cervical Spine (C1–C7)',tests:[
+    {name:"Spurling's Test",target:'Cervical radiculopathy / nerve root compression',detail:'Extend + rotate + laterally flex neck toward affected side, apply axial compression. <b>+</b> = radiating arm pain ipsilateral.',evidence:'Sensitivity: 50–95% · Specificity: 89–94%',hasSide:true},
+    {name:'Cervical Distraction',target:'Nerve root compression (palliative)',detail:'Supine, examiner grasps occiput + chin, applies gentle axial traction. <b>+</b> = relief of radicular symptoms.',evidence:'Sensitivity: 40–50% · Specificity: 90–100%',hasSide:true},
+    {name:"Shoulder Abduction (Bakody's)",target:'Cervical nerve root (C4–C5)',detail:'Patient places hand on top of head. <b>+</b> = relief of radicular arm symptoms.',evidence:'Sensitivity: 17–78% · Specificity: 75–92%',hasSide:true},
+    {name:'Valsalva Manoeuvre',target:'Space-occupying lesion / disc',detail:'Bear down as if having bowel movement. <b>+</b> = increased spinal or radiating pain.',evidence:'High specificity, low sensitivity',hasSide:false},
+    {name:"Vertebral Artery Test (DeKleyn's)",target:'Vertebrobasilar insufficiency',detail:'Supine, extend + rotate head, hold 15–30s each side. <b>+</b> = dizziness, nystagmus.',evidence:'Pre-manipulation safety screen',hasSide:true},
+    {name:'Upper Limb Tension Test (ULTT)',target:'Neural tension — median/radial/ulnar',detail:'Sequentially: shoulder depression, ABduction, supination, wrist extension, elbow extension. <b>+</b> = symptom reproduction.',evidence:'Sensitivity: 72–97% · Specificity: 11–33%',hasSide:true},
+    {name:"Jackson's Compression",target:'Facet syndrome / foraminal encroachment',detail:'Laterally flex head, apply axial compression. <b>+</b> = local pain (facet) or radiating (nerve root).',evidence:'Differentiates facet vs nerve root',hasSide:true}
+  ]},
+  thoracic:{color:'var(--amber)',label:'Thoracic Spine (T1–T12)',tests:[
+    {name:"Adam's Forward Bend",target:'Structural vs functional scoliosis',detail:'Patient bends forward, observe for rib hump / asymmetry. <b>+</b> = rib hump persists.',evidence:'Standard scoliosis screening',hasSide:false},
+    {name:"Schepelmann's Test",target:'Intercostal neuralgia vs pleuritis',detail:'Laterally flex trunk each side. <b>+</b> = concave pain (neuralgia) or convex pain (pleurisy).',evidence:'Differentiates MSK vs pleural pain',hasSide:true},
+    {name:'Soto-Hall Test',target:'Vertebral fracture / ligament injury',detail:'Supine, fix sternum, passively flex head. <b>+</b> = localised pain at specific thoracic level.',evidence:'Screens for fracture',hasSide:false},
+    {name:'Passive Neck Flexion (Brudzinski)',target:'Meningeal irritation / UMN',detail:'Supine, passively flex neck. <b>+</b> = involuntary hip/knee flexion or thoracic pain.',evidence:'Red flag — meningitis / cord pathology',hasSide:false},
+    {name:'Chest Expansion Test',target:'Ankylosing spondylitis / costovertebral restriction',detail:'Measure chest circumference at T4: expiration vs inspiration. <b>+</b> = <2.5cm expansion.',evidence:'Normal ≥ 5cm · <2.5cm = restriction',hasSide:false,hasMeasure:true,measureUnit:'cm'}
+  ]},
+  lumbar:{color:'var(--green)',label:'Lumbar Spine (L1–L5)',tests:[
+    {name:"Straight Leg Raise (Lasègue's)",target:'Lumbar disc herniation / sciatic nerve',detail:'Supine, raise extended leg. <b>+</b> = radiating leg pain 30°–70°.',evidence:'Sensitivity: 72–97% · Specificity: 11–66%',hasSide:true,hasMeasure:true,measureUnit:'deg'},
+    {name:'Crossed SLR (Well Leg Raise)',target:'Large disc herniation / central stenosis',detail:'Raise unaffected leg. <b>+</b> = pain in opposite (affected) leg.',evidence:'Sensitivity: 29% · Specificity: 88%',hasSide:true},
+    {name:"Kemp's Test",target:'Facet syndrome / foraminal encroachment',detail:'Extension + lateral flexion + rotation toward affected side. <b>+</b> = local (facet) or radiating (root).',evidence:'Differentiates facet vs disc',hasSide:true},
+    {name:'Prone Knee Bend (Femoral Stretch)',target:'Upper lumbar disc / L2–L4 nerve root',detail:'Prone, flex knee toward buttock. <b>+</b> = anterior thigh pain.',evidence:'Tests L2–L4 (femoral nerve)',hasSide:true},
+    {name:'Slump Test',target:'Neural tension / dural irritation',detail:'Seated: slump → chin to chest → extend knee → dorsiflex foot. <b>+</b> = radicular pain relieved by neck extension.',evidence:'Sensitivity: 84% · Specificity: 83%',hasSide:true},
+    {name:"Milgram's Test",target:'Intrathecal pathology / disc lesion',detail:'Supine, raise both legs 6" off table, hold 30s. <b>+</b> = inability to hold / low back pain.',evidence:'Increases intrathecal + intradiskal pressure',hasSide:false},
+    {name:'Stork Test (Single Leg Extension)',target:'Spondylolysis / spondylolisthesis',detail:'Stand on one leg, extend lumbar spine. <b>+</b> = ipsilateral LBP at pars interarticularis.',evidence:'Screens for pars fracture',hasSide:true}
+  ]},
+  si:{color:'var(--purple)',label:'Sacroiliac / Pelvis',tests:[
+    {name:"FABER / Patrick's Test",target:'SI joint dysfunction / hip pathology',detail:'Supine: Flex, ABduct, External Rotate — foot on opposite knee, press knee down. <b>+</b> = groin (hip) or posterior (SI) pain.',evidence:'Sensitivity: 57–77% · Specificity: 71–100%',hasSide:true},
+    {name:"Gaenslen's Test",target:'SI joint inflammation',detail:'Supine at table edge, flex one hip to chest, extend other off edge. <b>+</b> = posterior SI pain.',evidence:'Stresses anterior SI ligaments',hasSide:true},
+    {name:'SI Compression Test',target:'SI joint sprain / inflammation',detail:'Side-lying, downward pressure on iliac crest. <b>+</b> = SI joint pain.',evidence:'Part of SI provocation cluster',hasSide:true},
+    {name:"Gillet's Test (Stork/March)",target:'SI joint hypomobility',detail:'Standing, thumb on PSIS + S2, patient flexes hip. <b>+</b> = PSIS doesn\'t drop.',evidence:'Assesses SI joint motion',hasSide:true},
+    {name:'Thomas Test',target:'Hip flexion contracture / iliopsoas',detail:'Supine, flex one knee to chest. <b>+</b> = opposite thigh lifts off table.',evidence:'Standard hip flexor assessment',hasSide:true}
+  ]}
+};
+
+function buildOrthoTests(){
+  const c=document.getElementById('orthoContainer');
+  Object.entries(orthoTests).forEach(([region,data])=>{
+    const div=document.createElement('div');div.className='ortho-region';div.id='ortho_'+region;
+    let h=`<div class="ortho-region-hdr" onclick="this.parentElement.classList.toggle('open')"><span class="ortho-region-dot" style="background:${data.color}"></span><span class="ortho-region-title">${data.label}</span><span class="ortho-region-count" id="${region}Count">0/${data.tests.length}</span><span class="hi-arrow" style="margin-left:auto">▼</span></div><div class="ortho-region-body">`;
+    data.tests.forEach((t,i)=>{
+      h+=`<div class="ortho-test" data-region="${region}" data-idx="${i}"><div class="ortho-test-hdr"><div class="ortho-test-name">${t.name}</div><div class="ortho-test-target">${t.target}</div></div><div class="ortho-test-detail">${t.detail}</div><div class="ortho-test-evidence">${t.evidence}</div><div class="ortho-test-inputs"><select class="ortho-select" id="os_${region}_${i}" onchange="updateOrthoCount('${region}')"><option value="">—</option><option value="+">+ Positive</option><option value="−">− Negative</option></select>`;
+      if(t.hasSide)h+=`<select class="ortho-side" id="osd_${region}_${i}"><option value="B">Bilateral</option><option value="L">Left</option><option value="R">Right</option></select>`;
+      if(t.hasMeasure)h+=`<input type="number" class="ortho-measure" id="om_${region}_${i}" placeholder="${t.measureUnit}" min="0" style="width:70px">`;
+      h+=`<input type="text" class="ortho-note" id="on_${region}_${i}" placeholder="Notes..."></div></div>`;
+    });
+    h+=`</div>`;div.innerHTML=h;c.appendChild(div);
+  });
+}
+function updateOrthoCount(region){
+  const tests=orthoTests[region].tests;let done=0;
+  tests.forEach((_,i)=>{if(document.getElementById('os_'+region+'_'+i).value)done++});
+  document.getElementById(region+'Count').textContent=done+'/'+tests.length;
+}
+buildOrthoTests();
+
+// ========== ROM INPUT ==========
+function buildROMInputs(container,data,prefix){
+  const c=document.getElementById(container);
+  data.forEach((d,i)=>{
+    const row=document.createElement('div');row.className='rom-row';
+    row.innerHTML=`<div class="rom-label">${d.n} <span class="rm">/${d.m}°</span></div><input type="range" class="rom-slider" min="0" max="${d.m}" value="${d.v}" id="${prefix}_${i}" oninput="this.parentElement.querySelector('.rom-val').textContent=this.value+'°'"><div class="rom-val">${d.v}°</div><div class="rom-mx">/${d.m}</div>`;
+    c.appendChild(row);
+  });
+}
+buildROMInputs('romCervicalInput',cervicalDef,'rc');
+buildROMInputs('romLumbarInput',lumbarDef,'rl');
+
+// ========== SPINE INPUT ==========
+function buildSpineInput(){
+  const area=document.getElementById('spineInput');
+  ['left','right'].forEach(side=>{
+    const col=document.createElement('div');col.className='spine-side';
+    col.innerHTML=`<div class="spine-side-title">${side==='left'?'Left':'Right'} Side</div>`;
+    spineRegions.forEach(r=>{
+      const div=document.createElement('div');div.className='spine-region-div';div.textContent=r.l;col.appendChild(div);
+      r.levels.forEach(lv=>{
+        spineData[side][lv]=0;
+        const row=document.createElement('div');row.className='spine-row';
+        row.innerHTML=`<div class="spine-lbl">${lv}</div><div class="spine-bar" data-s="${side}" data-l="${lv}" onclick="cycleSpine(this)"><div class="spine-fill" style="width:0%;background:${spineColors[0]}"></div></div>`;
+        col.appendChild(row);
+      });
+    });
+    area.appendChild(col);
+  });
+}
+function cycleSpine(el){const s=el.dataset.s,l=el.dataset.l;let v=(spineData[s][l]+1)%6;spineData[s][l]=v;const f=el.querySelector('.spine-fill');f.style.width=(v/5*100)+'%';f.style.background=spineColors[v]}
+buildSpineInput();
+
+// ========== MISC ==========
+function updateWD(){const l=parseFloat(document.getElementById('f_weightL').value)||0,r=parseFloat(document.getElementById('f_weightR').value)||0;const d=Math.abs(l-r).toFixed(1);document.getElementById('wdDiff').innerHTML=`<span style="color:${d<2?'var(--green)':'var(--red)'};">${d} kg</span>`}
+function updateLD(){const l=parseFloat(document.getElementById('f_legL').value)||0,r=parseFloat(document.getElementById('f_legR').value)||0;document.getElementById('ldDiff').innerHTML=`Difference: <span class="val">${Math.abs(l-r).toFixed(1)}</span>`}
+
+// ========== HI TOGGLE ==========
+function toggleHI(id){document.getElementById(id).classList.toggle('open')}
+
+// ========== HI SCORING ==========
+function setR(id,val,lbl,sub,st){const el=document.getElementById(id);el.className='hi-result '+st;el.innerHTML=`<div class="hi-result-val">${val}</div><div><div class="hi-result-lbl">${lbl}</div><div class="hi-result-sub">${sub}</div></div>`}
+function scoreGrip(){const l=+document.getElementById('h_gripL').value,r=+document.getElementById('h_gripR').value,sex=document.getElementById('f_sex').value;if(!l&&!r)return;const mx=Math.max(l||0,r||0);const t=sex==='M'?[54,44,35]:[34,28,22];let s,lb;if(mx>=t[0]){s='healthy';lb='Excellent'}else if(mx>=t[1]){s='healthy';lb='Good'}else if(mx>=t[2]){s='warning';lb='Below Avg'}else{s='concern';lb='Low — Elevated Risk'};setR('r_grip',mx+'kg',lb,'Best hand · 5kg ↓ = 16% ↑ mortality',s)}
+function scoreBal(){const l=+document.getElementById('h_balL').value,r=+document.getElementById('h_balR').value;if(!l&&!r)return;const w=Math.min(l||0,r||0);const age=parseInt(document.getElementById('f_age').value)||40;let th=age<40?20:age<60?10:age<80?5:3;let s=w>=th?'healthy':w>=th*.5?'warning':'concern';setR('r_bal',w+'s',s==='healthy'?'Healthy':s==='warning'?'Below Avg':'Deficit',`Weakest side · Asym: ${Math.abs((l||0)-(r||0))}s`,s)}
+function scoreCS(){const reps=+document.getElementById('h_csReps').value;if(!reps&&reps!==0)return;let s,lb;if(reps>=15){s='healthy';lb='Excellent'}else if(reps>=12){s='healthy';lb='Good'}else if(reps>=8){s='warning';lb='Below Avg'}else{s='concern';lb='Fall Risk'};setR('r_cs',reps+' reps',lb,'in 30s · Fall risk ≤7',s)}
+function scoreGait(){const t=+document.getElementById('h_gaitT').value;if(!t)return;const sp=(10/t).toFixed(2);let s,lb;if(sp>=1.2){s='healthy';lb='Excellent'}else if(sp>=1.0){s='healthy';lb='Normal'}else if(sp>=0.8){s='warning';lb='Below Avg'}else{s='concern';lb='Slow Gait — High Risk'};setR('r_gait',sp+' m/s',lb,`10m in ${t}s`,s)}
+function scoreSRT(){const si=+document.getElementById('h_srtSit').value,ri=+document.getElementById('h_srtRise').value;if(!si&&si!==0&&!ri&&ri!==0)return;const tot=(si||0)+(ri||0);let s,lb;if(tot>=8){s='healthy';lb='Excellent'}else if(tot>=6){s='healthy';lb='Good'}else if(tot>=3.5){s='warning';lb='Below Avg — 2× Risk'}else{s='concern';lb='High Risk — 5–6×'};setR('r_srt',tot+'/10',lb,`Sit:${si||0} + Rise:${ri||0}`,s)}
+function scoreRHR(){const v=+document.getElementById('h_rhr').value;if(!v)return;let s,lb;if(v<60){s='healthy';lb='Athletic'}else if(v<=70){s='healthy';lb='Good'}else if(v<=80){s='warning';lb='Average'}else{s='concern';lb='Elevated CV Risk'};setR('r_rhr',v+' bpm',lb,'10bpm ↑ ≈ 10–20% ↑ mortality',s)}
+function scoreVO2(){const age=+document.getElementById('h_vo2Age').value,rhr=+document.getElementById('h_vo2RHR').value;if(!age||!rhr)return;const mhr=208-(0.7*age);const vo2=(15.3*(mhr/rhr)).toFixed(1);let s,lb;if(vo2>=46){s='healthy';lb='Excellent'}else if(vo2>=38){s='healthy';lb='Good'}else if(vo2>=30){s='warning';lb='Average'}else{s='concern';lb='Low Fitness'};setR('r_vo2',vo2,lb,'ml/kg/min (est)',s)}
+function scoreFTF(){const d=+document.getElementById('h_ftf').value;if(d===undefined||d===null||document.getElementById('h_ftf').value==='')return;let s,lb;if(d<=0){s='healthy';lb='Excellent'}else if(d<=5){s='healthy';lb='Normal'}else if(d<=15){s='warning';lb='Below Avg'}else{s='concern';lb='Restricted'};setR('r_ftf',d+'cm',lb,'Healthy <5cm',s)}
+
+// ========== BUILD PROFILE ==========
+function buildProfile(){
+  const name=document.getElementById('f_name').value||'Patient';
+  const initials=name.split(' ').map(w=>w[0]).join('').substring(0,2).toUpperCase()||'?';
+  const date=document.getElementById('f_date').value||new Date().toISOString().slice(0,10);
+  const complaint=document.getElementById('f_complaint').value||'—';
+  const duration=document.getElementById('f_duration').value||'—';
+  const occ=document.getElementById('f_occ').value||'—';
+  const hours=document.getElementById('f_hours').value||'—';
+  const pain=document.getElementById('f_pain').value;
+  const freq=document.getElementById('f_freq').value;
+  const goals=Array.from(document.querySelectorAll('.goal-tag')).map(t=>t.textContent.replace('×','').trim());
+
+  // Count health indicator statuses
+  const hiTests=['r_grip','r_bal','r_cs','r_gait','r_srt','r_rhr','r_vo2','r_ftf'];
+  let hiHealthy=0,hiTotal=0;
+  hiTests.forEach(id=>{const el=document.getElementById(id);if(el.classList.contains('healthy')){hiHealthy++;hiTotal++}else if(el.classList.contains('warning')||el.classList.contains('concern')){hiTotal++}});
+
+  // ROM average
+  const romInputs=[...cervicalDef.map((_,i)=>document.getElementById('rc_'+i)),...lumbarDef.map((_,i)=>document.getElementById('rl_'+i))];
+  const allDef=[...cervicalDef,...lumbarDef];
+  let romSum=0;romInputs.forEach((el,i)=>romSum+=el.value/allDef[i].m);
+  const romAvg=Math.round(romSum/romInputs.length*100);
+
+  // HERO
+  document.getElementById('profileHero').innerHTML=`
+    <div class="hero-top">
+      <div class="avatar">${initials}</div>
+      <div style="flex:1">
+        <div class="hero-name">${name}</div>
+        <div class="hero-meta">
+          <span>📅 ${date}</span><span>💼 ${occ} · ${hours}/day</span><span>🩺 ${complaint} · ${duration}yrs</span>
+        </div>
+        <div class="hero-chips">${goals.map(g=>`<div class="hero-chip">🎯 ${g}</div>`).join('')}</div>
+      </div>
+    </div>
+    <div class="hero-stats">
+      <div class="hero-stat"><div class="hero-stat-val ${pain>=7?'r':pain>=4?'a':'g'}">${pain}/10</div><div class="hero-stat-lbl">Pain Level</div></div>
+      <div class="hero-stat"><div class="hero-stat-val ${freq>=5?'r':freq>=3?'a':'g'}">${freq}/10</div><div class="hero-stat-lbl">Frequency</div></div>
+      <div class="hero-stat"><div class="hero-stat-val ${hiHealthy/Math.max(hiTotal,1)>=.7?'g':hiHealthy/Math.max(hiTotal,1)>=.4?'a':'r'}">${hiHealthy}/${hiTotal}</div><div class="hero-stat-lbl">Health Tests Passed</div></div>
+      <div class="hero-stat"><div class="hero-stat-val ${romAvg>=80?'g':romAvg>=60?'a':'r'}">${romAvg}%</div><div class="hero-stat-lbl">Avg ROM</div></div>
+      <div class="hero-stat"><div class="hero-stat-val" style="color:var(--blue)">${hiTotal+3}</div><div class="hero-stat-lbl">Total Tests</div></div>
+    </div>`;
+
+  // HI SNAPSHOT
+  const hiData=[
+    {id:'r_grip',icon:'✊',name:'Grip Strength',valId:'h_gripL',valId2:'h_gripR',fmt:()=>{const l=+document.getElementById('h_gripL').value||0,r=+document.getElementById('h_gripR').value||0;return Math.max(l,r)+'kg'}},
+    {id:'r_bal',icon:'🦩',name:'Balance',fmt:()=>{const l=+document.getElementById('h_balL').value||0,r=+document.getElementById('h_balR').value||0;return Math.min(l,r)+'s'}},
+    {id:'r_cs',icon:'🪑',name:'Chair Stand',fmt:()=>(document.getElementById('h_csReps').value||'—')+' reps'},
+    {id:'r_gait',icon:'🚶',name:'Gait Speed',fmt:()=>{const t=+document.getElementById('h_gaitT').value;return t?(10/t).toFixed(2)+' m/s':'—'}},
+    {id:'r_srt',icon:'🧘',name:'Sit-Rise',fmt:()=>{const s=+document.getElementById('h_srtSit').value||0,r=+document.getElementById('h_srtRise').value||0;return (s+r)+'/10'}},
+    {id:'r_rhr',icon:'❤️',name:'Resting HR',fmt:()=>(document.getElementById('h_rhr').value||'—')+' bpm'},
+    {id:'r_vo2',icon:'🫁',name:'VO₂ Max',fmt:()=>{const a=+document.getElementById('h_vo2Age').value,r=+document.getElementById('h_vo2RHR').value;if(!a||!r)return'—';return(15.3*((208-0.7*a)/r)).toFixed(1)}},
+    {id:'r_ftf',icon:'🤸',name:'Fingertip-Floor',fmt:()=>(document.getElementById('h_ftf').value||'—')+'cm'}
+  ];
+  const grid=document.getElementById('hiProfileGrid');
+  grid.innerHTML=hiData.map(d=>{
+    const el=document.getElementById(d.id);
+    let st=el.classList.contains('healthy')?'healthy':el.classList.contains('warning')?'warning':el.classList.contains('concern')?'concern':'';
+    return`<div class="hi-pcard ${st}"><div class="hi-pcard-icon">${d.icon}</div><div class="hi-pcard-val">${d.fmt()}</div><div class="hi-pcard-name">${d.name}</div><div class="hi-pcard-status">${st==='healthy'?'✓ Healthy':st==='warning'?'⚠ Attention':st==='concern'?'⚠ Concern':'Not tested'}</div></div>`;
+  }).join('');
+
+  // FUNCTIONAL TESTS
+  const marchDist=document.getElementById('f_marchDist').value||'—';
+  const marchDir=document.getElementById('f_marchDir').value||'—';
+  const heelToe=document.getElementById('f_heelToe').value||'—';
+  const wl=document.getElementById('f_weightL').value||'—';
+  const wr=document.getElementById('f_weightR').value||'—';
+  const wd=wl!=='—'&&wr!=='—'?Math.abs(wl-wr).toFixed(1):'—';
+  const balL=document.getElementById('h_balL').value||'—';
+  const balR=document.getElementById('h_balR').value||'—';
+  function badge(v,good,op){if(v==='—')return'';const n=parseFloat(v);const ok=op==='gte'?n>=good:n<=good;return`<div class="badge ${ok?'badge-g':'badge-r'}">${ok?'✓ Healthy':'⚠ Concern'}</div>`}
+
+  document.getElementById('profileFunctional').innerHTML=`
+    <div class="card-hdr"><div class="card-icon" style="background:var(--teal-l)">⚡</div><div class="sec-title">Functional Tests</div></div>
+    <div class="tr-row"><div class="tr-name">Balance — L<small>≥30s healthy</small></div><div class="tr-val" style="color:${balL>=30?'var(--green)':'var(--red)'}">${balL}s</div>${badge(balL,30,'gte')}</div>
+    <div class="tr-row"><div class="tr-name">Balance — R<small>≥30s healthy</small></div><div class="tr-val" style="color:${balR>=30?'var(--green)':'var(--red)'}">${balR}s</div>${badge(balR,30,'gte')}</div>
+    <div class="tr-row"><div class="tr-name">Marching<small>Healthy = on T</small></div><div class="tr-val" style="color:${marchDist>10?'var(--red)':'var(--green)'}">${marchDist}cm ${marchDir}</div>${badge(marchDist,10,'lte')}</div>
+    <div class="tr-row"><div class="tr-name">Heel-Toe Walk<small>10 steady steps</small></div><div class="tr-val" style="color:${heelToe>=10?'var(--green)':'var(--red)'}">${heelToe}</div>${badge(heelToe,10,'gte')}</div>
+    <div class="tr-row"><div class="tr-name">Weight Dist<small>&lt;2kg diff</small></div><div class="tr-val">${wl}/${wr}kg</div>${badge(wd,2,'lte')}</div>`;
+
+  // ORTHO TESTS PROFILE
+  let orthoHTML=`<div class="card-hdr"><div class="card-icon" style="background:var(--red-l)">🩻</div><div class="sec-title">Orthopedic Tests</div></div>`;
+  let anyOrtho=false;
+  Object.entries(orthoTests).forEach(([region,data])=>{
+    let regionTests=[];
+    data.tests.forEach((t,i)=>{
+      const val=document.getElementById('os_'+region+'_'+i).value;
+      if(!val)return;
+      const sideEl=document.getElementById('osd_'+region+'_'+i);
+      const side=sideEl?sideEl.value:'';
+      const measureEl=document.getElementById('om_'+region+'_'+i);
+      const measure=measureEl?measureEl.value:'';
+      const note=document.getElementById('on_'+region+'_'+i).value;
+      regionTests.push({name:t.name,result:val,side,measure,note,target:t.target});
+    });
+    if(regionTests.length>0){
+      anyOrtho=true;
+      orthoHTML+=`<div style="font-size:12px;font-weight:600;color:var(--ink2);margin:12px 0 6px;padding-top:8px;border-top:1px solid var(--border)"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${data.color};margin-right:6px"></span>${data.label}</div>`;
+      regionTests.forEach(t=>{
+        const isPos=t.result==='+';
+        orthoHTML+=`<div class="tr-row" style="grid-template-columns:1fr 70px 70px"><div class="tr-name">${t.name}${t.note?'<small>'+t.note+'</small>':''}</div><div class="tr-val" style="font-size:14px;color:${isPos?'var(--red)':'var(--green)'}">${t.result} ${t.side!=='B'?t.side:''} ${t.measure||''}</div><div class="badge ${isPos?'badge-r':'badge-g'}">${isPos?'+ Positive':'− Negative'}</div></div>`;
+      });
+    }
+  });
+  if(!anyOrtho)orthoHTML+=`<div style="text-align:center;padding:20px;color:var(--ink4);font-size:13px">No orthopedic tests recorded</div>`;
+  document.getElementById('profileOrtho').innerHTML=orthoHTML;
+
+  // ROM
+  function romColor(p){return p>=.85?'var(--green)':p>=.65?'var(--amber)':'var(--red)'}
+  let romHTML=`<div class="card-hdr"><div class="card-icon" style="background:var(--purple-l)">🔄</div><div class="sec-title">Range of Motion</div></div>`;
+  romHTML+=`<div style="font-size:13px;font-weight:600;color:var(--ink2);margin-bottom:10px">Cervical</div>`;
+  cervicalDef.forEach((_,i)=>{const v=+document.getElementById('rc_'+i).value;const p=v/cervicalDef[i].m;romHTML+=`<div class="rom-bar-row"><div class="rom-bar-lbl">${cervicalDef[i].n}</div><div class="rom-bar-track"><div class="rom-bar-fill" style="width:${p*100}%;background:${romColor(p)}"></div></div><div class="rom-bar-val">${v}°/${cervicalDef[i].m}°</div></div>`});
+  romHTML+=`<div style="font-size:13px;font-weight:600;color:var(--ink2);margin:14px 0 10px">Lumbar</div>`;
+  lumbarDef.forEach((_,i)=>{const v=+document.getElementById('rl_'+i).value;const p=v/lumbarDef[i].m;romHTML+=`<div class="rom-bar-row"><div class="rom-bar-lbl">${lumbarDef[i].n}</div><div class="rom-bar-track"><div class="rom-bar-fill" style="width:${p*100}%;background:${romColor(p)}"></div></div><div class="rom-bar-val">${v}°/${lumbarDef[i].m}°</div></div>`});
+  document.getElementById('profileROM').innerHTML=romHTML;
+
+  // SPINE MAP
+  let spHTML=`<div class="card-hdr"><div class="card-icon" style="background:var(--amber-l)">🦴</div><div class="sec-title">Spinal Involvement</div></div><div class="spine-map">`;
+  spHTML+=`<div class="sp-col"><div class="sp-col-hdr">Left</div>`;
+  spineRegions.forEach(r=>{spHTML+=`<div class="sp-region-label left"></div>`;r.levels.forEach(lv=>{const v=spineData.left[lv]||0;spHTML+=`<div class="sp-bar-cell left"><div class="sp-bar" style="width:${v*20}%;background:${spineColors[v]}"></div></div>`})});
+  spHTML+=`</div><div class="sp-center">`;
+  spineRegions.forEach(r=>{spHTML+=`<div class="sp-center-region">${r.l}</div>`;r.levels.forEach(lv=>spHTML+=`<div class="sp-center-lbl">${lv}</div>`)});
+  spHTML+=`</div><div class="sp-col"><div class="sp-col-hdr">Right</div>`;
+  spineRegions.forEach(r=>{spHTML+=`<div class="sp-region-label"></div>`;r.levels.forEach(lv=>{const v=spineData.right[lv]||0;spHTML+=`<div class="sp-bar-cell right"><div class="sp-bar" style="width:${v*20}%;background:${spineColors[v]}"></div></div>`})});
+  spHTML+=`</div></div>`;
+  spHTML+=`<div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap">${['None','Mild','Moderate','Significant','Severe'].map((n,i)=>`<div style="display:flex;align-items:center;gap:3px;font-size:10px;color:var(--ink3)"><div style="width:10px;height:10px;border-radius:2px;background:${spineColors[i<1?0:i]}"></div>${n}</div>`).join('')}</div>`;
+  document.getElementById('profileSpine').innerHTML=spHTML;
+
+  // LEG + TIMELINE
+  const ll=+document.getElementById('f_legL').value||0,lr=+document.getElementById('f_legR').value||0;
+  const mx=Math.max(ll,lr,1);
+  document.getElementById('profileLeg').innerHTML=`
+    <div class="card-hdr"><div class="card-icon" style="background:var(--blue-l)">📏</div><div class="sec-title">Leg Length</div></div>
+    <div class="leg-vis">
+      <div class="leg-bar-w"><div class="leg-b l" style="height:${ll/mx*120}px"></div><div class="lv">${ll}</div><div class="ll">Left</div></div>
+      <div style="font-size:13px;color:var(--ink4);padding-bottom:36px">Δ <strong style="font-size:18px;color:var(--red)">${Math.abs(ll-lr).toFixed(1)}</strong></div>
+      <div class="leg-bar-w"><div class="leg-b r" style="height:${lr/mx*120}px"></div><div class="lv">${lr}</div><div class="ll">Right</div></div>
+    </div>
+    <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
+      <div class="card-hdr" style="margin-bottom:8px;padding-bottom:8px"><div class="card-icon" style="background:var(--amber-l)">📈</div><div class="sec-title">Progress Timeline</div></div>
+      <div class="timeline-empty"><div style="font-size:24px;opacity:.3;margin-bottom:8px">📊</div>Future visits will chart pain, ROM, and health indicator trends over time.</div>
+    </div>`;
+}
+
+// ========== EXPORT ==========
+function exportJSON(){
+  const data={
+    patient:{name:document.getElementById('f_name').value,dob:document.getElementById('f_dob').value,sex:document.getElementById('f_sex').value,age:+document.getElementById('f_age').value||null,goals:Array.from(document.querySelectorAll('.goal-tag')).map(t=>t.textContent.replace('×','').trim())},
+    assessmentDate:document.getElementById('f_date').value,
+    history:{chiefComplaint:document.getElementById('f_complaint').value,durationYears:+document.getElementById('f_duration').value||null,occupation:document.getElementById('f_occ').value,workHours:document.getElementById('f_hours').value,painLevel:+document.getElementById('f_pain').value,frequency:+document.getElementById('f_freq').value||null,notes:document.getElementById('f_notes').value},
+    healthIndicators:{
+      gripStrength:{leftKg:+document.getElementById('h_gripL').value||null,rightKg:+document.getElementById('h_gripR').value||null},
+      balance:{leftSec:+document.getElementById('h_balL').value||null,rightSec:+document.getElementById('h_balR').value||null},
+      chairStand:{reps30s:+document.getElementById('h_csReps').value||null},
+      gaitSpeed:{time10m:+document.getElementById('h_gaitT').value||null,speedMs:document.getElementById('h_gaitT').value?(10/+document.getElementById('h_gaitT').value).toFixed(2):null},
+      sittingRising:{sitScore:+document.getElementById('h_srtSit').value||null,riseScore:+document.getElementById('h_srtRise').value||null},
+      restingHeartRate:{bpm:+document.getElementById('h_rhr').value||null},
+      vo2Max:{estimatedMlKgMin:document.getElementById('h_vo2Age').value&&document.getElementById('h_vo2RHR').value?(15.3*((208-0.7*+document.getElementById('h_vo2Age').value)/+document.getElementById('h_vo2RHR').value)).toFixed(1):null},
+      fingertipToFloor:{distanceCm:+document.getElementById('h_ftf').value||null}
+    },
+    functionalTests:{
+      marchingTest:{deviationCm:+document.getElementById('f_marchDist').value||null,direction:document.getElementById('f_marchDir').value||null},
+      heelToeWalk:{steadySteps:+document.getElementById('f_heelToe').value||null},
+      weightDistribution:{leftKg:+document.getElementById('f_weightL').value||null,rightKg:+document.getElementById('f_weightR').value||null}
+    },
+    rangeOfMotion:{
+      cervical:Object.fromEntries(cervicalDef.map((d,i)=>[d.n.toLowerCase().replace(/\s+/g,'_'),{measured:+document.getElementById('rc_'+i).value,maxNorm:d.m}])),
+      lumbar:Object.fromEntries(lumbarDef.map((d,i)=>[d.n.toLowerCase().replace(/\s+/g,'_'),{measured:+document.getElementById('rl_'+i).value,maxNorm:d.m}]))
+    },
+    spineAssessment:spineData,
+    orthopedicTests:Object.fromEntries(Object.entries(orthoTests).map(([region,data])=>[region,data.tests.map((t,i)=>{const v=document.getElementById('os_'+region+'_'+i).value;if(!v)return null;const sEl=document.getElementById('osd_'+region+'_'+i);const mEl=document.getElementById('om_'+region+'_'+i);return{test:t.name,result:v,side:sEl?sEl.value:null,measure:mEl?+mEl.value||null:null,notes:document.getElementById('on_'+region+'_'+i).value||null}}).filter(Boolean)])),
+    legLength:{leftCm:+document.getElementById('f_legL').value||null,rightCm:+document.getElementById('f_legR').value||null},
+    exportedAt:new Date().toISOString()
+  };
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download=`assessment_${(data.patient.name||'patient').replace(/\s+/g,'_')}_${data.assessmentDate||'undated'}.json`;a.click();
+  showToast('Assessment exported as JSON');
+}
+function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2500)}
+
+// INIT
+document.getElementById('f_date').valueAsDate=new Date();
+</script>
+</body>
+</html>
