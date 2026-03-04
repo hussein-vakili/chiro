@@ -23,6 +23,7 @@
   <nav class="subnav" aria-label="Patient sections">
     <a class="subnav-link {% if active_staff_tab == 'overview' %}active{% endif %}" href="{{ url_for('main.staff_patient_detail', user_id=patient['id']) }}">Overview</a>
     <a class="subnav-link {% if active_staff_tab == 'assessment' %}active{% endif %}" href="{{ url_for('main.staff_patient_assessment', user_id=patient['id']) }}">Summit Assessment</a>
+    <a class="subnav-link {% if active_staff_tab == 'decision_support' %}active{% endif %}" href="{{ url_for('main.staff_patient_decision_support', user_id=patient['id']) }}">DDx + Tx Tool</a>
   </nav>
 
   <div class="section-tabbar" id="sectionTabbar" aria-label="Assessment sections">
@@ -537,6 +538,13 @@
         <div class="sec-icon" style="background:var(--s-blue-l)">📄</div>
         <div><div class="sec-title">Clinician Interpretation &amp; Portal Publishing</div><div class="sec-sub">These notes and summaries are what the patient will see in their portal after publication</div></div>
       </div>
+      <div class="consult-summary" id="ddxImportBanner" hidden>
+        <p id="ddxImportSummary">A DDx + Tx draft is ready to import.</p>
+        <div class="panel-actions" style="margin-top:14px">
+          <button type="button" class="s-btn s-btn-primary" id="ddxImportApply">Apply DDx + Tx draft</button>
+          <button type="button" class="s-btn s-btn-outline" id="ddxImportClear">Dismiss draft</button>
+        </div>
+      </div>
       <div class="s-fg">
         <div class="s-field">
           <label>Posture findings</label>
@@ -640,6 +648,7 @@
 
     {# ── FORM ACTIONS ── #}
     <div class="summit-actions">
+      <a class="s-btn s-btn-outline" href="{{ url_for('main.staff_patient_decision_support', user_id=patient['id']) }}">Open DDx + Tx tool</a>
       <button type="submit" name="action" value="draft" class="s-btn s-btn-outline">Save draft</button>
       <button type="submit" name="action" value="published" class="s-btn s-btn-primary">Publish to portal</button>
       {% if summary.visit_report and summary.visit_report.status == "published" %}
@@ -649,12 +658,89 @@
   </form>
 
 <script>
+const ddxImportContext = {
+  storageKey: {{ decision_support_storage_key|tojson }},
+};
+let pendingDdxImport = null;
+
 /* ── Section scroll ── */
 function scrollToSec(id, btn) {
   document.querySelectorAll('.section-tablink').forEach(t => t.classList.remove('active'));
   btn.classList.add('active');
   document.getElementById(id).scrollIntoView({ behavior: 'smooth', block: 'start' });
   return false;
+}
+
+function readDdxImport() {
+  if (!ddxImportContext.storageKey) return null;
+  var raw = window.localStorage.getItem(ddxImportContext.storageKey);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    window.localStorage.removeItem(ddxImportContext.storageKey);
+    return null;
+  }
+}
+
+function mergeClinicalText(fieldName, importedValue) {
+  if (!importedValue) return;
+  var field = document.querySelector('[name="' + fieldName + '"]');
+  if (!field) return;
+  var nextValue = importedValue.trim();
+  if (!nextValue) return;
+  var currentValue = field.value.trim();
+  if (!currentValue) {
+    field.value = nextValue;
+    return;
+  }
+  if (currentValue.indexOf(nextValue) !== -1) return;
+  field.value = currentValue + '\n\n[DDx + Tx Tool]\n' + nextValue;
+}
+
+function hideDdxImportBanner(clearStoredDraft) {
+  if (clearStoredDraft && ddxImportContext.storageKey) {
+    window.localStorage.removeItem(ddxImportContext.storageKey);
+  }
+  pendingDdxImport = null;
+  var banner = document.getElementById('ddxImportBanner');
+  if (banner) banner.hidden = true;
+}
+
+function showDdxImportBanner(payload) {
+  var banner = document.getElementById('ddxImportBanner');
+  var summary = document.getElementById('ddxImportSummary');
+  var applyButton = document.getElementById('ddxImportApply');
+  var clearButton = document.getElementById('ddxImportClear');
+  if (!banner || !summary || !applyButton || !clearButton) return;
+  pendingDdxImport = payload;
+  summary.textContent = 'DDx + Tx draft ready: ' + (payload.summary || payload.leadingConditionName || 'Imported plan') + '. Apply it to assessment, diagnosis, care plan, home care, and follow-up plan fields below.';
+  applyButton.hidden = false;
+  clearButton.textContent = 'Dismiss draft';
+  banner.hidden = false;
+}
+
+function applyDdxImport() {
+  if (!pendingDdxImport) return;
+  mergeClinicalText('assessment', pendingDdxImport.assessment || '');
+  mergeClinicalText('diagnosis', pendingDdxImport.diagnosis || '');
+  mergeClinicalText('care_plan', pendingDdxImport.care_plan || '');
+  mergeClinicalText('home_care', pendingDdxImport.home_care || '');
+  mergeClinicalText('follow_up_plan', pendingDdxImport.follow_up_plan || '');
+
+  if (ddxImportContext.storageKey) {
+    window.localStorage.removeItem(ddxImportContext.storageKey);
+  }
+
+  var summary = document.getElementById('ddxImportSummary');
+  var applyButton = document.getElementById('ddxImportApply');
+  var clearButton = document.getElementById('ddxImportClear');
+  if (summary) {
+    summary.textContent = 'DDx + Tx draft applied to the chart fields below. Review the text before saving or publishing.';
+  }
+  if (applyButton) applyButton.hidden = true;
+  if (clearButton) clearButton.textContent = 'Hide message';
+  pendingDdxImport = null;
 }
 
 /* ── Goals ── */
@@ -816,6 +902,13 @@ function updateLD() {
 
 /* ── Init: score existing values on load ── */
 document.addEventListener('DOMContentLoaded', function() {
+  var applyButton = document.getElementById('ddxImportApply');
+  var clearButton = document.getElementById('ddxImportClear');
+  if (applyButton) applyButton.addEventListener('click', applyDdxImport);
+  if (clearButton) clearButton.addEventListener('click', function() { hideDdxImportBanner(true); });
+  var importedDraft = readDdxImport();
+  if (importedDraft) showDdxImportBanner(importedDraft);
+
   scoreGrip(); scoreBal(); scoreCS(); scoreGait(); scoreSRT(); scoreRHR(); scoreVO2(); scoreFTF();
   updateWD(); updateLD();
 });

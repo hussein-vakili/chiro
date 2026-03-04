@@ -163,6 +163,27 @@ class PortalFlowTestCase(unittest.TestCase):
         assessment_html = response.get_data(as_text=True)
         self.assertIn("Summit complete assessment", assessment_html)
         self.assertIn("Dedicated chiropractor assessment workspace", assessment_html)
+        self.assertIn("DDx + Tx Tool", assessment_html)
+        self.assertIn("ddxImportBanner", assessment_html)
+
+        response = self.client.get(f"/staff/patients/{patient['id']}/decision-support")
+        self.assertEqual(response.status_code, 200)
+        decision_support_html = response.get_data(as_text=True)
+        self.assertIn("Bayesian DDx + treatment planner", decision_support_html)
+        self.assertIn("Loading the Claude decision-support artifact", decision_support_html)
+        self.assertIn("/staff/tools/claude-ddx-tool.jsx", decision_support_html)
+        self.assertIn("/static/vendor/react.production.min.js", decision_support_html)
+        self.assertIn("/static/vendor/react-dom.production.min.js", decision_support_html)
+        self.assertIn("/static/vendor/babel.min.js", decision_support_html)
+        self.assertIn("storageKey", decision_support_html)
+
+        response = self.client.get("/staff/tools/claude-ddx-tool.jsx")
+        self.assertEqual(response.status_code, 200)
+        artifact_source = response.get_data(as_text=True)
+        self.assertIn("const { useState, useMemo } = React;", artifact_source)
+        self.assertIn('ReactDOM.createRoot(document.getElementById("claude-artifact-root"))', artifact_source)
+        self.assertIn("window.localStorage.setItem", artifact_source)
+        self.assertIn("Send to Summit Assessment", artifact_source)
 
         response = self.client.post(
             f"/staff/patients/{patient['id']}/initial-consult",

@@ -117,6 +117,7 @@
   <nav class="subnav" aria-label="Patient sections">
     <a class="subnav-link {% if active_staff_tab == 'overview' %}active{% endif %}" href="{{ url_for('main.staff_patient_detail', user_id=patient['id']) }}">Overview</a>
     <a class="subnav-link {% if active_staff_tab == 'assessment' %}active{% endif %}" href="{{ url_for('main.staff_patient_assessment', user_id=patient['id']) }}">Summit Assessment</a>
+    <a class="subnav-link {% if active_staff_tab == 'decision_support' %}active{% endif %}" href="{{ url_for('main.staff_patient_decision_support', user_id=patient['id']) }}">DDx + Tx Tool</a>
   </nav>
 
   <section class="dashboard-grid">
@@ -254,6 +255,7 @@
       </div>
       <div class="panel-actions">
         <a class="primary-button" href="{{ url_for('main.staff_patient_assessment', user_id=patient['id']) }}">Open Summit Assessment</a>
+        <a class="secondary-button" href="{{ url_for('main.staff_patient_decision_support', user_id=patient['id']) }}">Open DDx + Tx Tool</a>
         {% if summary.visit_report and summary.visit_report.status == "published" %}
           <a class="secondary-button" href="{{ url_for('main.staff_patient_results_preview', user_id=patient['id']) }}">Preview patient results</a>
         {% endif %}

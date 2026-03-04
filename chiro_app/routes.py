@@ -5,6 +5,7 @@ import json
 import secrets
 from datetime import date, datetime, time, timedelta
 from functools import wraps
+from pathlib import Path
 
 from flask import (
     Blueprint,
@@ -113,6 +114,14 @@ APPOINTMENT_DURATION_DEFAULTS = {
 }
 
 SLOT_INCREMENT_MINUTES = 15
+CLAUDE_DDX_ARTIFACT_PATH = Path(__file__).resolve().parent.parent / "life-chiro-ddx-tx (1).jsx"
+
+DECISION_SUPPORT_REGION_LABELS = {
+    "neck": "Neck Pain",
+    "low_back": "Low Back Pain",
+    "shoulder": "Shoulder",
+    "headache": "Headache",
+}
 
 
 def is_staff(user) -> bool:
@@ -214,6 +223,127 @@ def float_or_none(value: str | None):
         return float(value)
     except ValueError:
         return value
+
+
+def infer_decision_support_region(payload: dict | None) -> str:
+    payload = payload or {}
+    pain_areas = [str(item).strip().lower() for item in (payload.get("pain") or {}).get("areas", []) if item]
+    complaint = str((payload.get("reasonForVisit") or {}).get("chiefComplaint", "")).strip().lower()
+
+    if any(term in complaint for term in ("shoulder", "rotator cuff", "labrum")) or "shoulder" in pain_areas:
+        return "shoulder"
+    if any(term in complaint for term in ("headache", "migraine", "head pain")) or "head" in pain_areas:
+        return "headache"
+    if any(term in complaint for term in ("low back", "lumbar", "sciatica", "sacroiliac")):
+        return "low_back"
+    if any(area in {"low back", "back", "hip", "leg"} for area in pain_areas):
+        return "low_back"
+    if any(term in complaint for term in ("neck", "cervical")) or "neck" in pain_areas:
+        return "neck"
+    return "neck"
+
+
+def decision_support_storage_key(user_id: int) -> str:
+    return f"life_chiro_ddx_export:{user_id}"
+
+
+def build_claude_artifact_source() -> str | None:
+    if not CLAUDE_DDX_ARTIFACT_PATH.exists():
+        return None
+
+    source = CLAUDE_DDX_ARTIFACT_PATH.read_text(encoding="utf-8")
+    source = source.replace(
+        'import { useState, useMemo } from "react";',
+        "const { useState, useMemo } = React;",
+        1,
+    )
+    source = source.replace(
+        'const[rId,setRId]=useState("neck");',
+        'const[rId,setRId]=useState((window.LIFE_CHIRO_ARTIFACT_CONTEXT && window.LIFE_CHIRO_ARTIFACT_CONTEXT.initialRegion) || "neck");',
+        1,
+    )
+    source = source.replace(
+        '  const[showSpine,setShowSpine]=useState(false);',
+        '  const[showSpine,setShowSpine]=useState(false);\n'
+        '  const[exportStatus,setExportStatus]=useState("");',
+        1,
+    )
+    source = source.replace(
+        '  const results=useMemo(()=>bayes(reg,res),[reg,res]);\n'
+        '  const tested=Object.values(res).filter(Boolean).length;\n'
+        '  const switchReg=r=>{setRId(r);setRes({});setOp({});setView("assess");setExpDx(null);setTxCond(null);setSpineSegs([]);setShowSpine(false)};',
+        '  const results=useMemo(()=>bayes(reg,res),[reg,res]);\n'
+        '  const tested=Object.values(res).filter(Boolean).length;\n'
+        '  const artifactContext=window.LIFE_CHIRO_ARTIFACT_CONTEXT||{};\n'
+        '  const selectedCondition=results.find(c=>c.id===txCond)||results[0]||null;\n'
+        '  const selectedTx=selectedCondition?TX[selectedCondition.id]:null;\n'
+        '  const buildExportPayload=()=>{\n'
+        '    if(!selectedCondition) return null;\n'
+        '    const topDiagnoses=results.slice(0,3).map(c=>`${c.name} (${(c.post*100).toFixed(1)}%)`);\n'
+        '    const support=selectedCondition.ap.slice(0,4).map(a=>`${a.n} ${a.r} (LR ${a.lr.toFixed(2)})`);\n'
+        '    const sessionFocus=(selectedTx?.session||[]).slice(0,3).map(s=>`${s.p}: ${s.tasks.slice(0,2).join(", ")}`);\n'
+        '    const reexamSchedule=(selectedTx?.reexam?.schedule||[]).map(s=>`${s.visit}: ${s.focus}`);\n'
+        '    return {\n'
+        '      source:"claude_artifact",\n'
+        '      region:reg.id,\n'
+        '      leadingConditionId:selectedCondition.id,\n'
+        '      leadingConditionName:selectedCondition.name,\n'
+        '      exportedAt:new Date().toISOString(),\n'
+        '      assessment:[\n'
+        '        `${selectedCondition.name} is the current leading working diagnosis from the DDx tool (${(selectedCondition.post*100).toFixed(1)}% posterior probability).`,\n'
+        '        support.length?`Most supportive findings: ${support.join("; ")}.`:"",\n'
+        '        selectedTx?.prog?.t||""\n'
+        '      ].filter(Boolean).join(" "),\n'
+        '      diagnosis:topDiagnoses.join("\\n"),\n'
+        '      care_plan:[\n'
+        '        selectedTx?.freq?`Frequency: ${selectedTx.freq}`:"",\n'
+        '        selectedTx?.visits?`Expected course: ${selectedTx.visits}`:"",\n'
+        '        sessionFocus.length?`Session focus: ${sessionFocus.join("; ")}`:""\n'
+        '      ].filter(Boolean).join("\\n"),\n'
+        '      home_care:(selectedTx?.hep||[]).join("\\n"),\n'
+        '      follow_up_plan:[\n'
+        '        reexamSchedule.length?`Re-exam schedule: ${reexamSchedule.join(" | ")}`:"",\n'
+        '        selectedTx?.reexam?.onTrack?`On track: ${selectedTx.reexam.onTrack}`:"",\n'
+        '        selectedTx?.reexam?.offTrack?`Off track: ${selectedTx.reexam.offTrack}`:""\n'
+        '      ].filter(Boolean).join("\\n"),\n'
+        '      summary:`${selectedCondition.name} · ${(selectedCondition.post*100).toFixed(1)}% · ${reg.label}`\n'
+        '    };\n'
+        '  };\n'
+        '  const exportToAssessment=()=>{\n'
+        '    const payload=buildExportPayload();\n'
+        '    if(!payload||!artifactContext.storageKey){\n'
+        '      setExportStatus("No assessment export target is configured.");\n'
+        '      return;\n'
+        '    }\n'
+        '    window.localStorage.setItem(artifactContext.storageKey, JSON.stringify(payload));\n'
+        '    setExportStatus("Draft sent to Summit Assessment.");\n'
+        '    if(artifactContext.assessmentUrl){\n'
+        '      window.location.href=`${artifactContext.assessmentUrl}#sec-publish`;\n'
+        '    }\n'
+        '  };\n'
+        '  const switchReg=r=>{setRId(r);setRes({});setOp({});setView("assess");setExpDx(null);setTxCond(null);setSpineSegs([]);setShowSpine(false);setExportStatus("")};',
+        1,
+    )
+    source = source.replace(
+        '    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&family=Source+Sans+3:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>',
+        "",
+        1,
+    )
+    source = source.replace(
+        '        <p style={{fontSize:10,color:"#444",margin:0,fontFamily:"mono"}}>{tested} findings{results[0]?.ap.length>0?` · Leading: ${results[0].name}`:""}</p>',
+        '        <p style={{fontSize:10,color:"#444",margin:0,fontFamily:"mono"}}>{tested} findings{results[0]?.ap.length>0?` · Leading: ${results[0].name}`:""}</p>\n'
+        '        {selectedCondition&&artifactContext.assessmentUrl&&<div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginTop:8}}>\n'
+        '          <button onClick={exportToAssessment} style={{padding:"6px 10px",border:`1px solid ${selectedCondition.color}`,borderRadius:6,background:selectedCondition.color+"18",color:selectedCondition.color,fontSize:10,fontWeight:700,fontFamily:"mono",cursor:"pointer"}}>Send to Summit Assessment</button>\n'
+        '          {exportStatus&&<span style={{fontSize:9,color:"#6b7280",fontFamily:"mono"}}>{exportStatus}</span>}\n'
+        '        </div>}',
+        1,
+    )
+    source = source.replace("export default function App(){", "function App(){", 1)
+    source += (
+        '\nconst claudeArtifactRoot = ReactDOM.createRoot(document.getElementById("claude-artifact-root"));'
+        "\nclaudeArtifactRoot.render(<App />);\n"
+    )
+    return source
 
 
 def get_submission_for_user(user_id: int):
@@ -1638,6 +1768,7 @@ def staff_patient_context(user_id: int):
     invitation = get_latest_invitation_for_user(patient["id"])
     notes = get_notes_for_patient(patient["id"])
     schedule = build_patient_schedule_context(patient["id"])
+    decision_support_region = infer_decision_support_region(payload)
     for key in ("all", "upcoming", "history", "reminders"):
         for appointment in schedule[key]:
             decorate_appointment_contacts(appointment)
@@ -1682,6 +1813,9 @@ def staff_patient_context(user_id: int):
         "summit_rom_sections": SUMMIT_ROM_SECTIONS,
         "summit_ortho_regions": SUMMIT_ORTHO_REGIONS,
         "summit_spine_regions": SUMMIT_SPINE_REGIONS,
+        "decision_support_region": decision_support_region,
+        "decision_support_region_label": DECISION_SUPPORT_REGION_LABELS[decision_support_region],
+        "decision_support_storage_key": decision_support_storage_key(patient["id"]),
     }
 
 
@@ -2570,6 +2704,28 @@ def staff_patient_assessment(user_id: int):
     if context is None:
         abort(404)
     return render_template("staff_assessment.html", active_staff_tab="assessment", **context)
+
+
+@bp.route("/staff/patients/<int:user_id>/decision-support")
+@staff_required
+def staff_patient_decision_support(user_id: int):
+    context = staff_patient_context(user_id)
+    if context is None:
+        abort(404)
+    return render_template("staff_decision_support.html", active_staff_tab="decision_support", **context)
+
+
+@bp.get("/staff/tools/claude-ddx-tool.jsx")
+@staff_required
+def staff_claude_ddx_tool():
+    source = build_claude_artifact_source()
+    if source is None:
+        abort(404)
+    return current_app.response_class(
+        source,
+        mimetype="text/babel",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @bp.route("/practitioner/appointments/<int:appointment_id>/soap", methods=("GET", "POST"))

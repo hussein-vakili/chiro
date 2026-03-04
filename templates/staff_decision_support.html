@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+
+{% block title %}DDx + Tx Tool · Life Chiropractic{% endblock %}
+
+{% block head %}
+  <style>
+    .artifact-shell{margin-top:18px;border-radius:28px;overflow:hidden;border:1px solid rgba(12,12,26,.12);box-shadow:var(--shadow);background:#0a0a16}
+    .artifact-loading{padding:48px 24px;text-align:center;background:linear-gradient(180deg,#12122a,#0a0a16);color:#c7c9ff;font-size:15px;line-height:1.6}
+  </style>
+{% endblock %}
+
+{% block content %}
+  <section class="hero-panel">
+    <div>
+      <div class="auth-eyebrow">Claude artifact</div>
+      <h1>{{ summary.full_name }}</h1>
+      <p>
+        Bayesian differential diagnosis and treatment-planning workspace.
+        {% if summary.appointment_at %} Appointment {{ summary.appointment_at }}.{% endif %}
+      </p>
+    </div>
+    <div class="status-card">
+      <span>Suggested start</span>
+      <strong>{{ decision_support_region_label }}</strong>
+      <small>Derived from the current intake complaint and pain map.</small>
+      <small>Use the Summit Assessment tab to save chart data.</small>
+    </div>
+  </section>
+
+  <nav class="subnav" aria-label="Patient sections">
+    <a class="subnav-link {% if active_staff_tab == 'overview' %}active{% endif %}" href="{{ url_for('main.staff_patient_detail', user_id=patient['id']) }}">Overview</a>
+    <a class="subnav-link {% if active_staff_tab == 'assessment' %}active{% endif %}" href="{{ url_for('main.staff_patient_assessment', user_id=patient['id']) }}">Summit Assessment</a>
+    <a class="subnav-link {% if active_staff_tab == 'decision_support' %}active{% endif %}" href="{{ url_for('main.staff_patient_decision_support', user_id=patient['id']) }}">DDx + Tx Tool</a>
+  </nav>
+
+  <section class="dashboard-grid">
+    <article class="panel">
+      <div class="panel-label">Current chart context</div>
+      <h2>Bayesian DDx + treatment planner</h2>
+      <p>This is the Claude chat artifact embedded into the staff workflow. It is decision support only and does not write back into the patient chart automatically.</p>
+
+      <div class="section-block">
+        <h3>Chief complaint</h3>
+        <p>{{ summary.reason.chiefComplaint or "No chief complaint captured yet." }}</p>
+      </div>
+
+      <div class="section-block">
+        <h3>Pain areas</h3>
+        <div class="tag-cloud">
+          {% for item in summary.pain.areas %}
+            <span class="mini-tag mini-tag-danger">{{ item }}</span>
+          {% else %}
+            <span class="muted-copy">No pain areas selected in intake.</span>
+          {% endfor %}
+        </div>
+      </div>
+    </article>
+
+    <article class="panel">
+      <div class="panel-label">How to use it</div>
+      <h2>Workflow notes</h2>
+      <ul class="check-list">
+        <li>Use the suggested starting region first, then switch regions inside the tool if the exam points elsewhere.</li>
+        <li>Use the DDx tab to rank likely conditions, then open the matching Tx Plan and Track views for visit planning and re-exam rules.</li>
+        <li>Keep the official diagnosis, care plan, and patient-facing summary in the Summit Assessment page.</li>
+      </ul>
+      <div class="panel-actions">
+        <a class="secondary-button" href="{{ url_for('main.staff_patient_assessment', user_id=patient['id']) }}">Back to assessment</a>
+        <a class="secondary-button" href="{{ url_for('main.staff_patient_results_preview', user_id=patient['id']) if summary.visit_report and summary.visit_report.status == 'published' else url_for('main.staff_patient_detail', user_id=patient['id']) }}">
+          {{ "Preview patient results" if summary.visit_report and summary.visit_report.status == "published" else "Back to overview" }}
+        </a>
+      </div>
+    </article>
+  </section>
+
+  <section class="artifact-shell" aria-label="Clinical decision support artifact">
+    <div id="claude-artifact-root">
+      <div class="artifact-loading">Loading the Claude decision-support artifact...</div>
+    </div>
+  </section>
+{% endblock %}
+
+{% block scripts %}
+  <script>
+    window.LIFE_CHIRO_ARTIFACT_CONTEXT = {
+      initialRegion: {{ decision_support_region|tojson }},
+      storageKey: {{ decision_support_storage_key|tojson }},
+      assessmentUrl: {{ url_for('main.staff_patient_assessment', user_id=patient['id'])|tojson }},
+    };
+  </script>
+  <script src="{{ url_for('static', filename='vendor/react.production.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='vendor/react-dom.production.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='vendor/babel.min.js') }}"></script>
+  <script type="text/babel" data-presets="react" src="{{ url_for('main.staff_claude_ddx_tool') }}"></script>
+{% endblock %}
