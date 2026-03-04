@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+import json
 import os
 import tempfile
 import unittest
@@ -141,6 +142,17 @@ class PortalFlowTestCase(unittest.TestCase):
         response = self.client.post("/api/intake", json={"status": "submitted", "payload": payload})
         self.assertEqual(response.status_code, 200)
         self.assertIn("/results", response.get_data(as_text=True))
+
+        with self.app.app_context():
+            stored_row = get_db().execute(
+                "SELECT payload_json FROM intake_submissions WHERE user_id = ?",
+                (user["id"],),
+            ).fetchone()
+            self.assertIsNotNone(stored_row)
+            stored_payload = json.loads(stored_row["payload_json"])
+            functional_schema = stored_payload.get("functionalOutcomeMeasures", {})
+            self.assertEqual(functional_schema.get("schemaVersion"), "2026-03-odi-slider")
+            self.assertIn("odi", (functional_schema.get("questionnaireSchemas") or {}))
 
         self.client.post("/logout", follow_redirects=True)
         self.login_staff()
@@ -462,6 +474,9 @@ class PortalFlowTestCase(unittest.TestCase):
         self.assertIn("Appointment SOAP note", soap_html)
         self.assertIn("Report of Findings", soap_html)
         self.assertIn("Sarah Mitchell", soap_html)
+        self.assertIn("Spine dysfunction map", soap_html)
+        self.assertIn(">C1<", soap_html)
+        self.assertIn(">S5<", soap_html)
 
         response = self.client.post(
             f"/practitioner/appointments/{rof_appointment['id']}/soap",
@@ -470,6 +485,7 @@ class PortalFlowTestCase(unittest.TestCase):
                 "objective": "Cervical rotation improved slightly left and right. Upper trapezius tension still present on palpation.",
                 "assessment": "Progressing, but prolonged nursing shifts continue to irritate the cervical region.",
                 "plan": "Continue with the scheduled care plan, reinforce hourly posture resets, and re-check cervical rotation next visit.",
+                "spine_findings_json": "{\"left\":[\"C5\",\"T2\"],\"right\":[\"L4\",\"S1\"]}",
             },
             follow_redirects=True,
         )
@@ -478,6 +494,16 @@ class PortalFlowTestCase(unittest.TestCase):
         self.assertIn("SOAP note saved for this appointment", soap_html)
         self.assertIn("Headaches eased for two days", soap_html)
         self.assertIn("Continue with the scheduled care plan", soap_html)
+
+        with self.app.app_context():
+            soap_row = get_db().execute(
+                "SELECT spine_findings_json FROM appointment_soap_notes WHERE appointment_id = ?",
+                (rof_appointment["id"],),
+            ).fetchone()
+            self.assertIsNotNone(soap_row)
+            spine_payload = json.loads(soap_row["spine_findings_json"])
+            self.assertEqual(spine_payload["left"], ["C5", "T2"])
+            self.assertEqual(spine_payload["right"], ["L4", "S1"])
 
         response = self.client.post(
             f"/staff/appointments/{rof_appointment['id']}/send-reminder",

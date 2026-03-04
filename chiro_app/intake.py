@@ -1053,14 +1053,32 @@ def build_seed_payload(user: dict, payload: dict | None = None) -> dict:
             },
         },
     )
-    payload.setdefault(
-        "functionalOutcomeMeasures",
-        {
-            "routing": {"selectedComplaints": [], "questionnairesShown": []},
-            "questionnaires": [],
-            "archived": [],
-        },
-    )
+    functional = payload.setdefault("functionalOutcomeMeasures", {})
+    if not isinstance(functional, dict):
+        functional = {}
+        payload["functionalOutcomeMeasures"] = functional
+    routing = functional.setdefault("routing", {})
+    if not isinstance(routing, dict):
+        routing = {}
+        functional["routing"] = routing
+    routing.setdefault("selectedComplaints", [])
+    routing.setdefault("questionnairesShown", [])
+    functional.setdefault("questionnaires", [])
+    functional.setdefault("archived", [])
+    functional.setdefault("schemaVersion", "2026-03-odi-slider")
+    questionnaire_schemas = functional.setdefault("questionnaireSchemas", {})
+    if not isinstance(questionnaire_schemas, dict):
+        questionnaire_schemas = {}
+        functional["questionnaireSchemas"] = questionnaire_schemas
+    odi_schema = questionnaire_schemas.setdefault("odi", {})
+    if not isinstance(odi_schema, dict):
+        odi_schema = {}
+        questionnaire_schemas["odi"] = odi_schema
+    odi_schema.setdefault("responseModel", "continuous_0_to_10")
+    odi_schema.setdefault("scaleMin", 0)
+    odi_schema.setdefault("scaleMax", 10)
+    odi_schema.setdefault("optionalSectionTitles", ["Sex Life"])
+    odi_schema.setdefault("version", "2.2")
     payload.setdefault(
         "goals",
         {
@@ -1488,7 +1506,7 @@ def build_flag_list(payload: dict) -> list[str]:
 
     for questionnaire in functional.get("questionnaires", []):
         interpretation = questionnaire.get("interpretation") or ""
-        if any(label in interpretation for label in ("Severe", "Complete", "Crippling")):
+        if any(label in interpretation for label in ("Severe", "Complete", "Crippling", "Crippled")):
             flags.append(
                 f"{questionnaire.get('displayName', questionnaire.get('questionnaireId', 'Outcome score'))}: {interpretation}."
             )

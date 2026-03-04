@@ -123,6 +123,14 @@ DECISION_SUPPORT_REGION_LABELS = {
     "headache": "Headache",
 }
 
+SPINE_SEGMENT_ORDER = [
+    *[f"C{i}" for i in range(1, 8)],
+    *[f"T{i}" for i in range(1, 13)],
+    *[f"L{i}" for i in range(1, 6)],
+    *[f"S{i}" for i in range(1, 6)],
+]
+SPINE_SEGMENT_INDEX = {segment: index for index, segment in enumerate(SPINE_SEGMENT_ORDER)}
+
 
 def is_staff(user) -> bool:
     return bool(user and user["role"] in {"clinician", "admin"})
@@ -150,6 +158,41 @@ def is_expired(value: str | None) -> bool:
     if parsed is None:
         return True
     return parsed <= datetime.now(parsed.tzinfo)
+
+
+def normalize_spine_findings(raw_value: str | None) -> dict[str, list[str]]:
+    findings = {"left": [], "right": []}
+    if not raw_value:
+        return findings
+
+    try:
+        parsed = json.loads(raw_value)
+    except (json.JSONDecodeError, TypeError):
+        return findings
+
+    if not isinstance(parsed, dict):
+        return findings
+
+    for side in ("left", "right"):
+        raw_segments = parsed.get(side)
+        if not isinstance(raw_segments, list):
+            continue
+
+        normalized_side = []
+        seen = set()
+        for segment in raw_segments:
+            if not isinstance(segment, str):
+                continue
+            key = segment.strip().upper()
+            if key not in SPINE_SEGMENT_INDEX or key in seen:
+                continue
+            normalized_side.append(key)
+            seen.add(key)
+
+        normalized_side.sort(key=lambda segment_key: SPINE_SEGMENT_INDEX[segment_key])
+        findings[side] = normalized_side
+
+    return findings
 
 
 def login_required(view):
@@ -2747,10 +2790,13 @@ def practitioner_appointment_soap_note(appointment_id: int):
         objective = request.form.get("objective", "").strip()
         assessment = request.form.get("assessment", "").strip()
         plan = request.form.get("plan", "").strip()
+        spine_findings = normalize_spine_findings(request.form.get("spine_findings_json"))
+        spine_findings_json = json.dumps(spine_findings, separators=(",", ":"))
+        has_spine_findings = bool(spine_findings["left"] or spine_findings["right"])
 
         error = None
-        if not any((subjective, objective, assessment, plan)):
-            error = "Add at least one SOAP section before saving the appointment note."
+        if not any((subjective, objective, assessment, plan)) and not has_spine_findings:
+            error = "Add at least one SOAP section or spine dysfunction level before saving the appointment note."
 
         if error is None:
             now = iso_now()
@@ -2766,10 +2812,11 @@ def practitioner_appointment_soap_note(appointment_id: int):
                         objective,
                         assessment,
                         plan,
+                        spine_findings_json,
                         created_at,
                         updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         appointment_id,
@@ -2779,6 +2826,7 @@ def practitioner_appointment_soap_note(appointment_id: int):
                         objective,
                         assessment,
                         plan,
+                        spine_findings_json,
                         now,
                         now,
                     ),
@@ -2792,10 +2840,11 @@ def practitioner_appointment_soap_note(appointment_id: int):
                         objective = ?,
                         assessment = ?,
                         plan = ?,
+                        spine_findings_json = ?,
                         updated_at = ?
                     WHERE appointment_id = ?
                     """,
-                    (g.user["id"], subjective, objective, assessment, plan, now, appointment_id),
+                    (g.user["id"], subjective, objective, assessment, plan, spine_findings_json, now, appointment_id),
                 )
             db.commit()
             flash("SOAP note saved for this appointment.", "success")
@@ -2805,11 +2854,16 @@ def practitioner_appointment_soap_note(appointment_id: int):
 
     appointment = decorate_appointment_contacts(build_appointment_item(get_appointment_with_people(appointment_id)))
     soap_note = get_appointment_soap_note(appointment_id)
+    spine_findings = {"left": [], "right": []}
+    if soap_note is not None and "spine_findings_json" in soap_note.keys():
+        spine_findings = normalize_spine_findings(soap_note["spine_findings_json"])
     return render_template(
         "practitioner_soap_note.html",
         appointment=appointment,
         patient=patient,
         soap_note=soap_note,
+        spine_segments=SPINE_SEGMENT_ORDER,
+        spine_findings=spine_findings,
     )
 
 

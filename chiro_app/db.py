@@ -149,6 +149,7 @@ CREATE TABLE IF NOT EXISTS appointment_soap_notes (
     objective TEXT NOT NULL DEFAULT '',
     assessment TEXT NOT NULL DEFAULT '',
     plan TEXT NOT NULL DEFAULT '',
+    spine_findings_json TEXT NOT NULL DEFAULT '{"left":[],"right":[]}',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     FOREIGN KEY (appointment_id) REFERENCES appointments(id) ON DELETE CASCADE,
@@ -442,6 +443,11 @@ def init_db() -> None:
     }
     for column_name, definition in schedule_window_columns.items():
         _ensure_column(db, "schedule_windows", column_name, definition)
+    soap_note_columns = {
+        "spine_findings_json": "TEXT NOT NULL DEFAULT '{\"left\":[],\"right\":[]}'",
+    }
+    for column_name, definition in soap_note_columns.items():
+        _ensure_column(db, "appointment_soap_notes", column_name, definition)
     db.execute("CREATE INDEX IF NOT EXISTS idx_schedule_windows_location ON schedule_windows(location_id)")
     default_location_id = _seed_default_locations(db)
     _backfill_accepted_invitation_appointments(db)

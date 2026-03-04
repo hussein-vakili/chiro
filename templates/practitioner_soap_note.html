@@ -45,11 +45,55 @@
         <a class="secondary-button" href="{{ url_for('main.dashboard') }}">Back to dashboard</a>
         <a class="secondary-button" href="{{ url_for('main.staff_patient_detail', user_id=appointment['patient_user_id']) }}">Open patient chart</a>
       </div>
+      <div class="section-block">
+        <h3>Spine dysfunction map</h3>
+        <p>Click left and/or right for each segment where dysfunction is present.</p>
+        <input
+          type="hidden"
+          id="spineFindingsInput"
+          name="spine_findings_json"
+          value='{{ spine_findings | tojson }}'
+          form="soap-note-form"
+        >
+        <div class="spine-map" id="spineMap">
+          <div class="spine-map-head">
+            <span>Left</span>
+            <span>Segment</span>
+            <span>Right</span>
+          </div>
+          <div class="spine-map-body">
+            {% for segment in spine_segments %}
+              <div class="spine-row" data-segment="{{ segment }}">
+                <button
+                  type="button"
+                  class="spine-side-button"
+                  data-side="left"
+                  aria-label="Toggle left dysfunction at {{ segment }}"
+                  aria-pressed="false"
+                >
+                  Left
+                </button>
+                <div class="spine-level">{{ segment }}</div>
+                <button
+                  type="button"
+                  class="spine-side-button"
+                  data-side="right"
+                  aria-label="Toggle right dysfunction at {{ segment }}"
+                  aria-pressed="false"
+                >
+                  Right
+                </button>
+              </div>
+            {% endfor %}
+          </div>
+          <small class="spine-map-summary" id="spineSelectionSummary">No dysfunction levels selected yet.</small>
+        </div>
+      </div>
     </article>
 
     <article class="panel">
       <div class="panel-label">SOAP note</div>
-      <form method="post" class="auth-form">
+      <form method="post" class="auth-form" id="soap-note-form">
         <label>
           <span>Subjective</span>
           <textarea name="subjective" rows="6" placeholder="Symptoms reported, response since last visit, pain changes, functional complaints...">{{ soap_note["subjective"] if soap_note else "" }}</textarea>
@@ -73,4 +117,113 @@
       {% endif %}
     </article>
   </section>
+{% endblock %}
+
+{% block scripts %}
+  {{ super() }}
+  <script>
+    (() => {
+      const hiddenInput = document.getElementById("spineFindingsInput");
+      const map = document.getElementById("spineMap");
+      const summary = document.getElementById("spineSelectionSummary");
+      if (!hiddenInput || !map || !summary) {
+        return;
+      }
+
+      const segmentOrder = {{ spine_segments | tojson }};
+      const segmentIndex = Object.fromEntries(segmentOrder.map((segment, index) => [segment, index]));
+      const state = { left: [], right: [] };
+
+      const normalizeSegments = (values) => {
+        if (!Array.isArray(values)) {
+          return [];
+        }
+        const unique = new Set();
+        values.forEach((segment) => {
+          if (typeof segment !== "string") {
+            return;
+          }
+          const key = segment.trim().toUpperCase();
+          if (segmentIndex[key] === undefined) {
+            return;
+          }
+          unique.add(key);
+        });
+        return Array.from(unique).sort((a, b) => segmentIndex[a] - segmentIndex[b]);
+      };
+
+      try {
+        const parsed = JSON.parse(hiddenInput.value || "{}");
+        state.left = normalizeSegments(parsed.left);
+        state.right = normalizeSegments(parsed.right);
+      } catch (error) {
+        state.left = [];
+        state.right = [];
+      }
+
+      const isMarked = (side, segment) => state[side].includes(segment);
+
+      const persistState = () => {
+        hiddenInput.value = JSON.stringify(state);
+      };
+
+      const renderSummary = () => {
+        const leftCount = state.left.length;
+        const rightCount = state.right.length;
+        if (!leftCount && !rightCount) {
+          summary.textContent = "No dysfunction levels selected yet.";
+          return;
+        }
+        summary.textContent = `Selected dysfunction levels: ${leftCount} left, ${rightCount} right.`;
+      };
+
+      const renderButtons = () => {
+        map.querySelectorAll(".spine-row").forEach((row) => {
+          const segment = row.dataset.segment || "";
+          row.querySelectorAll(".spine-side-button").forEach((button) => {
+            const side = button.dataset.side;
+            if (side !== "left" && side !== "right") {
+              return;
+            }
+            const active = isMarked(side, segment);
+            button.classList.toggle("active", active);
+            button.setAttribute("aria-pressed", active ? "true" : "false");
+          });
+        });
+      };
+
+      const toggleSegment = (side, segment) => {
+        if (side !== "left" && side !== "right") {
+          return;
+        }
+        if (segmentIndex[segment] === undefined) {
+          return;
+        }
+        if (isMarked(side, segment)) {
+          state[side] = state[side].filter((item) => item !== segment);
+        } else {
+          state[side] = normalizeSegments([...state[side], segment]);
+        }
+        persistState();
+        renderButtons();
+        renderSummary();
+      };
+
+      map.querySelectorAll(".spine-side-button").forEach((button) => {
+        button.addEventListener("click", () => {
+          const row = button.closest(".spine-row");
+          if (!row) {
+            return;
+          }
+          const segment = row.dataset.segment || "";
+          const side = button.dataset.side || "";
+          toggleSegment(side, segment);
+        });
+      });
+
+      persistState();
+      renderButtons();
+      renderSummary();
+    })();
+  </script>
 {% endblock %}

@@ -154,6 +154,24 @@ select{cursor:pointer;-webkit-appearance:none;appearance:none;background-image:u
 .q-result{margin-top:16px;padding:14px 16px;border-radius:var(--r-sm);font-size:13px;text-align:center;transition:all .3s var(--ease)}
 .q-score-num{font-family:var(--serif);font-size:24px;font-weight:600}
 
+/* ═══ ODI SLIDER MODE ═══ */
+.odi-sec{border:1px solid var(--border);border-radius:12px;padding:14px;background:var(--bg2);margin-bottom:12px}
+.odi-sec.skipped{opacity:.55}
+.odi-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:8px}
+.odi-title{font-size:14px;font-weight:600;color:var(--ink)}
+.odi-sub{font-size:11px;color:var(--ink4);margin-left:6px}
+.odi-value{font-family:var(--serif);font-size:24px;font-weight:600;min-width:56px;text-align:right}
+.odi-toggle-wrap{display:flex;justify-content:flex-end;margin-bottom:8px}
+.odi-toggle{padding:4px 10px;border-radius:8px;border:1px solid var(--border);background:#fff;font:600 11px var(--font);color:var(--ink3);cursor:pointer}
+.odi-label-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px;margin-bottom:8px}
+.odi-lab{font-size:9px;line-height:1.25;color:var(--ink4);text-align:center;transition:color .15s,font-weight .15s}
+.odi-lab.on{color:var(--ink);font-weight:600}
+.odi-slider-wrap{display:flex;align-items:center;gap:10px}
+.odi-slider{flex:1;-webkit-appearance:none;appearance:none;height:7px;border-radius:6px;background:#e2e8f0;outline:none;border:none}
+.odi-slider::-webkit-slider-thumb{-webkit-appearance:none;width:20px;height:20px;border-radius:50%;background:#fff;border:2px solid var(--life);cursor:pointer;box-shadow:0 1px 5px rgba(0,0,0,.16)}
+.odi-slider::-moz-range-thumb{width:20px;height:20px;border-radius:50%;background:#fff;border:2px solid var(--life);cursor:pointer;box-shadow:0 1px 5px rgba(0,0,0,.16)}
+.odi-minmax{display:flex;justify-content:space-between;font-size:10px;color:var(--ink4);margin-top:3px}
+
 /* ═══ CONDITIONAL ═══ */
 .cond{max-height:0;overflow:hidden;transition:max-height .4s var(--ease),opacity .3s;opacity:0}
 .cond.open{max-height:500px;opacity:1}
@@ -759,7 +777,39 @@ function setChecked(id,checked){const el=$(id);if(!el)return;el.checked=!!checke
 function setSlider(id,value,labelId){if(value===undefined||value===null)return;const el=$(id);if(!el)return;el.value=value;V(labelId,String(value))}
 function setChips(field,values){const vals=Array.isArray(values)?values.map(String):[];CS[field]=vals;document.querySelectorAll(`.chips[data-f="${field}"] .chip`).forEach(ch=>ch.classList.toggle('on',vals.includes(ch.dataset.v)))}
 function setRating(field,value){const v=value===undefined||value===null?'':String(value);CS[field]=v?[v]:[];document.querySelectorAll(`.rating[data-f="${field}"] .rate-o`).forEach(node=>node.classList.toggle('on',node.dataset.v===v))}
+
+function questionnaireResponses(qId){
+  const D=QDEFS[qId];
+  ensureQR(qId);
+  if(D.score.type==='odi_slider'){
+    return D.qs.map((q,i)=>{
+      const skipped=!!QR[qId].skipped[i];
+      const valueNum=Number(QR[qId].ans[i]);
+      const value=Number.isFinite(valueNum)?Math.max(0,Math.min(10,Math.round(valueNum*10)/10)):0;
+      const nearest=nearestOdiLabelIndex(value);
+      return{
+        questionId:`${D.id}_q${i}`,
+        prompt:q.p,
+        subtitle:q.sub||'',
+        skipped,
+        responseType:'slider',
+        scaleMin:0,
+        scaleMax:10,
+        selectedValue:skipped?null:value,
+        selectedLabel:skipped?null:q.o[nearest]
+      };
+    });
+  }
+  return D.qs.map((q,i)=>({
+    questionId:`${D.id}_q${i}`,
+    prompt:q.p,
+    selectedValue:QR[qId]?.ans[i]>=0?QR[qId].ans[i]:null,
+    selectedLabel:QR[qId]?.ans[i]>=0?q.o[QR[qId].ans[i]]:null
+  }));
+}
+
 function collectData(){
+  const qIds=getQIds();
   return {
     _app:'Life Chiropractic Intake',_version:'1.0',submittedAt:INITIAL_PAYLOAD.submittedAt||new Date().toISOString(),
     patient:{firstName:gv('f_first'),lastName:gv('f_last'),dob:gv('f_dob'),sex:gv('f_sex'),pronoun:gv('f_pronoun'),heightFt:+gv('f_hFt')||null,heightIn:+gv('f_hIn')||null,weight:gv('f_weight'),email:gv('f_email'),phone:gv('f_phone'),address:gv('f_address'),emergencyContact:{name:gv('f_emName'),relationship:gv('f_emRel'),phone:gv('f_emPhone')},referralSource:gc('referral'),referringProvider:gv('f_refDoc')},
@@ -768,8 +818,9 @@ function collectData(){
     medicalHistory:{conditions:gc('conditions'),conditionsOther:gv('f_condOther'),surgeries:$('f_surgY').checked?gv('f_surg'):null,fractures:$('f_fracY').checked?gv('f_frac'):null,previousInjuries:$('f_injY').checked?{types:gc('prevInjTypes'),details:gv('f_prevInj'),recoveryStatus:gc('prevInjRecovery')}:null,medications:$('f_medY').checked?gv('f_med'):null,allergies:$('f_algY').checked?gv('f_alg'):null,priorChiropractic:gc('priorChiro'),priorTreatments:gv('f_priorTx'),imaging:gc('imaging')},
     lifestyle:{occupation:gv('f_occ'),workType:gv('f_workType'),workHours:gv('f_workHrs'),dailyImpact:gc('dailyImpact'),exerciseFrequency:gv('f_exFreq'),exerciseType:gv('f_exType'),sleepHours:gv('f_sleepHrs'),sleepQuality:gv('f_sleepQual'),sleepPosition:gc('sleepPos'),stressLevel:+gv('f_stress'),habits:{smoker:$('f_smoke').checked,alcohol:$('f_alcohol').checked,highCaffeine:$('f_caffeine').checked,prolongedSitting:$('f_longSit').checked,highScreenTime:$('f_screen').checked}},
     functionalOutcomeMeasures:{
-      routing:{selectedComplaints:[...gc('visitReason'),...gc('painAreas')],questionnairesShown:getQIds()},
-      questionnaires:getQIds().map(qId=>{const D=QDEFS[qId],s=scoreQ(qId),b=s.ok?getBand(qId,s):{l:'Incomplete',c:'ink4'};return{questionnaireId:D.id,displayName:D.name,version:D.ver,citationText:D.cite,completedAt:QR[qId]?.done,rawScore:s.raw,percent:s.pct,interpretation:b.l,missingItems:D.qs.length-s.n,responses:D.qs.map((q,i)=>({questionId:`${D.id}_q${i}`,prompt:q.p,selectedValue:QR[qId]?.ans[i]>=0?QR[qId].ans[i]:null,selectedLabel:QR[qId]?.ans[i]>=0?q.o[QR[qId].ans[i]]:null}))}}),
+      schemaVersion:'2026-03-odi-slider',
+      routing:{selectedComplaints:[...gc('visitReason'),...gc('painAreas')],questionnairesShown:qIds},
+      questionnaires:qIds.map(qId=>{const D=QDEFS[qId],s=scoreQ(qId),b=s.ok?getBand(qId,s):{l:'Incomplete',c:'ink4'};return{questionnaireId:D.id,displayName:D.name,version:D.ver,citationText:D.cite,completedAt:QR[qId]?.done,rawScore:s.raw,percent:s.pct,interpretation:b.l,missingItems:D.score.type==='odi_slider'?0:Math.max(0,D.qs.length-s.n),responseModel:D.score.type==='odi_slider'?'continuous_0_to_10':'ordinal_0_to_n',responses:questionnaireResponses(qId)}}),
       archived:QArchive
     },
     goals:{goals:gc('goals'),activityGoal:gv('f_goalActivity'),commitmentLevel:gc('commitment').length?+gc('commitment')[0]:null,additionalNotes:gv('f_notes')},
@@ -811,7 +862,29 @@ function hydrateForm(data){
   setValue('f_occ',life.occupation);setValue('f_workType',life.workType);setValue('f_workHrs',life.workHours);setChips('dailyImpact',life.dailyImpact||[]);setValue('f_exFreq',life.exerciseFrequency);setValue('f_exType',life.exerciseType);setValue('f_sleepHrs',life.sleepHours);setValue('f_sleepQual',life.sleepQuality);setChips('sleepPos',life.sleepPosition||[]);setSlider('f_stress',life.stressLevel ?? 5,'stressV');setChecked('f_smoke',life.habits?.smoker);setChecked('f_alcohol',life.habits?.alcohol);setChecked('f_caffeine',life.habits?.highCaffeine);setChecked('f_longSit',life.habits?.prolongedSitting);setChecked('f_screen',life.habits?.highScreenTime);
   setChips('goals',goals.goals||[]);setValue('f_goalActivity',goals.activityGoal);setRating('commitment',goals.commitmentLevel);setValue('f_notes',goals.additionalNotes);
   setChecked('c1',consent.chiropracticCare);setChecked('c2',consent.privacyNotice);setChecked('c3',consent.accuracyConfirmation);setValue('f_sig',consent.signature);setValue('f_sigDate',consent.signatureDate);
-  (functional.questionnaires||[]).forEach(item=>{ensureQR(item.questionnaireId);QR[item.questionnaireId].done=item.completedAt||null;(item.responses||[]).forEach((resp,index)=>{QR[item.questionnaireId].ans[index]=resp.selectedValue ?? -1})});
+  (functional.questionnaires||[]).forEach(item=>{
+    const qId=item.questionnaireId;
+    if(!QDEFS[qId])return;
+    ensureQR(qId);
+    QR[qId].done=item.completedAt||null;
+    if(QDEFS[qId].score.type==='odi_slider'){
+      (item.responses||[]).forEach((resp,index)=>{
+        if(resp?.skipped){
+          QR[qId].skipped[index]=true;
+          QR[qId].ans[index]=0;
+          return;
+        }
+        const raw=Number(resp?.selectedValue);
+        if(Number.isFinite(raw)){
+          const normalized=raw<=5&&raw>=0&&!(resp?.scaleMax===10)?raw*2:raw;
+          QR[qId].ans[index]=Math.round(Math.max(0,Math.min(10,normalized))*10)/10;
+          QR[qId].skipped[index]=false;
+        }
+      });
+      return;
+    }
+    (item.responses||[]).forEach((resp,index)=>{QR[qId].ans[index]=resp.selectedValue ?? -1});
+  });
   prevQIds=getQIds();
   buildQuestionnaires();
   hydrating=false;
@@ -886,6 +959,8 @@ const ROUTES=[
   {match:['Left leg','Right leg','Left foot','Right foot'],q:['odi']},
 ];
 
+const ODI_LABEL_POSITIONS=[0,2,4,6,8,10];
+
 // Questionnaire definitions
 const QDEFS={
 ndi:{id:'ndi',name:'Neck Disability Index (NDI)',ver:'2.0',cite:'Vernon H, Mior S. JMPT 1991;14(7):409–415.',icon:'🔵',color:'sky',
@@ -904,20 +979,26 @@ ndi:{id:'ndi',name:'Neck Disability Index (NDI)',ver:'2.0',cite:'Vernon H, Mior 
     {p:'Recreation / Hobbies',o:['All activities — no pain','All activities — some pain','Most but not all activities — pain','Only a few activities — pain','Hardly any activities — pain','No activities at all']}
   ]},
 
-odi:{id:'odi',name:'Oswestry Disability Index (ODI)',ver:'2.1a',cite:'Fairbank JCT, Pynsent PB. Spine 2000;25(22):2940–2953.',icon:'🟢',color:'life',
-  score:{type:'pct',max:50},
-  bands:[{min:0,max:20,l:'Minimal disability',c:'life'},{min:21,max:40,l:'Moderate disability',c:'amber'},{min:41,max:60,l:'Severe disability',c:'rose'},{min:61,max:80,l:'Crippling back pain',c:'rose'},{min:81,max:100,l:'Bed-bound / exaggerating',c:'rose'}],
+odi:{id:'odi',name:'Oswestry Disability Index (ODI)',ver:'2.2',cite:'Fairbank JCT, Pynsent PB. Spine 2000;25(22):2940-2953.',icon:'🟢',color:'life',
+  score:{type:'odi_slider'},
+  bands:[
+    {min:0,max:20,l:'Minimal Disability',c:'life'},
+    {min:20.01,max:40,l:'Moderate Disability',c:'amber'},
+    {min:40.01,max:60,l:'Severe Disability',c:'rose'},
+    {min:60.01,max:80,l:'Crippled',c:'rose'},
+    {min:80.01,max:100,l:'Bed-bound / Exaggerating',c:'rose'}
+  ],
   qs:[
-    {p:'Pain Intensity',o:['I have no pain right now','The pain is very mild','The pain is moderate','The pain is fairly severe','The pain is very severe','The pain is the worst imaginable']},
-    {p:'Personal Care',o:['I can look after myself normally — no extra pain','I can look after myself — causes extra pain','It is painful; I am slow and careful','I need some help but manage most of self-care','I need help every day in most self-care','I do not get dressed, wash with difficulty']},
-    {p:'Lifting',o:['I can lift heavy weights — no extra pain','Heavy weights give extra pain','Pain prevents heavy weights off floor, OK if placed conveniently','Pain prevents heavy weights; I manage light–medium','I can only lift very light weights','I cannot lift or carry anything']},
-    {p:'Walking',o:['Pain does not prevent walking any distance','Pain prevents walking more than 1 mile','Pain prevents walking more than ½ mile','Pain prevents walking more than 100 yards','I can only walk using a stick or crutches','I am in bed most of the time']},
-    {p:'Sitting',o:['I can sit in any chair as long as I like','I can sit in my favourite chair as long as I like','Pain prevents sitting more than 1 hour','Pain prevents sitting more than 30 minutes','Pain prevents sitting more than 10 minutes','Pain prevents me sitting at all']},
-    {p:'Standing',o:['I can stand as long as I want — no extra pain','I can stand as long as I want — gives extra pain','Pain prevents standing more than 1 hour','Pain prevents standing more than 30 minutes','Pain prevents standing more than 10 minutes','Pain prevents me standing at all']},
-    {p:'Sleep',o:['Sleep is never disturbed by pain','Sleep is occasionally disturbed','Less than 6 hours sleep due to pain','Less than 4 hours sleep due to pain','Less than 2 hours sleep due to pain','Pain prevents any sleep at all']},
-    {p:'Social Life',o:['Normal social life — no extra pain','Normal social life — increases pain','Pain limits energetic interests','Pain has restricted social life; less outings','Pain restricted social life to home','No social life because of pain']},
-    {p:'Travelling',o:['I can travel anywhere — no pain','I can travel anywhere — gives extra pain','Pain is bad but I manage journeys over 2 hours','Pain restricts to journeys under 1 hour','Pain restricts to short journeys under 30 min','Pain prevents travelling except for treatment']},
-    {p:'Employment / Homemaking',o:['Normal activities — no extra pain','Normal activities — extra pain','I can do most activities but pain prevents demanding ones','Pain limits me to light duties only','Pain prevents even light duties','Pain prevents any job/homemaking']}
+    {p:'Pain Intensity',o:['No pain at the moment','Very mild pain','Moderate pain','Fairly severe pain','Very severe pain','Worst imaginable pain']},
+    {p:'Personal Care',sub:'e.g. washing, dressing',o:['Normal, no extra pain','Normal but causes extra pain','Slow and careful, painful','Need some help','Need daily help','Cannot dress / stay in bed']},
+    {p:'Lifting',o:['Heavy weights, no extra pain','Heavy weights, extra pain','No heavy from floor, OK from table','Light-medium weights only','Very light weights only','Cannot lift or carry anything']},
+    {p:'Walking',o:['No limit','Limited to 2 km','Limited to 1 km','Limited to 500 m','Stick or crutches only','Bed-bound most of the time']},
+    {p:'Sitting',o:['Any chair, as long as I like','Favourite chair only, unlimited','Limited to 1 hour','Limited to 30 minutes','Limited to 10 minutes','Cannot sit at all']},
+    {p:'Standing',o:['Unlimited, no extra pain','Unlimited but extra pain','Limited to 1 hour','Limited to 30 minutes','Limited to 10 minutes','Cannot stand at all']},
+    {p:'Sleeping',o:['Never disturbed by pain','Occasionally disturbed','Less than 6 hours','Less than 4 hours','Less than 2 hours','Cannot sleep at all']},
+    {p:'Sex Life',sub:'if applicable',optional:true,o:['Normal, no extra pain','Normal, some extra pain','Nearly normal, very painful','Severely restricted','Nearly absent','Not possible due to pain']},
+    {p:'Social Life',o:['Normal, no extra pain','Normal but increases pain','Limited energetic interests only',"Don't go out as often",'Restricted to home','No social life due to pain']},
+    {p:'Travelling',o:['Anywhere, no pain','Anywhere, extra pain','Journeys over 2 hours OK','Limited to under 1 hour','Short trips under 30 min only','Only to receive treatment']}
   ]},
 
 hit6:{id:'hit6',name:'Headache Impact Test (HIT-6)',ver:'1.0',cite:'Kosinski M et al. Qual Life Res 2003;12:963–974.',icon:'🟣',color:'plum',
@@ -964,12 +1045,35 @@ function getQIds(){
 }
 
 function ensureQR(qId){
-  if(!QR[qId])QR[qId]={ans:new Array(QDEFS[qId].qs.length).fill(-1),done:null,archived:false};
-  const need=QDEFS[qId].qs.length;while(QR[qId].ans.length<need)QR[qId].ans.push(-1);
+  const D=QDEFS[qId];
+  if(D.score.type==='odi_slider'){
+    if(!QR[qId])QR[qId]={ans:new Array(D.qs.length).fill(0),skipped:new Array(D.qs.length).fill(false),done:null,archived:false};
+    const need=D.qs.length;
+    while(QR[qId].ans.length<need)QR[qId].ans.push(0);
+    if(!Array.isArray(QR[qId].skipped))QR[qId].skipped=[];
+    while(QR[qId].skipped.length<need)QR[qId].skipped.push(false);
+    return;
+  }
+  if(!QR[qId])QR[qId]={ans:new Array(D.qs.length).fill(-1),done:null,archived:false};
+  const need=D.qs.length;while(QR[qId].ans.length<need)QR[qId].ans.push(-1);
 }
 
 function scoreQ(qId){
   const D=QDEFS[qId],a=QR[qId]?.ans||[];
+  if(D.score.type==='odi_slider'){
+    const skipped=QR[qId]?.skipped||[];
+    let total=0;
+    let activeCount=0;
+    D.qs.forEach((q,idx)=>{
+      if(skipped[idx])return;
+      const num=Number(a[idx]);
+      const val=Number.isFinite(num)?Math.max(0,Math.min(10,num)):0;
+      total+=val;
+      activeCount++;
+    });
+    if(activeCount===0)return{raw:0,pct:0,ok:false,n:0,max:0};
+    return{raw:Math.round(total*10)/10,pct:Math.round((total/(activeCount*10))*1000)/10,ok:true,n:activeCount,max:activeCount};
+  }
   const cnt=a.filter(x=>x>=0).length;
   if(cnt===0)return{raw:0,pct:0,ok:false,n:cnt};
   if(D.score.type==='hit6'){const raw=a.reduce((s,v)=>s+(v>=0?D.score.vals[v]:6),0);return{raw,pct:Math.round((raw-36)/42*100),ok:cnt===D.qs.length,n:cnt}}
@@ -981,6 +1085,70 @@ function getBand(qId,s){
   const D=QDEFS[qId],val=D.score.type==='hit6'?s.raw:s.pct;
   for(const b of D.bands)if(val>=b.min&&val<=b.max)return b;
   return D.bands[D.bands.length-1];
+}
+
+function odiColor(value){
+  if(value<=2)return '#16a34a';
+  if(value<=5)return '#eab308';
+  if(value<=8)return '#f97316';
+  return '#ef4444';
+}
+
+function nearestOdiLabelIndex(value){
+  let nearest=0;
+  let dist=Infinity;
+  ODI_LABEL_POSITIONS.forEach((pos,idx)=>{
+    const next=Math.abs(value-pos);
+    if(next<dist){dist=next;nearest=idx}
+  });
+  return nearest;
+}
+
+function renderOdiSection(qId,qi){
+  ensureQR(qId);
+  const rec=QR[qId];
+  const skipped=!!rec.skipped[qi];
+  const value=Number.isFinite(Number(rec.ans[qi]))?Math.max(0,Math.min(10,Number(rec.ans[qi]))):0;
+  rec.ans[qi]=value;
+  const section=$('odi_sec_'+qId+'_'+qi);
+  if(section)section.classList.toggle('skipped',skipped);
+  const body=$('odi_body_'+qId+'_'+qi);
+  if(body)body.style.display=skipped?'none':'';
+  const valueNode=$('odi_val_'+qId+'_'+qi);
+  if(valueNode){
+    valueNode.textContent=skipped?'N/A':value.toFixed(1);
+    valueNode.style.color=odiColor(value);
+  }
+  const skipButton=$('odi_skip_'+qId+'_'+qi);
+  if(skipButton)skipButton.textContent=skipped?'Include':'N/A - Skip';
+  if(skipped)return;
+  const slider=$('odi_slider_'+qId+'_'+qi);
+  if(slider){
+    slider.value=String(value);
+    const pct=value*10;
+    slider.style.background=`linear-gradient(90deg,#16a34a 0%,${odiColor(value)} ${pct}%,#e2e8f0 ${pct}%,#e2e8f0 100%)`;
+  }
+  const near=nearestOdiLabelIndex(value);
+  const labels=document.querySelectorAll('#odi_labels_'+qId+'_'+qi+' .odi-lab');
+  labels.forEach((node,idx)=>node.classList.toggle('on',idx===near));
+}
+
+function setOdiValue(qId,qi,val){
+  ensureQR(qId);
+  QR[qId].ans[qi]=Math.round(Math.max(0,Math.min(10,Number(val)||0))*10)/10;
+  QR[qId].done=new Date().toISOString();
+  renderOdiSection(qId,qi);
+  renderQScore(qId);
+  markDirty();
+}
+
+function toggleOdiSkip(qId,qi){
+  ensureQR(qId);
+  QR[qId].skipped[qi]=!QR[qId].skipped[qi];
+  QR[qId].done=new Date().toISOString();
+  renderOdiSection(qId,qi);
+  renderQScore(qId);
+  markDirty();
 }
 
 const cMap={life:'--life',amber:'--amber',rose:'--rose',sky:'--sky',plum:'--plum'};
@@ -999,6 +1167,32 @@ function buildQuestionnaires(){
 
   ids.forEach(qId=>{
     const D=QDEFS[qId];ensureQR(qId);const ans=QR[qId].ans;
+    if(D.score.type==='odi_slider'){
+      let h=`<div class="card" id="qc_${qId}">`;
+      h+=`<div class="q-head"><span class="q-head-icon">${D.icon}</span><div class="q-head-info"><div class="q-head-title">${D.name}</div><div class="q-head-ver">v${D.ver}</div></div><div class="q-badge" id="qb_${qId}"></div></div>`;
+      h+=`<div class="q-cite">${D.cite}</div>`;
+      D.qs.forEach((q,qi)=>{
+        const isSkipped=!!QR[qId].skipped[qi];
+        const value=Number.isFinite(Number(ans[qi]))?Math.max(0,Math.min(10,Number(ans[qi]))):0;
+        h+=`<div class="odi-sec${isSkipped?' skipped':''}" id="odi_sec_${qId}_${qi}">`;
+        h+=`<div class="odi-head"><div><span class="odi-title">${qi+1}. ${q.p}</span>${q.sub?`<span class="odi-sub">${q.sub}</span>`:''}</div><div class="odi-value" id="odi_val_${qId}_${qi}">${isSkipped?'N/A':value.toFixed(1)}</div></div>`;
+        if(q.optional){
+          h+=`<div class="odi-toggle-wrap"><button type="button" class="odi-toggle" id="odi_skip_${qId}_${qi}" onclick="toggleOdiSkip('${qId}',${qi})">${isSkipped?'Include':'N/A - Skip'}</button></div>`;
+        }
+        h+=`<div id="odi_body_${qId}_${qi}" style="${isSkipped?'display:none':''}">`;
+        h+=`<div class="odi-label-grid" id="odi_labels_${qId}_${qi}">`;
+        q.o.forEach(label=>{h+=`<div class="odi-lab">${label}</div>`});
+        h+=`</div>`;
+        h+=`<div class="odi-slider-wrap"><input type="range" class="odi-slider" id="odi_slider_${qId}_${qi}" min="0" max="10" step="0.1" value="${value}" oninput="setOdiValue('${qId}',${qi},this.value)"></div>`;
+        h+=`<div class="odi-minmax"><span>0</span><span>10</span></div>`;
+        h+=`</div></div>`;
+      });
+      h+=`<div class="q-result" id="qr_${qId}"></div></div>`;
+      box.innerHTML+=h;
+      D.qs.forEach((_,qi)=>renderOdiSection(qId,qi));
+      renderQScore(qId);
+      return;
+    }
     let h=`<div class="card" id="qc_${qId}">`;
     h+=`<div class="q-head"><span class="q-head-icon">${D.icon}</span><div class="q-head-info"><div class="q-head-title">${D.name}</div><div class="q-head-ver">v${D.ver}</div></div><div class="q-badge" id="qb_${qId}"></div></div>`;
     h+=`<div class="q-cite">${D.cite}</div>`;
@@ -1039,6 +1233,7 @@ function renderQScore(qId){
   badge.textContent=b.l;badge.style.background=bg;badge.style.color=cv;
   if(D.score.type==='hit6')el.innerHTML=`<span class="q-score-num">${s.raw}</span><span style="opacity:.5"> / 78</span> — <strong>${b.l}</strong>`;
   else if(D.score.type==='dash')el.innerHTML=`<span class="q-score-num">${s.pct}%</span> — <strong>${b.l}</strong>`;
+  else if(D.score.type==='odi_slider')el.innerHTML=`<span class="q-score-num">${s.pct}%</span> — <strong>${b.l}</strong> <span style="font-size:11px;opacity:.55">(${s.raw.toFixed(1)} / ${(s.max||0)*10})</span>`;
   else el.innerHTML=`<span class="q-score-num">${s.pct}%</span> — <strong>${b.l}</strong> <span style="font-size:11px;opacity:.5">(${s.raw}/${D.score.max})</span>`;
 }
 

@@ -131,6 +131,20 @@ a{color:inherit}
 .mini-tag-danger{background:var(--rose-l);color:var(--rose)}
 .muted-copy{color:var(--ink4);font-size:13px}
 .detail-grid{display:grid;gap:10px}
+.spine-map{margin-top:14px;padding:14px;border:1px solid var(--border);border-radius:18px;background:var(--bg2);display:grid;gap:10px;max-height:540px;overflow:auto}
+.spine-map-head{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:10px;font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--ink4);font-weight:700}
+.spine-map-head span:nth-child(1){justify-self:end}
+.spine-map-head span:nth-child(2){justify-self:center}
+.spine-map-head span:nth-child(3){justify-self:start}
+.spine-map-body{display:grid;gap:8px}
+.spine-row{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:10px;align-items:center}
+.spine-level{min-width:58px;text-align:center;padding:7px 10px;border-radius:999px;border:1px solid var(--border);background:#fff;font-family:var(--serif);font-size:15px;font-weight:600;color:var(--ink2)}
+.spine-side-button{display:inline-flex;align-items:center;justify-content:center;padding:8px 12px;border-radius:999px;border:1px solid var(--border);background:#fff;color:var(--ink3);font:600 12px var(--font);cursor:pointer;transition:all .15s ease}
+.spine-side-button[data-side="left"]{justify-self:end}
+.spine-side-button[data-side="right"]{justify-self:start}
+.spine-side-button:hover{border-color:rgba(59,122,87,.35);color:var(--life)}
+.spine-side-button.active{background:var(--life-g);border-color:transparent;color:#fff;box-shadow:0 8px 18px rgba(59,122,87,.24)}
+.spine-map-summary{display:block;color:var(--ink3);line-height:1.5}
 .field-hint{display:block;font-size:12px;color:var(--ink4);line-height:1.5}
 .consult-form{display:grid;gap:18px}
 .consult-section{display:grid;gap:16px;padding:22px;border-radius:22px;border:1px solid var(--border);background:var(--bg2)}
@@ -231,6 +245,8 @@ a{color:inherit}
   .calendar-head{display:none}
   .calendar-cell{min-height:auto}
   .auth-card h1,.hero-panel h1{font-size:36px}
+  .spine-side-button{padding:8px 10px;font-size:11px}
+  .spine-level{min-width:50px;font-size:14px}
 }
 
 /* ====== SUMMIT ASSESSMENT ====== */
