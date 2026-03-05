@@ -129,6 +129,54 @@ class PortalFlowTestCase(unittest.TestCase):
             }
         )
         payload["pain"].update({"areas": ["Neck", "Head"], "currentLevel": 6, "worstLevel": 8})
+        payload["functionalOutcomeMeasures"].update(
+            {
+                "schemaVersion": "2026-03-odi-slider",
+                "questionnaireSchemas": {
+                    "odi": {
+                        "responseModel": "continuous_0_to_10",
+                        "scaleMin": 0,
+                        "scaleMax": 10,
+                        "optionalSectionTitles": ["Sex Life"],
+                        "version": "2.2",
+                    }
+                },
+                "questionnaires": [
+                    {
+                        "questionnaireId": "odi",
+                        "displayName": "Oswestry Disability Index (ODI)",
+                        "version": "2.2",
+                        "completedAt": iso_now(),
+                        "rawScore": 36.5,
+                        "percent": 36.5,
+                        "interpretation": "Moderate Disability",
+                        "responseModel": "continuous_0_to_10",
+                        "responses": [
+                            {
+                                "questionId": "odi_q0",
+                                "prompt": "Pain Intensity",
+                                "responseType": "slider",
+                                "scaleMin": 0,
+                                "scaleMax": 10,
+                                "selectedValue": 3.5,
+                                "selectedLabel": "Fairly severe pain",
+                            },
+                            {
+                                "questionId": "odi_q7",
+                                "prompt": "Sex Life",
+                                "subtitle": "if applicable",
+                                "responseType": "slider",
+                                "scaleMin": 0,
+                                "scaleMax": 10,
+                                "selectedValue": None,
+                                "selectedLabel": None,
+                                "skipped": True,
+                            },
+                        ],
+                    }
+                ],
+            }
+        )
         payload["consent"].update(
             {
                 "chiropracticCare": True,
@@ -153,6 +201,20 @@ class PortalFlowTestCase(unittest.TestCase):
             functional_schema = stored_payload.get("functionalOutcomeMeasures", {})
             self.assertEqual(functional_schema.get("schemaVersion"), "2026-03-odi-slider")
             self.assertIn("odi", (functional_schema.get("questionnaireSchemas") or {}))
+
+            questionnaire_row = get_db().execute(
+                """
+                SELECT questionnaire_id, response_model, percent_score, interpretation
+                FROM intake_questionnaire_scores
+                WHERE user_id = ? AND questionnaire_id = 'odi'
+                """,
+                (user["id"],),
+            ).fetchone()
+            self.assertIsNotNone(questionnaire_row)
+            self.assertEqual(questionnaire_row["questionnaire_id"], "odi")
+            self.assertEqual(questionnaire_row["response_model"], "continuous_0_to_10")
+            self.assertAlmostEqual(questionnaire_row["percent_score"], 36.5)
+            self.assertEqual(questionnaire_row["interpretation"], "Moderate Disability")
 
         self.client.post("/logout", follow_redirects=True)
         self.login_staff()

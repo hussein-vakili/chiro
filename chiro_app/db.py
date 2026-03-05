@@ -28,6 +28,27 @@ CREATE TABLE IF NOT EXISTS intake_submissions (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS intake_questionnaire_scores (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    questionnaire_id TEXT NOT NULL,
+    display_name TEXT NOT NULL DEFAULT '',
+    questionnaire_version TEXT NOT NULL DEFAULT '',
+    response_model TEXT NOT NULL DEFAULT '',
+    raw_score REAL,
+    percent_score REAL,
+    interpretation TEXT NOT NULL DEFAULT '',
+    completed_at TEXT,
+    responses_json TEXT NOT NULL DEFAULT '[]',
+    schema_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (user_id, questionnaire_id),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_intake_questionnaire_scores_user ON intake_questionnaire_scores(user_id);
+
 CREATE TABLE IF NOT EXISTS invitations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     email TEXT NOT NULL COLLATE NOCASE,

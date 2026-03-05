@@ -120,7 +120,8 @@ BOOKING_ROUTING_MODE_META = {
     "team_round_robin": {"label": "Any available chiropractor"},
 }
 
-SLOT_INCREMENT_MINUTES = 15
+DEFAULT_SLOT_INCREMENT_MINUTES = 15
+SLOT_INCREMENT_OPTIONS = [5, 10, 15, 20, 30, 60]
 CLAUDE_DDX_ARTIFACT_PATH = Path(__file__).resolve().parent.parent / "life-chiro-ddx-tx (1).jsx"
 
 DECISION_SUPPORT_REGION_LABELS = {
@@ -273,6 +274,115 @@ def float_or_none(value: str | None):
         return float(value)
     except ValueError:
         return value
+
+
+def numeric_or_none(value):
+    if value in (None, ""):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def normalize_questionnaire_scores(payload: dict | None) -> list[dict]:
+    if not isinstance(payload, dict):
+        return []
+
+    functional = payload.get("functionalOutcomeMeasures")
+    if not isinstance(functional, dict):
+        return []
+
+    schemas = functional.get("questionnaireSchemas")
+    if not isinstance(schemas, dict):
+        schemas = {}
+
+    questionnaires = functional.get("questionnaires")
+    if not isinstance(questionnaires, list):
+        return []
+
+    normalized: dict[str, dict] = {}
+    for entry in questionnaires:
+        if not isinstance(entry, dict):
+            continue
+
+        questionnaire_id = str(entry.get("questionnaireId") or "").strip().lower()
+        if not questionnaire_id:
+            continue
+
+        schema_entry = schemas.get(questionnaire_id)
+        if not isinstance(schema_entry, dict):
+            schema_entry = {}
+
+        responses = entry.get("responses")
+        if not isinstance(responses, list):
+            responses = []
+
+        completed_at_raw = entry.get("completedAt")
+        completed_at = completed_at_raw.strip() if isinstance(completed_at_raw, str) else None
+        if completed_at == "":
+            completed_at = None
+
+        normalized[questionnaire_id] = {
+            "questionnaire_id": questionnaire_id,
+            "display_name": str(entry.get("displayName") or questionnaire_id).strip(),
+            "questionnaire_version": str(entry.get("version") or "").strip(),
+            "response_model": str(entry.get("responseModel") or "").strip(),
+            "raw_score": numeric_or_none(entry.get("rawScore")),
+            "percent_score": numeric_or_none(entry.get("percent")),
+            "interpretation": str(entry.get("interpretation") or "").strip(),
+            "completed_at": completed_at,
+            "responses_json": json.dumps(responses, separators=(",", ":")),
+            "schema_json": json.dumps(schema_entry, separators=(",", ":")),
+        }
+
+    return [normalized[key] for key in sorted(normalized.keys())]
+
+
+def persist_intake_questionnaire_scores(db, user_id: int, payload: dict | None, now: str) -> None:
+    rows = normalize_questionnaire_scores(payload)
+    db.execute("DELETE FROM intake_questionnaire_scores WHERE user_id = ?", (user_id,))
+    if not rows:
+        return
+
+    db.executemany(
+        """
+        INSERT INTO intake_questionnaire_scores (
+            user_id,
+            questionnaire_id,
+            display_name,
+            questionnaire_version,
+            response_model,
+            raw_score,
+            percent_score,
+            interpretation,
+            completed_at,
+            responses_json,
+            schema_json,
+            created_at,
+            updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        [
+            (
+                user_id,
+                row["questionnaire_id"],
+                row["display_name"],
+                row["questionnaire_version"],
+                row["response_model"],
+                row["raw_score"],
+                row["percent_score"],
+                row["interpretation"],
+                row["completed_at"],
+                row["responses_json"],
+                row["schema_json"],
+                now,
+                now,
+            )
+            for row in rows
+        ],
+    )
 
 
 def slugify_service_key(value: str) -> str:
@@ -1065,6 +1175,17 @@ def duration_is_supported(duration_minutes: int) -> bool:
     return any(option["value"] == duration_minutes for option in APPOINTMENT_DURATION_OPTIONS)
 
 
+def slot_increment_options() -> list[dict]:
+    return [{"value": minutes, "label": f"{minutes} minutes"} for minutes in SLOT_INCREMENT_OPTIONS]
+
+
+def selected_slot_increment_minutes(value: str | None) -> int:
+    parsed = int_or_none(value)
+    if isinstance(parsed, int) and parsed in SLOT_INCREMENT_OPTIONS:
+        return parsed
+    return DEFAULT_SLOT_INCREMENT_MINUTES
+
+
 def weekday_options() -> list[dict]:
     return WEEKDAY_OPTIONS
 
@@ -1206,6 +1327,7 @@ def next_booking_date(
     clinician_user_id: int | None = None,
     location_id: int | None = None,
     booking_policy: dict | None = None,
+    slot_increment_minutes: int = DEFAULT_SLOT_INCREMENT_MINUTES,
 ) -> str:
     policy = booking_policy or resolve_booking_policy(None, "care_plan", 30)
     today = date.today()
@@ -1217,6 +1339,7 @@ def next_booking_date(
             location_id,
             policy["duration_minutes"],
             booking_policy=policy,
+            slot_increment_minutes=slot_increment_minutes,
         )
         if availability["available_slots"]:
             return candidate.isoformat()
@@ -1233,6 +1356,7 @@ def build_schedule_availability_for_clinician(
     location_id: int | None,
     booking_policy: dict,
     *,
+    slot_increment_minutes: int = DEFAULT_SLOT_INCREMENT_MINUTES,
     exclude_appointment_id: int | None = None,
 ) -> dict:
     duration_minutes = booking_policy["duration_minutes"]
@@ -1324,6 +1448,7 @@ def build_schedule_availability_for_clinician(
     available_slots = []
     seen_values = set()
     now = datetime.now()
+    slot_increment = timedelta(minutes=slot_increment_minutes)
     for shift_window in shift_windows:
         slot_start = shift_window["starts_at"]
         last_start = shift_window["ends_at"] - duration
@@ -1334,16 +1459,16 @@ def build_schedule_availability_for_clinician(
             slot_value = format_datetime_local(slot_start)
 
             if slot_start <= now + min_notice:
-                slot_start += timedelta(minutes=SLOT_INCREMENT_MINUTES)
+                slot_start += slot_increment
                 continue
             if blocked_start < shift_window["starts_at"] or blocked_end > shift_window["ends_at"]:
-                slot_start += timedelta(minutes=SLOT_INCREMENT_MINUTES)
+                slot_start += slot_increment
                 continue
             if any(overlaps(blocked_start, blocked_end, item["starts_at"], item["ends_at"]) for item in downtime_windows):
-                slot_start += timedelta(minutes=SLOT_INCREMENT_MINUTES)
+                slot_start += slot_increment
                 continue
             if any(overlaps(blocked_start, blocked_end, item["blocked_starts_at"], item["blocked_ends_at"]) for item in booked_windows):
-                slot_start += timedelta(minutes=SLOT_INCREMENT_MINUTES)
+                slot_start += slot_increment
                 continue
             if slot_value not in seen_values:
                 available_slots.append(
@@ -1357,7 +1482,7 @@ def build_schedule_availability_for_clinician(
                     }
                 )
                 seen_values.add(slot_value)
-            slot_start += timedelta(minutes=SLOT_INCREMENT_MINUTES)
+            slot_start += slot_increment
 
     return {
         "available_slots": available_slots,
@@ -1378,8 +1503,10 @@ def build_schedule_availability(
     duration_minutes: int,
     *,
     booking_policy: dict | None = None,
+    slot_increment_minutes: int = DEFAULT_SLOT_INCREMENT_MINUTES,
     exclude_appointment_id: int | None = None,
 ) -> dict:
+    slot_increment_minutes = selected_slot_increment_minutes(str(slot_increment_minutes))
     policy = booking_policy or resolve_booking_policy(None, "care_plan", duration_minutes)
     target_date = date_from_value(target_date_value)
     if target_date is None:
@@ -1400,6 +1527,7 @@ def build_schedule_availability(
             "requires_payment": policy["requires_payment"],
             "price_amount": policy["price_amount"],
             "currency": policy["currency"],
+            "slot_increment_minutes": slot_increment_minutes,
             "available_slots": [],
             "shift_windows": [],
             "downtime_windows": [],
@@ -1426,6 +1554,7 @@ def build_schedule_availability(
                 current_clinician_id,
                 location_id,
                 policy,
+                slot_increment_minutes=slot_increment_minutes,
                 exclude_appointment_id=exclude_appointment_id,
             )
         )
@@ -1495,6 +1624,7 @@ def build_schedule_availability(
         "requires_payment": policy["requires_payment"],
         "price_amount": policy["price_amount"],
         "currency": policy["currency"],
+        "slot_increment_minutes": slot_increment_minutes,
         "available_slots": available_slots,
         "shift_windows": shift_windows,
         "downtime_windows": downtime_windows,
@@ -1510,6 +1640,7 @@ def serialize_schedule_availability(availability: dict) -> dict:
         "location_id": availability["location_id"],
         "error": availability["error"],
         "duration_minutes": availability["duration_minutes"],
+        "slot_increment_minutes": availability["slot_increment_minutes"],
         "buffer_before_minutes": availability["buffer_before_minutes"],
         "buffer_after_minutes": availability["buffer_after_minutes"],
         "min_notice_minutes": availability["min_notice_minutes"],
@@ -1578,6 +1709,7 @@ def resolve_slot_assignment(
     location_id: int | None,
     booking_policy: dict,
     *,
+    slot_increment_minutes: int = DEFAULT_SLOT_INCREMENT_MINUTES,
     exclude_appointment_id: int | None = None,
 ):
     availability = build_schedule_availability(
@@ -1586,6 +1718,7 @@ def resolve_slot_assignment(
         location_id,
         booking_policy["duration_minutes"],
         booking_policy=booking_policy,
+        slot_increment_minutes=slot_increment_minutes,
         exclude_appointment_id=exclude_appointment_id,
     )
     slot_value = format_datetime_local(starts_at)
@@ -1602,6 +1735,7 @@ def slot_is_available(
     duration_minutes: int,
     *,
     booking_policy: dict | None = None,
+    slot_increment_minutes: int = DEFAULT_SLOT_INCREMENT_MINUTES,
     exclude_appointment_id: int | None = None,
 ) -> bool:
     policy = booking_policy or resolve_booking_policy(None, "care_plan", duration_minutes)
@@ -1610,6 +1744,7 @@ def slot_is_available(
         clinician_user_id,
         location_id,
         policy,
+        slot_increment_minutes=slot_increment_minutes,
         exclude_appointment_id=exclude_appointment_id,
     ) is not None
 
@@ -4360,6 +4495,7 @@ def save_intake():
             """,
             (status, payload_json, now, g.user["id"]),
         )
+    persist_intake_questionnaire_scores(db, g.user["id"], payload, now)
     db.commit()
 
     return jsonify(
