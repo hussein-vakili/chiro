@@ -382,16 +382,35 @@
           <form method="post" action="{{ url_for('main.create_staff_patient_appointment', user_id=patient['id']) }}" class="auth-form">
             <div class="appointment-form-grid">
               <label>
+                <span>Booking service (optional)</span>
+                <select name="service_id" id="bookingService">
+                  <option value="">Custom service rules</option>
+                  {% for service in service_options %}
+                    <option
+                      value="{{ service['id'] }}"
+                      data-appointment-type="{{ service['appointment_type'] }}"
+                      data-duration="{{ service['duration_minutes'] }}"
+                      data-routing-mode="{{ service['routing_mode'] }}"
+                      {% if selected_service_id and selected_service_id == service['id'] %}selected{% endif %}
+                    >
+                      {{ service["label"] }} · {{ service["duration_minutes"] }} min
+                    </option>
+                  {% endfor %}
+                </select>
+                <small class="field-hint">If selected, duration, buffers, notice, and routing come from the service inventory.</small>
+              </label>
+              <label>
                 <span>Visit type</span>
                 <select name="appointment_type" id="bookingAppointmentType" required>
                   {% for option in appointment_type_options %}
-                    <option value="{{ option['value'] }}" data-default-duration="{{ 60 if option['value'] == 'initial_consult' else 30 if option['value'] == 'report_of_findings' else 20 }}" {% if option['value'] == selected_appointment_type %}selected{% endif %}>{{ option["label"] }}</option>
+                    <option value="{{ option['value'] }}" data-default-duration="{{ 30 if option['value'] == 'initial_consult' else 30 if option['value'] == 'report_of_findings' else 15 }}" {% if option['value'] == selected_appointment_type %}selected{% endif %}>{{ option["label"] }}</option>
                   {% endfor %}
                 </select>
               </label>
               <label>
                 <span>Chiropractor</span>
                 <select name="clinician_user_id" id="bookingClinician" required>
+                  <option value="any" {% if selected_clinician_choice == 'any' %}selected{% endif %} {% if not allow_any_clinician %}hidden{% endif %}>Any available</option>
                   {% for option in clinician_options %}
                     <option value="{{ option['value'] }}" {% if option['value'] == selected_clinician_id %}selected{% endif %}>{{ option["label"] }}</option>
                   {% endfor %}
@@ -562,6 +581,7 @@
 {% block scripts %}
   <script>
     (() => {
+      const serviceInput = document.getElementById("bookingService");
       const clinicianInput = document.getElementById("bookingClinician");
       const locationInput = document.getElementById("bookingLocation");
       const dateInput = document.getElementById("bookingDate");
@@ -587,13 +607,41 @@
         container.innerHTML = items
           .map((item) => {
             const tone = item.window_tone || toneClass;
-            return `<span class="availability-chip ${tone}">${item.label} · ${item.time_label}</span>`;
+            const clinician = item.clinician_name ? ` · ${item.clinician_name}` : "";
+            return `<span class="availability-chip ${tone}">${item.label} · ${item.time_label}${clinician}</span>`;
           })
           .join("");
       }
 
+      function syncServiceSelection() {
+        if (!serviceInput) return;
+        const option = serviceInput.options[serviceInput.selectedIndex];
+        if (!option) return;
+
+        if (option.value) {
+          if (option.dataset.appointmentType) {
+            typeInput.value = option.dataset.appointmentType;
+          }
+          if (option.dataset.duration) {
+            durationInput.value = option.dataset.duration;
+          }
+        }
+        const anyOption = clinicianInput.querySelector('option[value="any"]');
+        const teamMode = option.dataset.routingMode === "team_round_robin";
+        if (anyOption) {
+          anyOption.hidden = !teamMode;
+          if (!teamMode && clinicianInput.value === "any") {
+            const firstClinician = clinicianInput.querySelector("option[value]:not([value='any'])");
+            if (firstClinician) clinicianInput.value = firstClinician.value;
+          }
+        }
+      }
+
       async function loadAvailability() {
+        syncServiceSelection();
         const params = new URLSearchParams({
+          service_id: serviceInput ? serviceInput.value : "",
+          appointment_type: typeInput.value,
           clinician_user_id: clinicianInput.value,
           location_id: locationInput.value,
           date: dateInput.value,
@@ -634,10 +682,14 @@
         }
         loadAvailability();
       });
+      if (serviceInput) {
+        serviceInput.addEventListener("change", loadAvailability);
+      }
       clinicianInput.addEventListener("change", loadAvailability);
       locationInput.addEventListener("change", loadAvailability);
       dateInput.addEventListener("change", loadAvailability);
       durationInput.addEventListener("change", loadAvailability);
+      syncServiceSelection();
     })();
   </script>
 {% endblock %}

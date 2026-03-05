@@ -28,6 +28,199 @@
 
   <section class="dashboard-grid">
     <article class="panel">
+      <div class="panel-label">Booking inventory</div>
+      <p style="margin-top:10px">Define services, durations, buffers, payment rules, notice windows, and routing policies.</p>
+      {% if service_inventory %}
+        <div class="invite-stack">
+          {% for service in service_inventory %}
+            <details class="appointment-edit">
+              <summary>
+                {{ service["label"] }} · {{ service["duration_minutes"] }} min{% if service["upcoming_count"] %} · {{ service["upcoming_count"] }} upcoming{% endif %}
+              </summary>
+              <div class="mini-card" style="margin-top:10px">
+                <small>{{ service["appointment_type_label"] }} · {{ service["routing_mode_label"] }}</small>
+                <small>Buffers: {{ service["buffer_before_minutes"] }}m before · {{ service["buffer_after_minutes"] }}m after</small>
+                <small>Minimum notice: {{ service["min_notice_minutes"] }} minutes{% if service["max_bookings_per_day"] %} · Max/day: {{ service["max_bookings_per_day"] }}{% endif %}</small>
+                <small>{% if service["requires_payment"] and service["price_amount"] is not none %}Payment at booking: {{ '%.2f'|format(service["price_amount"]) }} {{ service["currency"] }}{% else %}No payment required at booking{% endif %}</small>
+              </div>
+              <form method="post" action="{{ url_for('main.create_or_update_staff_booking_service') }}" class="auth-form">
+                <input type="hidden" name="month" value="{{ calendar['month_value'] }}">
+                <input type="hidden" name="service_id" value="{{ service['id'] }}">
+                <div class="appointment-form-grid">
+                  <label>
+                    <span>Label</span>
+                    <input type="text" name="label" value="{{ service['label'] }}" required>
+                  </label>
+                  <label>
+                    <span>Service key</span>
+                    <input type="text" name="service_key" value="{{ service['service_key'] }}" required>
+                  </label>
+                  <label>
+                    <span>Appointment type</span>
+                    <select name="appointment_type" required>
+                      {% for option in appointment_type_options %}
+                        <option value="{{ option['value'] }}" {% if option['value'] == service['appointment_type'] %}selected{% endif %}>{{ option["label"] }}</option>
+                      {% endfor %}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Duration</span>
+                    <select name="duration_minutes" required>
+                      {% for option in duration_options %}
+                        <option value="{{ option['value'] }}" {% if option['value'] == service['duration_minutes'] %}selected{% endif %}>{{ option["label"] }}</option>
+                      {% endfor %}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Buffer before (min)</span>
+                    <input type="number" min="0" max="120" name="buffer_before_minutes" value="{{ service['buffer_before_minutes'] }}">
+                  </label>
+                  <label>
+                    <span>Buffer after (min)</span>
+                    <input type="number" min="0" max="120" name="buffer_after_minutes" value="{{ service['buffer_after_minutes'] }}">
+                  </label>
+                  <label>
+                    <span>Minimum notice (min)</span>
+                    <input type="number" min="0" max="20160" name="min_notice_minutes" value="{{ service['min_notice_minutes'] }}">
+                  </label>
+                  <label>
+                    <span>Max bookings/day</span>
+                    <input type="number" min="1" max="60" name="max_bookings_per_day" value="{{ service['max_bookings_per_day'] if service['max_bookings_per_day'] is not none else '' }}">
+                  </label>
+                  <label>
+                    <span>Routing mode</span>
+                    <select name="routing_mode" required>
+                      {% for option in booking_routing_mode_options %}
+                        <option value="{{ option['value'] }}" {% if option['value'] == service['routing_mode'] %}selected{% endif %}>{{ option["label"] }}</option>
+                      {% endfor %}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Currency</span>
+                    <input type="text" name="currency" maxlength="3" value="{{ service['currency'] }}" required>
+                  </label>
+                  <label>
+                    <span>Price amount</span>
+                    <input type="number" step="0.01" min="0" name="price_amount" value="{{ service['price_amount'] if service['price_amount'] is not none else '' }}">
+                  </label>
+                  <label>
+                    <span>Display order</span>
+                    <input type="number" min="0" max="1000" name="display_order" value="{{ service['display_order'] }}">
+                  </label>
+                  <label>
+                    <span>Status</span>
+                    <select name="active">
+                      <option value="1" {% if service['active'] %}selected{% endif %}>Active</option>
+                      <option value="0" {% if not service['active'] %}selected{% endif %}>Inactive</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Accept payment at booking</span>
+                    <input type="checkbox" name="requires_payment" {% if service['requires_payment'] %}checked{% endif %}>
+                  </label>
+                  <label class="full">
+                    <span>Description</span>
+                    <textarea name="description" rows="2">{{ service["description"] }}</textarea>
+                  </label>
+                </div>
+                <button type="submit" class="primary-button">Update service</button>
+              </form>
+            </details>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p style="margin-top:12px">No booking services configured yet.</p>
+      {% endif %}
+    </article>
+
+    <article class="panel">
+      <div class="panel-label">Add booking service</div>
+      <form method="post" action="{{ url_for('main.create_or_update_staff_booking_service') }}" class="auth-form">
+        <input type="hidden" name="month" value="{{ calendar['month_value'] }}">
+        <div class="appointment-form-grid">
+          <label>
+            <span>Label</span>
+            <input type="text" name="label" placeholder="New Patient 30 min" required>
+          </label>
+          <label>
+            <span>Service key</span>
+            <input type="text" name="service_key" placeholder="new_patient_30">
+          </label>
+          <label>
+            <span>Appointment type</span>
+            <select name="appointment_type" required>
+              {% for option in appointment_type_options %}
+                <option value="{{ option['value'] }}">{{ option["label"] }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>
+            <span>Duration</span>
+            <select name="duration_minutes" required>
+              {% for option in duration_options %}
+                <option value="{{ option['value'] }}">{{ option["label"] }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>
+            <span>Buffer before (min)</span>
+            <input type="number" min="0" max="120" name="buffer_before_minutes" value="0">
+          </label>
+          <label>
+            <span>Buffer after (min)</span>
+            <input type="number" min="0" max="120" name="buffer_after_minutes" value="0">
+          </label>
+          <label>
+            <span>Minimum notice (min)</span>
+            <input type="number" min="0" max="20160" name="min_notice_minutes" value="60">
+          </label>
+          <label>
+            <span>Max bookings/day</span>
+            <input type="number" min="1" max="60" name="max_bookings_per_day" placeholder="Optional">
+          </label>
+          <label>
+            <span>Routing mode</span>
+            <select name="routing_mode" required>
+              {% for option in booking_routing_mode_options %}
+                <option value="{{ option['value'] }}">{{ option["label"] }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>
+            <span>Currency</span>
+            <input type="text" name="currency" maxlength="3" value="GBP" required>
+          </label>
+          <label>
+            <span>Price amount</span>
+            <input type="number" step="0.01" min="0" name="price_amount" placeholder="Optional">
+          </label>
+          <label>
+            <span>Display order</span>
+            <input type="number" min="0" max="1000" name="display_order" value="100">
+          </label>
+          <label>
+            <span>Active</span>
+            <select name="active">
+              <option value="1" selected>Active</option>
+              <option value="0">Inactive</option>
+            </select>
+          </label>
+          <label>
+            <span>Accept payment at booking</span>
+            <input type="checkbox" name="requires_payment">
+          </label>
+          <label class="full">
+            <span>Description</span>
+            <textarea name="description" rows="3" placeholder="Short service description shown in booking flows."></textarea>
+          </label>
+        </div>
+        <button type="submit" class="primary-button">Save booking service</button>
+      </form>
+    </article>
+  </section>
+
+  <section class="dashboard-grid">
+    <article class="panel">
       <div class="panel-label">Clinic locations</div>
       {% if locations %}
         <div class="invite-stack">
@@ -73,6 +266,52 @@
         </div>
         <button type="submit" class="primary-button">Save location</button>
       </form>
+    </article>
+  </section>
+
+  <section class="dashboard-grid">
+    <article class="panel">
+      <div class="panel-label">Publish booking access</div>
+      <p style="margin-top:10px">Share a direct booking link or embed the booking page on your website.</p>
+      <div class="auth-form" style="margin-top:14px">
+        <label>
+          <span>Booking link</span>
+          <input type="text" id="bookingLinkValue" readonly value="{{ url_for('main.appointments', _external=True) }}">
+          <div class="tiny-actions">
+            <button type="button" class="tiny-button sky" id="copyBookingLink">Copy link</button>
+          </div>
+        </label>
+        <label>
+          <span>Embed snippet</span>
+          <textarea rows="4" id="bookingEmbedValue" readonly>&lt;iframe src="{{ url_for('main.appointments', _external=True) }}" title="Life Chiropractic Booking" style="width:100%;min-height:860px;border:0;border-radius:16px;" loading="lazy"&gt;&lt;/iframe&gt;</textarea>
+          <div class="tiny-actions">
+            <button type="button" class="tiny-button sky" id="copyBookingEmbed">Copy embed</button>
+          </div>
+        </label>
+      </div>
+    </article>
+
+    <article class="panel">
+      <div class="panel-label">Integration pipeline</div>
+      <p style="margin-top:10px">Bookings emit integration events for downstream automations (CRM, tasks, messaging, reporting).</p>
+      <div class="legend-list" style="margin-top:14px">
+        <span class="legend-chip warm">{{ booking_event_counts["pending"] }} pending</span>
+        <span class="legend-chip life">{{ booking_event_counts["delivered"] }} delivered</span>
+        <span class="legend-chip rose">{{ booking_event_counts["failed"] }} failed</span>
+      </div>
+      {% if booking_events %}
+        <div class="invite-stack">
+          {% for event in booking_events %}
+            <div class="mini-card">
+              <strong>{{ event["event_label"] }} · {{ event["service_label"] }}</strong>
+              <small>{{ event["patient_name"] }}{% if event["starts_label"] %} · {{ event["starts_label"] }}{% endif %}</small>
+              <small>Status: {{ event["delivery_status"] }} · Logged {{ event["created_label"] }}</small>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p style="margin-top:12px">No integration events recorded yet.</p>
+      {% endif %}
     </article>
   </section>
 
@@ -271,4 +510,60 @@
       {% endif %}
     </article>
   </section>
+{% endblock %}
+
+{% block scripts %}
+  {{ super() }}
+  <script>
+    (function () {
+      const copyLinkButton = document.getElementById("copyBookingLink");
+      const copyEmbedButton = document.getElementById("copyBookingEmbed");
+      const linkInput = document.getElementById("bookingLinkValue");
+      const embedInput = document.getElementById("bookingEmbedValue");
+
+      function setButtonState(button, text) {
+        if (!button) return;
+        const original = button.dataset.originalLabel || button.textContent;
+        if (!button.dataset.originalLabel) {
+          button.dataset.originalLabel = original;
+        }
+        button.textContent = text;
+        window.setTimeout(() => {
+          button.textContent = button.dataset.originalLabel || original;
+        }, 1400);
+      }
+
+      async function copyText(value, button) {
+        if (!value) return;
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(value);
+            setButtonState(button, "Copied");
+            return;
+          }
+        } catch (_) {
+          // Fall back to execCommand path below.
+        }
+
+        const fallback = document.createElement("textarea");
+        fallback.value = value;
+        fallback.setAttribute("readonly", "");
+        fallback.style.position = "absolute";
+        fallback.style.left = "-9999px";
+        document.body.appendChild(fallback);
+        fallback.select();
+        const copied = document.execCommand("copy");
+        document.body.removeChild(fallback);
+        setButtonState(button, copied ? "Copied" : "Failed");
+      }
+
+      if (copyLinkButton && linkInput) {
+        copyLinkButton.addEventListener("click", () => copyText(linkInput.value, copyLinkButton));
+      }
+
+      if (copyEmbedButton && embedInput) {
+        copyEmbedButton.addEventListener("click", () => copyText(embedInput.value, copyEmbedButton));
+      }
+    })();
+  </script>
 {% endblock %}

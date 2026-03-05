@@ -76,20 +76,30 @@
 
     <article class="panel">
       <div class="panel-label">Self-service booking</div>
-      <p style="margin-top:10px">Book available appointments 24/7 from your portal. Choose a clinic location, chiropractor, and available slot.</p>
+      <p style="margin-top:10px">Book available appointments 24/7 from your portal. Choose a service, pick an available time, and confirm your booking with policy-driven availability.</p>
       <form method="post" action="{{ url_for('main.self_book_appointment') }}" class="auth-form">
         <div class="appointment-form-grid">
+          <input type="hidden" name="appointment_type" id="patientBookingTypeHidden" value="{{ booking_policy['appointment_type'] }}">
+          <input type="hidden" name="duration_minutes" id="patientBookingDurationHidden" value="{{ booking_policy['duration_minutes'] }}">
           <label>
-            <span>Visit type</span>
-            <select name="appointment_type" id="patientBookingType" required>
-              {% for option in [
-                {'value': 'initial_consult', 'label': 'Initial Consultation', 'default_duration': 60},
-                {'value': 'report_of_findings', 'label': 'Report of Findings', 'default_duration': 30},
-                {'value': 'care_plan', 'label': 'Care Plan Visit', 'default_duration': 20}
-              ] %}
-                <option value="{{ option['value'] }}" data-default-duration="{{ option['default_duration'] }}" {% if option['value'] == selected_appointment_type %}selected{% endif %}>{{ option['label'] }}</option>
+            <span>Service</span>
+            <select name="service_id" id="patientBookingService" required>
+              {% for service in service_options %}
+                <option
+                  value="{{ service['id'] }}"
+                  data-appointment-type="{{ service['appointment_type'] }}"
+                  data-duration="{{ service['duration_minutes'] }}"
+                  data-routing-mode="{{ service['routing_mode'] }}"
+                  data-requires-payment="{{ 1 if service['requires_payment'] else 0 }}"
+                  data-price-amount="{{ service['price_amount'] if service['price_amount'] is not none else '' }}"
+                  data-currency="{{ service['currency'] }}"
+                  {% if service['id'] == selected_service_id %}selected{% endif %}
+                >
+                  {{ service["label"] }} · {{ service["duration_minutes"] }} min
+                </option>
               {% endfor %}
             </select>
+            <small class="field-hint" id="patientServiceSummary">{{ booking_policy["service_label"] }} · {{ booking_policy["duration_minutes"] }} min · {{ booking_policy["routing_mode_label"] }}</small>
           </label>
           <label>
             <span>Location</span>
@@ -102,8 +112,9 @@
           <label>
             <span>Chiropractor</span>
             <select name="clinician_user_id" id="patientBookingClinician" required>
+              <option value="any" {% if selected_clinician_choice == 'any' %}selected{% endif %} {% if not allow_any_clinician %}hidden{% endif %}>Any available</option>
               {% for option in clinician_options %}
-                <option value="{{ option['value'] }}" {% if option['value'] == selected_clinician_id %}selected{% endif %}>{{ option["label"] }}</option>
+                <option value="{{ option['value'] }}" {% if selected_clinician_id is not none and option['value'] == selected_clinician_id %}selected{% endif %}>{{ option["label"] }}</option>
               {% endfor %}
             </select>
           </label>
@@ -112,12 +123,11 @@
             <input type="date" name="appointment_date" id="patientBookingDate" value="{{ booking_date }}" required>
           </label>
           <label>
-            <span>Length</span>
-            <select name="duration_minutes" id="patientBookingDuration" required>
-              {% for option in duration_options %}
-                <option value="{{ option['value'] }}" {% if option['value'] == selected_duration_minutes %}selected{% endif %}>{{ option["label"] }}</option>
-              {% endfor %}
-            </select>
+            <span>Duration</span>
+            <input type="text" id="patientBookingDurationDisplay" value="{{ booking_policy['duration_minutes'] }} minutes" readonly>
+            <small class="field-hint" id="patientBookingPolicyHint">
+              {{ booking_policy["min_notice_minutes"] }} minute minimum notice{% if booking_policy["max_bookings_per_day"] %} · max {{ booking_policy["max_bookings_per_day"] }} bookings per chiropractor/day{% endif %}.
+            </small>
           </label>
           <label>
             <span>Available time slot</span>
@@ -137,6 +147,10 @@
           <label class="full">
             <span>Appointment details</span>
             <textarea name="patient_details" rows="4" placeholder="Tell the clinic anything important for this booking, or what you want covered."></textarea>
+          </label>
+          <label class="full">
+            <span>Payment</span>
+            <input type="text" id="patientPaymentHint" value="{% if booking_policy['requires_payment'] and booking_policy['price_amount'] is not none %}Payment due: {{ '%.2f'|format(booking_policy['price_amount']) }} {{ booking_policy['currency'] }}{% else %}No payment required at booking{% endif %}" readonly>
           </label>
         </div>
         <div class="availability-board">
@@ -171,7 +185,7 @@
             </div>
           </div>
         </div>
-        <button type="submit" class="primary-button">Book appointment</button>
+        <button type="submit" class="primary-button">Confirm booking</button>
       </form>
     </article>
   </section>
@@ -185,7 +199,7 @@
             <div class="agenda-item">
               <div class="agenda-item-head">
                 <div>
-                  <span class="appointment-chip {{ appointment['type_tone'] }}">{{ appointment["type_label"] }}</span>
+                  <span class="appointment-chip {{ appointment['type_tone'] }}">{{ appointment["service_label"] or appointment["type_label"] }}</span>
                   <h3>{{ appointment["date_label"] }}</h3>
                 </div>
                 <span class="status-dot {{ appointment['status'] }}">{{ appointment["status_label"] }}</span>
@@ -195,14 +209,29 @@
                   <span class="availability-chip life">{{ appointment["location_name"] }}</span>
                 {% endif %}
                 <span class="status-dot {{ appointment['billing_status_tone'] }}">{{ appointment["billing_status_label"] }}</span>
+                {% if appointment["requires_payment"] %}
+                  <span class="status-dot warm">Payment {{ appointment["payment_status"].replace("_", " ") }}</span>
+                {% endif %}
               </div>
               <p>{{ appointment["time_label"] }}{% if appointment["end_time_label"] %} - {{ appointment["end_time_label"] }}{% endif %}</p>
               {% if appointment["reminder_label"] %}
                 <div class="legend-chip {{ appointment['reminder_tone'] }}">{{ appointment["reminder_label"] }}</div>
               {% endif %}
+              {% if appointment["cancellation_policy_label"] %}
+                <small class="muted-copy">{{ appointment["cancellation_policy_label"] }}</small>
+              {% endif %}
               {% if appointment["note"] %}
                 <p>{{ appointment["note"] }}</p>
               {% endif %}
+              <div class="tiny-actions">
+                {% if appointment["can_self_cancel"] %}
+                  <form method="post" action="{{ url_for('main.cancel_self_booked_appointment', appointment_id=appointment['id']) }}">
+                    <button type="submit" class="tiny-button rose">Cancel booking</button>
+                  </form>
+                {% else %}
+                  <span class="muted-copy">Online cancellation window closed</span>
+                {% endif %}
+              </div>
             </div>
           {% endfor %}
         </div>
@@ -258,11 +287,16 @@
 {% block scripts %}
   <script>
     (() => {
-      const typeInput = document.getElementById("patientBookingType");
+      const serviceInput = document.getElementById("patientBookingService");
+      const typeHiddenInput = document.getElementById("patientBookingTypeHidden");
+      const durationHiddenInput = document.getElementById("patientBookingDurationHidden");
+      const durationDisplay = document.getElementById("patientBookingDurationDisplay");
+      const serviceSummary = document.getElementById("patientServiceSummary");
+      const policyHint = document.getElementById("patientBookingPolicyHint");
+      const paymentHint = document.getElementById("patientPaymentHint");
       const locationInput = document.getElementById("patientBookingLocation");
       const clinicianInput = document.getElementById("patientBookingClinician");
       const dateInput = document.getElementById("patientBookingDate");
-      const durationInput = document.getElementById("patientBookingDuration");
       const slotInput = document.getElementById("patientBookingSlot");
       const slotHint = document.getElementById("patientBookingSlotHint");
       const shiftWrap = document.getElementById("patientShiftWindows");
@@ -270,7 +304,7 @@
       const bookedWrap = document.getElementById("patientBookedWindows");
       const availabilityUrl = "{{ url_for('main.api_availability') }}";
 
-      if (!typeInput || !locationInput || !clinicianInput || !dateInput || !durationInput || !slotInput) {
+      if (!serviceInput || !locationInput || !clinicianInput || !dateInput || !slotInput) {
         return;
       }
 
@@ -282,16 +316,59 @@
         }
         container.innerHTML = items.map((item) => {
           const tone = item.window_tone || fallbackTone;
-          return `<span class="availability-chip ${tone}">${item.label} · ${item.time_label}</span>`;
+          const clinician = item.clinician_name ? ` · ${item.clinician_name}` : "";
+          return `<span class="availability-chip ${tone}">${item.label} · ${item.time_label}${clinician}</span>`;
         }).join("");
       }
 
+      function currentServiceOption() {
+        return serviceInput.options[serviceInput.selectedIndex] || null;
+      }
+
+      function syncServiceFields() {
+        const option = currentServiceOption();
+        if (!option) return;
+
+        const appointmentType = option.dataset.appointmentType || "care_plan";
+        const duration = option.dataset.duration || "30";
+        const routingMode = option.dataset.routingMode || "specific_clinician";
+        const requiresPayment = option.dataset.requiresPayment === "1";
+        const priceAmount = option.dataset.priceAmount;
+        const currency = option.dataset.currency || "GBP";
+
+        if (typeHiddenInput) typeHiddenInput.value = appointmentType;
+        if (durationHiddenInput) durationHiddenInput.value = duration;
+        if (durationDisplay) durationDisplay.value = `${duration} minutes`;
+        if (serviceSummary) {
+          const routingLabel = routingMode === "team_round_robin" ? "Any available chiropractor" : "Specific chiropractor";
+          serviceSummary.textContent = `${option.textContent.trim()} · ${routingLabel}`;
+        }
+        if (paymentHint) {
+          paymentHint.value = requiresPayment && priceAmount
+            ? `Payment due: ${Number(priceAmount).toFixed(2)} ${currency}`
+            : "No payment required at booking";
+        }
+
+        const anyOption = clinicianInput.querySelector('option[value="any"]');
+        const teamMode = routingMode === "team_round_robin";
+        if (anyOption) {
+          anyOption.hidden = !teamMode;
+          if (!teamMode && clinicianInput.value === "any") {
+            const firstClinician = clinicianInput.querySelector("option[value]:not([value='any'])");
+            if (firstClinician) clinicianInput.value = firstClinician.value;
+          }
+        }
+      }
+
       async function loadAvailability() {
+        syncServiceFields();
         const params = new URLSearchParams({
+          service_id: serviceInput.value,
+          appointment_type: typeHiddenInput ? typeHiddenInput.value : "",
           clinician_user_id: clinicianInput.value,
           location_id: locationInput.value,
           date: dateInput.value,
-          duration_minutes: durationInput.value,
+          duration_minutes: durationHiddenInput ? durationHiddenInput.value : "",
         });
         const response = await fetch(`${availabilityUrl}?${params.toString()}`, {
           headers: { "X-Requested-With": "fetch" },
@@ -315,22 +392,30 @@
         slotHint.textContent = availability.available_slots.length
           ? `${availability.available_slots.length} slots available for ${availability.date_label}.`
           : "No slots are available for the selected filters.";
+        if (durationDisplay) durationDisplay.value = `${availability.duration_minutes} minutes`;
+        if (durationHiddenInput) durationHiddenInput.value = String(availability.duration_minutes);
+        if (typeHiddenInput) typeHiddenInput.value = availability.appointment_type || typeHiddenInput.value;
+        if (policyHint) {
+          const maxText = availability.max_bookings_per_day
+            ? ` · max ${availability.max_bookings_per_day} bookings per chiropractor/day`
+            : "";
+          policyHint.textContent = `${availability.min_notice_minutes} minute minimum notice${maxText}.`;
+        }
+        if (paymentHint) {
+          paymentHint.value = availability.requires_payment && availability.price_amount !== null
+            ? `Payment due: ${Number(availability.price_amount).toFixed(2)} ${availability.currency}`
+            : "No payment required at booking";
+        }
         render(shiftWrap, availability.shift_windows, "No shift is configured for this day.");
         render(downtimeWrap, availability.downtime_windows, "No downtime blocks are set for this day.");
         render(bookedWrap, availability.booked_windows, "No scheduled visits are blocking this date yet.", "sky");
       }
 
-      typeInput.addEventListener("change", () => {
-        const option = typeInput.options[typeInput.selectedIndex];
-        if (option && option.dataset.defaultDuration) {
-          durationInput.value = option.dataset.defaultDuration;
-        }
-        loadAvailability();
-      });
+      serviceInput.addEventListener("change", loadAvailability);
       locationInput.addEventListener("change", loadAvailability);
       clinicianInput.addEventListener("change", loadAvailability);
       dateInput.addEventListener("change", loadAvailability);
-      durationInput.addEventListener("change", loadAvailability);
+      syncServiceFields();
     })();
   </script>
 {% endblock %}

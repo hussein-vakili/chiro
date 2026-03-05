@@ -89,11 +89,35 @@ CREATE TABLE IF NOT EXISTS locations (
 
 CREATE INDEX IF NOT EXISTS idx_locations_slug ON locations(slug);
 
+CREATE TABLE IF NOT EXISTS appointment_services (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    service_key TEXT NOT NULL UNIQUE,
+    label TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    appointment_type TEXT NOT NULL DEFAULT 'care_plan',
+    duration_minutes INTEGER NOT NULL DEFAULT 30,
+    buffer_before_minutes INTEGER NOT NULL DEFAULT 0,
+    buffer_after_minutes INTEGER NOT NULL DEFAULT 0,
+    requires_payment INTEGER NOT NULL DEFAULT 0,
+    price_amount REAL,
+    currency TEXT NOT NULL DEFAULT 'GBP',
+    min_notice_minutes INTEGER NOT NULL DEFAULT 0,
+    max_bookings_per_day INTEGER,
+    routing_mode TEXT NOT NULL DEFAULT 'specific_clinician',
+    active INTEGER NOT NULL DEFAULT 1,
+    display_order INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_appointment_services_active ON appointment_services(active);
+
 CREATE TABLE IF NOT EXISTS appointments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     patient_user_id INTEGER NOT NULL,
     clinician_user_id INTEGER,
     location_id INTEGER,
+    service_id INTEGER,
     appointment_type TEXT NOT NULL DEFAULT 'initial_consult',
     status TEXT NOT NULL DEFAULT 'scheduled',
     starts_at TEXT NOT NULL,
@@ -105,12 +129,19 @@ CREATE TABLE IF NOT EXISTS appointments (
     billing_status TEXT NOT NULL DEFAULT 'pending',
     billing_code TEXT NOT NULL DEFAULT '',
     billing_amount REAL,
+    requires_payment INTEGER NOT NULL DEFAULT 0,
+    payment_status TEXT NOT NULL DEFAULT 'not_required',
+    payment_amount REAL,
+    booking_channel TEXT NOT NULL DEFAULT 'portal',
+    service_label_snapshot TEXT NOT NULL DEFAULT '',
+    policy_snapshot_json TEXT NOT NULL DEFAULT '{}',
     booking_source TEXT NOT NULL DEFAULT 'staff_portal',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     FOREIGN KEY (patient_user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (clinician_user_id) REFERENCES users(id) ON DELETE SET NULL,
     FOREIGN KEY (location_id) REFERENCES locations(id) ON DELETE SET NULL,
+    FOREIGN KEY (service_id) REFERENCES appointment_services(id) ON DELETE SET NULL,
     FOREIGN KEY (source_invitation_id) REFERENCES invitations(id) ON DELETE SET NULL
 );
 
@@ -139,6 +170,22 @@ CREATE TABLE IF NOT EXISTS appointment_reminders (
 
 CREATE INDEX IF NOT EXISTS idx_appointment_reminders_appointment ON appointment_reminders(appointment_id);
 CREATE INDEX IF NOT EXISTS idx_appointment_reminders_sent_at ON appointment_reminders(sent_at);
+
+CREATE TABLE IF NOT EXISTS booking_webhook_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_type TEXT NOT NULL,
+    appointment_id INTEGER,
+    patient_user_id INTEGER,
+    payload_json TEXT NOT NULL DEFAULT '{}',
+    delivery_status TEXT NOT NULL DEFAULT 'pending',
+    created_at TEXT NOT NULL,
+    processed_at TEXT,
+    error_message TEXT NOT NULL DEFAULT '',
+    FOREIGN KEY (appointment_id) REFERENCES appointments(id) ON DELETE CASCADE,
+    FOREIGN KEY (patient_user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_booking_webhook_events_created ON booking_webhook_events(created_at);
 
 CREATE TABLE IF NOT EXISTS appointment_soap_notes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -331,7 +378,7 @@ def _seed_default_schedule_windows(db: sqlite3.Connection) -> None:
 
     default_location_id = _seed_default_locations(db)
     rows = []
-    for weekday in range(0, 5):
+    for weekday in range(0, 7):
         rows.append((None, default_location_id, weekday, "shift", "09:00", "17:00", "Clinic shift"))
         rows.append((None, default_location_id, weekday, "downtime", "12:00", "13:00", "Lunch downtime"))
 
@@ -352,6 +399,159 @@ def _seed_default_schedule_windows(db: sqlite3.Connection) -> None:
         """,
         rows,
     )
+
+
+def _seed_default_appointment_services(db: sqlite3.Connection) -> None:
+    defaults = [
+        (
+            "new_patient_30",
+            "New Patient Visit",
+            "Comprehensive first appointment with exam and consultation.",
+            "initial_consult",
+            30,
+            10,
+            10,
+            1,
+            95.0,
+            "GBP",
+            180,
+            8,
+            "specific_clinician",
+            1,
+            10,
+        ),
+        (
+            "report_of_findings_30",
+            "Report of Findings",
+            "Review findings, explain diagnosis, and confirm care plan.",
+            "report_of_findings",
+            30,
+            5,
+            10,
+            0,
+            None,
+            "GBP",
+            120,
+            10,
+            "specific_clinician",
+            1,
+            20,
+        ),
+        (
+            "follow_up_15",
+            "Follow-up Visit",
+            "Standard adjustment and progress check.",
+            "care_plan",
+            15,
+            5,
+            5,
+            0,
+            None,
+            "GBP",
+            60,
+            16,
+            "specific_clinician",
+            1,
+            30,
+        ),
+        (
+            "team_adjustment_15",
+            "Team Adjustment (Any Chiropractor)",
+            "Fast follow-up visit routed to any available chiropractor.",
+            "care_plan",
+            15,
+            5,
+            5,
+            0,
+            None,
+            "GBP",
+            60,
+            24,
+            "team_round_robin",
+            1,
+            40,
+        ),
+    ]
+
+    db.executemany(
+        """
+        INSERT INTO appointment_services (
+            service_key,
+            label,
+            description,
+            appointment_type,
+            duration_minutes,
+            buffer_before_minutes,
+            buffer_after_minutes,
+            requires_payment,
+            price_amount,
+            currency,
+            min_notice_minutes,
+            max_bookings_per_day,
+            routing_mode,
+            active,
+            display_order,
+            created_at,
+            updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT(service_key) DO NOTHING
+        """,
+        defaults,
+    )
+
+
+def _backfill_appointment_service_defaults(db: sqlite3.Connection) -> None:
+    service_map = {
+        "initial_consult": "new_patient_30",
+        "report_of_findings": "report_of_findings_30",
+        "care_plan": "follow_up_15",
+    }
+    for appointment_type, service_key in service_map.items():
+        service_row = db.execute(
+            """
+            SELECT id, label, requires_payment, price_amount
+            FROM appointment_services
+            WHERE service_key = ?
+            LIMIT 1
+            """,
+            (service_key,),
+        ).fetchone()
+        if service_row is None:
+            continue
+
+        db.execute(
+            """
+            UPDATE appointments
+            SET service_id = COALESCE(service_id, ?),
+                service_label_snapshot = CASE
+                    WHEN TRIM(COALESCE(service_label_snapshot, '')) = '' THEN ?
+                    ELSE service_label_snapshot
+                END,
+                requires_payment = CASE
+                    WHEN requires_payment IS NULL OR requires_payment = 0 THEN ?
+                    ELSE requires_payment
+                END,
+                payment_amount = CASE
+                    WHEN payment_amount IS NULL AND ? IS NOT NULL THEN ?
+                    ELSE payment_amount
+                END,
+                payment_status = CASE
+                    WHEN COALESCE(payment_status, '') = '' THEN ?
+                    ELSE payment_status
+                END
+            WHERE appointment_type = ?
+            """,
+            (
+                service_row["id"],
+                service_row["label"],
+                int(service_row["requires_payment"] or 0),
+                service_row["price_amount"],
+                service_row["price_amount"],
+                "pending" if service_row["requires_payment"] else "not_required",
+                appointment_type,
+            ),
+        )
 
 
 def _backfill_default_location_assignments(db: sqlite3.Connection, default_location_id: int) -> None:
@@ -421,6 +621,7 @@ def init_db() -> None:
     appointment_columns = {
         "clinician_user_id": "INTEGER",
         "location_id": "INTEGER",
+        "service_id": "INTEGER",
         "appointment_type": "TEXT NOT NULL DEFAULT 'initial_consult'",
         "status": "TEXT NOT NULL DEFAULT 'scheduled'",
         "ends_at": "TEXT",
@@ -431,6 +632,12 @@ def init_db() -> None:
         "billing_status": "TEXT NOT NULL DEFAULT 'pending'",
         "billing_code": "TEXT NOT NULL DEFAULT ''",
         "billing_amount": "REAL",
+        "requires_payment": "INTEGER NOT NULL DEFAULT 0",
+        "payment_status": "TEXT NOT NULL DEFAULT 'not_required'",
+        "payment_amount": "REAL",
+        "booking_channel": "TEXT NOT NULL DEFAULT 'portal'",
+        "service_label_snapshot": "TEXT NOT NULL DEFAULT ''",
+        "policy_snapshot_json": "TEXT NOT NULL DEFAULT '{}'",
         "booking_source": "TEXT NOT NULL DEFAULT 'staff_portal'",
         "created_at": "TEXT NOT NULL DEFAULT ''",
         "updated_at": "TEXT NOT NULL DEFAULT ''",
@@ -438,6 +645,7 @@ def init_db() -> None:
     for column_name, definition in appointment_columns.items():
         _ensure_column(db, "appointments", column_name, definition)
     db.execute("CREATE INDEX IF NOT EXISTS idx_appointments_location ON appointments(location_id)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_appointments_service ON appointments(service_id)")
     schedule_window_columns = {
         "location_id": "INTEGER",
     }
@@ -449,10 +657,31 @@ def init_db() -> None:
     for column_name, definition in soap_note_columns.items():
         _ensure_column(db, "appointment_soap_notes", column_name, definition)
     db.execute("CREATE INDEX IF NOT EXISTS idx_schedule_windows_location ON schedule_windows(location_id)")
+    appointment_service_columns = {
+        "description": "TEXT NOT NULL DEFAULT ''",
+        "appointment_type": "TEXT NOT NULL DEFAULT 'care_plan'",
+        "duration_minutes": "INTEGER NOT NULL DEFAULT 30",
+        "buffer_before_minutes": "INTEGER NOT NULL DEFAULT 0",
+        "buffer_after_minutes": "INTEGER NOT NULL DEFAULT 0",
+        "requires_payment": "INTEGER NOT NULL DEFAULT 0",
+        "price_amount": "REAL",
+        "currency": "TEXT NOT NULL DEFAULT 'GBP'",
+        "min_notice_minutes": "INTEGER NOT NULL DEFAULT 0",
+        "max_bookings_per_day": "INTEGER",
+        "routing_mode": "TEXT NOT NULL DEFAULT 'specific_clinician'",
+        "active": "INTEGER NOT NULL DEFAULT 1",
+        "display_order": "INTEGER NOT NULL DEFAULT 0",
+    }
+    for column_name, definition in appointment_service_columns.items():
+        _ensure_column(db, "appointment_services", column_name, definition)
+    db.execute("CREATE INDEX IF NOT EXISTS idx_appointment_services_active ON appointment_services(active)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_booking_webhook_events_created ON booking_webhook_events(created_at)")
     default_location_id = _seed_default_locations(db)
+    _seed_default_appointment_services(db)
     _backfill_accepted_invitation_appointments(db)
     _seed_default_schedule_windows(db)
     _backfill_default_location_assignments(db, default_location_id)
+    _backfill_appointment_service_defaults(db)
     db.commit()
 
 

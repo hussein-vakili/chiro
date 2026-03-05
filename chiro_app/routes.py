@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import calendar as month_calendar
 import json
+import re
 import secrets
 from datetime import date, datetime, time, timedelta
 from functools import wraps
@@ -101,6 +102,7 @@ WEEKDAY_OPTIONS = [
 ]
 
 APPOINTMENT_DURATION_OPTIONS = [
+    {"value": 15, "label": "15 minutes"},
     {"value": 20, "label": "20 minutes"},
     {"value": 30, "label": "30 minutes"},
     {"value": 45, "label": "45 minutes"},
@@ -108,9 +110,14 @@ APPOINTMENT_DURATION_OPTIONS = [
 ]
 
 APPOINTMENT_DURATION_DEFAULTS = {
-    "initial_consult": 60,
+    "initial_consult": 30,
     "report_of_findings": 30,
-    "care_plan": 20,
+    "care_plan": 15,
+}
+
+BOOKING_ROUTING_MODE_META = {
+    "specific_clinician": {"label": "Specific chiropractor"},
+    "team_round_robin": {"label": "Any available chiropractor"},
 }
 
 SLOT_INCREMENT_MINUTES = 15
@@ -266,6 +273,11 @@ def float_or_none(value: str | None):
         return float(value)
     except ValueError:
         return value
+
+
+def slugify_service_key(value: str) -> str:
+    cleaned = re.sub(r"[^a-z0-9]+", "_", (value or "").strip().lower()).strip("_")
+    return cleaned[:48] or "service"
 
 
 def infer_decision_support_region(payload: dict | None) -> str:
@@ -472,6 +484,92 @@ def get_reset_token(token: str):
     ).fetchone()
 
 
+def get_appointment_services(active_only: bool = True):
+    query = """
+        SELECT *
+        FROM appointment_services
+    """
+    if active_only:
+        query += " WHERE active = 1"
+    query += " ORDER BY display_order ASC, label ASC, id ASC"
+    return get_db().execute(query).fetchall()
+
+
+def get_appointment_service(service_id: int):
+    return get_db().execute(
+        """
+        SELECT *
+        FROM appointment_services
+        WHERE id = ?
+        LIMIT 1
+        """,
+        (service_id,),
+    ).fetchone()
+
+
+def get_appointment_service_by_key(service_key: str):
+    return get_db().execute(
+        """
+        SELECT *
+        FROM appointment_services
+        WHERE service_key = ?
+        LIMIT 1
+        """,
+        (service_key,),
+    ).fetchone()
+
+
+def get_recent_booking_events(limit: int = 30):
+    return get_db().execute(
+        """
+        SELECT
+            bwe.*,
+            a.starts_at,
+            a.appointment_type,
+            a.service_label_snapshot,
+            p.first_name AS patient_first_name,
+            p.last_name AS patient_last_name
+        FROM booking_webhook_events bwe
+        LEFT JOIN appointments a ON a.id = bwe.appointment_id
+        LEFT JOIN users p ON p.id = bwe.patient_user_id
+        ORDER BY bwe.created_at DESC, bwe.id DESC
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+
+
+def log_booking_event(
+    event_type: str,
+    appointment_id: int | None,
+    patient_user_id: int | None,
+    payload: dict | None = None,
+    *,
+    delivery_status: str = "pending",
+) -> None:
+    get_db().execute(
+        """
+        INSERT INTO booking_webhook_events (
+            event_type,
+            appointment_id,
+            patient_user_id,
+            payload_json,
+            delivery_status,
+            created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            event_type,
+            appointment_id,
+            patient_user_id,
+            json.dumps(payload or {}, separators=(",", ":")),
+            delivery_status,
+            iso_now(),
+        ),
+    )
+
+
 def get_patient_appointments(patient_user_id: int):
     return get_db().execute(
         """
@@ -480,11 +578,24 @@ def get_patient_appointments(patient_user_id: int):
             l.name AS location_name,
             c.first_name AS clinician_first_name,
             c.last_name AS clinician_last_name,
+            s.service_key,
+            s.label AS service_label,
+            s.description AS service_description,
+            s.duration_minutes AS service_duration_minutes,
+            s.buffer_before_minutes AS service_buffer_before_minutes,
+            s.buffer_after_minutes AS service_buffer_after_minutes,
+            s.requires_payment AS service_requires_payment,
+            s.price_amount AS service_price_amount,
+            s.currency AS service_currency,
+            s.min_notice_minutes AS service_min_notice_minutes,
+            s.max_bookings_per_day AS service_max_bookings_per_day,
+            s.routing_mode AS service_routing_mode,
             asn.id AS soap_note_id,
             asn.updated_at AS soap_note_updated_at
         FROM appointments a
         LEFT JOIN locations l ON l.id = a.location_id
         LEFT JOIN users c ON c.id = a.clinician_user_id
+        LEFT JOIN appointment_services s ON s.id = a.service_id
         LEFT JOIN appointment_soap_notes asn ON asn.appointment_id = a.id
         WHERE a.patient_user_id = ?
         ORDER BY a.starts_at ASC
@@ -515,12 +626,25 @@ def get_appointment_with_people(appointment_id: int):
             l.name AS location_name,
             c.first_name AS clinician_first_name,
             c.last_name AS clinician_last_name,
+            s.service_key,
+            s.label AS service_label,
+            s.description AS service_description,
+            s.duration_minutes AS service_duration_minutes,
+            s.buffer_before_minutes AS service_buffer_before_minutes,
+            s.buffer_after_minutes AS service_buffer_after_minutes,
+            s.requires_payment AS service_requires_payment,
+            s.price_amount AS service_price_amount,
+            s.currency AS service_currency,
+            s.min_notice_minutes AS service_min_notice_minutes,
+            s.max_bookings_per_day AS service_max_bookings_per_day,
+            s.routing_mode AS service_routing_mode,
             asn.id AS soap_note_id,
             asn.updated_at AS soap_note_updated_at
         FROM appointments a
         JOIN users p ON p.id = a.patient_user_id
         LEFT JOIN locations l ON l.id = a.location_id
         LEFT JOIN users c ON c.id = a.clinician_user_id
+        LEFT JOIN appointment_services s ON s.id = a.service_id
         LEFT JOIN appointment_soap_notes asn ON asn.appointment_id = a.id
         WHERE a.id = ?
         """,
@@ -539,12 +663,25 @@ def get_all_appointments():
             l.name AS location_name,
             c.first_name AS clinician_first_name,
             c.last_name AS clinician_last_name,
+            s.service_key,
+            s.label AS service_label,
+            s.description AS service_description,
+            s.duration_minutes AS service_duration_minutes,
+            s.buffer_before_minutes AS service_buffer_before_minutes,
+            s.buffer_after_minutes AS service_buffer_after_minutes,
+            s.requires_payment AS service_requires_payment,
+            s.price_amount AS service_price_amount,
+            s.currency AS service_currency,
+            s.min_notice_minutes AS service_min_notice_minutes,
+            s.max_bookings_per_day AS service_max_bookings_per_day,
+            s.routing_mode AS service_routing_mode,
             asn.id AS soap_note_id,
             asn.updated_at AS soap_note_updated_at
         FROM appointments a
         JOIN users p ON p.id = a.patient_user_id
         LEFT JOIN locations l ON l.id = a.location_id
         LEFT JOIN users c ON c.id = a.clinician_user_id
+        LEFT JOIN appointment_services s ON s.id = a.service_id
         LEFT JOIN appointment_soap_notes asn ON asn.appointment_id = a.id
         ORDER BY a.starts_at ASC
         """
@@ -562,12 +699,25 @@ def get_clinician_appointments(clinician_user_id: int):
             l.name AS location_name,
             c.first_name AS clinician_first_name,
             c.last_name AS clinician_last_name,
+            s.service_key,
+            s.label AS service_label,
+            s.description AS service_description,
+            s.duration_minutes AS service_duration_minutes,
+            s.buffer_before_minutes AS service_buffer_before_minutes,
+            s.buffer_after_minutes AS service_buffer_after_minutes,
+            s.requires_payment AS service_requires_payment,
+            s.price_amount AS service_price_amount,
+            s.currency AS service_currency,
+            s.min_notice_minutes AS service_min_notice_minutes,
+            s.max_bookings_per_day AS service_max_bookings_per_day,
+            s.routing_mode AS service_routing_mode,
             asn.id AS soap_note_id,
             asn.updated_at AS soap_note_updated_at
         FROM appointments a
         JOIN users p ON p.id = a.patient_user_id
         LEFT JOIN locations l ON l.id = a.location_id
         LEFT JOIN users c ON c.id = a.clinician_user_id
+        LEFT JOIN appointment_services s ON s.id = a.service_id
         LEFT JOIN appointment_soap_notes asn ON asn.appointment_id = a.id
         WHERE a.clinician_user_id = ?
         ORDER BY a.starts_at ASC, a.id ASC
@@ -679,10 +829,19 @@ def get_clinician_appointments_for_date(
             p.last_name AS patient_last_name,
             p.email AS patient_email,
             c.first_name AS clinician_first_name,
-            c.last_name AS clinician_last_name
+            c.last_name AS clinician_last_name,
+            s.service_key,
+            s.label AS service_label,
+            s.duration_minutes AS service_duration_minutes,
+            s.buffer_before_minutes AS service_buffer_before_minutes,
+            s.buffer_after_minutes AS service_buffer_after_minutes,
+            s.min_notice_minutes AS service_min_notice_minutes,
+            s.max_bookings_per_day AS service_max_bookings_per_day,
+            s.routing_mode AS service_routing_mode
         FROM appointments a
         JOIN users p ON p.id = a.patient_user_id
         LEFT JOIN users c ON c.id = a.clinician_user_id
+        LEFT JOIN appointment_services s ON s.id = a.service_id
         WHERE a.clinician_user_id = ?
           AND a.status = 'scheduled'
           AND substr(a.starts_at, 1, 10) = ?
@@ -692,6 +851,21 @@ def get_clinician_appointments_for_date(
         params.append(exclude_appointment_id)
     query += " ORDER BY a.starts_at ASC"
     return get_db().execute(query, tuple(params)).fetchall()
+
+
+def get_clinician_booking_count_by_date(target_date: str) -> dict[int, int]:
+    rows = get_db().execute(
+        """
+        SELECT clinician_user_id, COUNT(*) AS booking_count
+        FROM appointments
+        WHERE status = 'scheduled'
+          AND clinician_user_id IS NOT NULL
+          AND substr(starts_at, 1, 10) = ?
+        GROUP BY clinician_user_id
+        """,
+        (target_date,),
+    ).fetchall()
+    return {row["clinician_user_id"]: row["booking_count"] for row in rows}
 
 
 def get_recent_appointment_reminders(limit: int = 30):
@@ -757,6 +931,112 @@ def appointment_type_options() -> list[dict]:
 
 def appointment_status_options() -> list[dict]:
     return [{"value": value, **meta} for value, meta in APPOINTMENT_STATUS_META.items()]
+
+
+def booking_routing_mode_meta(routing_mode: str) -> dict:
+    if not routing_mode:
+        routing_mode = "specific_clinician"
+    return BOOKING_ROUTING_MODE_META.get(
+        routing_mode,
+        {"label": routing_mode.replace("_", " ").title()},
+    )
+
+
+def build_appointment_service_item(row) -> dict:
+    price_amount = row["price_amount"] if "price_amount" in row.keys() else None
+    requires_payment = bool(row["requires_payment"]) if "requires_payment" in row.keys() else False
+    routing_mode = row["routing_mode"] if "routing_mode" in row.keys() else "specific_clinician"
+    appointment_type = row["appointment_type"] if "appointment_type" in row.keys() else "care_plan"
+    return {
+        "id": row["id"],
+        "service_key": row["service_key"],
+        "label": row["label"],
+        "description": row["description"] if "description" in row.keys() else "",
+        "appointment_type": appointment_type,
+        "appointment_type_label": appointment_type_meta(appointment_type)["label"],
+        "duration_minutes": row["duration_minutes"] if "duration_minutes" in row.keys() else 30,
+        "buffer_before_minutes": row["buffer_before_minutes"] if "buffer_before_minutes" in row.keys() else 0,
+        "buffer_after_minutes": row["buffer_after_minutes"] if "buffer_after_minutes" in row.keys() else 0,
+        "requires_payment": requires_payment,
+        "price_amount": price_amount,
+        "currency": row["currency"] if "currency" in row.keys() else "GBP",
+        "min_notice_minutes": row["min_notice_minutes"] if "min_notice_minutes" in row.keys() else 0,
+        "max_bookings_per_day": row["max_bookings_per_day"] if "max_bookings_per_day" in row.keys() else None,
+        "routing_mode": routing_mode,
+        "routing_mode_label": booking_routing_mode_meta(routing_mode)["label"],
+        "active": bool(row["active"]) if "active" in row.keys() else True,
+        "display_order": row["display_order"] if "display_order" in row.keys() else 0,
+        "price_label": f"{price_amount:.2f}" if isinstance(price_amount, (int, float)) else None,
+    }
+
+
+def appointment_service_options(active_only: bool = True) -> list[dict]:
+    return [build_appointment_service_item(row) for row in get_appointment_services(active_only=active_only)]
+
+
+def selected_appointment_service(
+    value: str | None = None,
+    *,
+    active_only: bool = True,
+    fallback_to_default: bool = True,
+):
+    selected_id = int_or_none(value)
+    services = appointment_service_options(active_only=active_only)
+    if isinstance(selected_id, int):
+        for service in services:
+            if service["id"] == selected_id:
+                return service
+    return services[0] if services and fallback_to_default else None
+
+
+def default_service_for_appointment_type(appointment_type: str):
+    for service in appointment_service_options(active_only=True):
+        if service["appointment_type"] == appointment_type:
+            return service
+    return None
+
+
+def resolve_booking_policy(
+    service: dict | None,
+    appointment_type: str | None,
+    duration_minutes: int | None,
+) -> dict:
+    if service is not None:
+        return {
+            "service_id": service["id"],
+            "service_key": service["service_key"],
+            "service_label": service["label"],
+            "appointment_type": service["appointment_type"],
+            "duration_minutes": service["duration_minutes"],
+            "buffer_before_minutes": service["buffer_before_minutes"],
+            "buffer_after_minutes": service["buffer_after_minutes"],
+            "requires_payment": service["requires_payment"],
+            "price_amount": service["price_amount"],
+            "currency": service["currency"],
+            "min_notice_minutes": service["min_notice_minutes"],
+            "max_bookings_per_day": service["max_bookings_per_day"],
+            "routing_mode": service["routing_mode"],
+            "routing_mode_label": service["routing_mode_label"],
+        }
+
+    safe_type = appointment_type if appointment_type in APPOINTMENT_TYPE_META else "care_plan"
+    safe_duration = duration_minutes if isinstance(duration_minutes, int) and duration_is_supported(duration_minutes) else default_duration_for_type(safe_type)
+    return {
+        "service_id": None,
+        "service_key": None,
+        "service_label": appointment_type_meta(safe_type)["label"],
+        "appointment_type": safe_type,
+        "duration_minutes": safe_duration,
+        "buffer_before_minutes": 0,
+        "buffer_after_minutes": 0,
+        "requires_payment": False,
+        "price_amount": None,
+        "currency": "GBP",
+        "min_notice_minutes": 0,
+        "max_bookings_per_day": None,
+        "routing_mode": "specific_clinician",
+        "routing_mode_label": booking_routing_mode_meta("specific_clinician")["label"],
+    }
 
 
 def billing_status_meta(status: str) -> dict:
@@ -871,6 +1151,13 @@ def selected_clinician_user_id(value: str | None = None) -> int | None:
     return options[0]["value"] if options else None
 
 
+def requested_clinician_user_id(value: str | None = None, *, allow_any: bool = False) -> int | None:
+    raw = (value or "").strip().lower()
+    if allow_any and raw in {"", "any", "team"}:
+        return None
+    return selected_clinician_user_id(value)
+
+
 def weekday_label(weekday: int) -> str:
     for option in WEEKDAY_OPTIONS:
         if option["value"] == weekday:
@@ -915,11 +1202,23 @@ def build_weekly_schedule_context() -> list[dict]:
     ]
 
 
-def next_booking_date(clinician_user_id: int | None = None, location_id: int | None = None) -> str:
+def next_booking_date(
+    clinician_user_id: int | None = None,
+    location_id: int | None = None,
+    booking_policy: dict | None = None,
+) -> str:
+    policy = booking_policy or resolve_booking_policy(None, "care_plan", 30)
     today = date.today()
-    for offset in range(0, 14):
+    for offset in range(0, 21):
         candidate = today + timedelta(days=offset)
-        if build_schedule_availability(candidate.isoformat(), clinician_user_id, location_id, 30)["shift_windows"]:
+        availability = build_schedule_availability(
+            candidate.isoformat(),
+            clinician_user_id,
+            location_id,
+            policy["duration_minutes"],
+            booking_policy=policy,
+        )
+        if availability["available_slots"]:
             return candidate.isoformat()
     return today.isoformat()
 
@@ -928,28 +1227,29 @@ def overlaps(start_a: datetime, end_a: datetime, start_b: datetime, end_b: datet
     return start_a < end_b and start_b < end_a
 
 
-def build_schedule_availability(
-    target_date_value: str | None,
-    clinician_user_id: int | None,
+def build_schedule_availability_for_clinician(
+    target_date: date,
+    clinician_user_id: int,
     location_id: int | None,
-    duration_minutes: int,
+    booking_policy: dict,
     *,
     exclude_appointment_id: int | None = None,
 ) -> dict:
-    target_date = date_from_value(target_date_value)
-    if target_date is None:
-        return {
-            "date_value": target_date_value or "",
-            "date_label": target_date_value or "",
-            "location_id": location_id,
-            "available_slots": [],
-            "shift_windows": [],
-            "downtime_windows": [],
-            "booked_windows": [],
-            "error": "Choose a valid date.",
-        }
-
+    duration_minutes = booking_policy["duration_minutes"]
     duration = timedelta(minutes=duration_minutes)
+    buffer_before = timedelta(minutes=max(int(booking_policy["buffer_before_minutes"] or 0), 0))
+    buffer_after = timedelta(minutes=max(int(booking_policy["buffer_after_minutes"] or 0), 0))
+    min_notice = timedelta(minutes=max(int(booking_policy["min_notice_minutes"] or 0), 0))
+    max_bookings_per_day = booking_policy["max_bookings_per_day"]
+    if not isinstance(max_bookings_per_day, int):
+        max_bookings_per_day = None
+
+    clinician_name = None
+    for option in clinician_options():
+        if option["value"] == clinician_user_id:
+            clinician_name = option["label"]
+            break
+
     window_rows = get_schedule_windows_for_day(target_date.weekday(), clinician_user_id, location_id)
     shift_windows = []
     downtime_windows = []
@@ -970,6 +1270,8 @@ def build_schedule_availability(
             "location_id": row["location_id"],
             "starts_at": start_at,
             "ends_at": end_at,
+            "clinician_user_id": clinician_user_id,
+            "clinician_name": clinician_name,
         }
         if row["window_type"] == "shift":
             shift_windows.append(item)
@@ -983,18 +1285,41 @@ def build_schedule_availability(
         exclude_appointment_id=exclude_appointment_id,
     ):
         starts_at = parse_iso(row["starts_at"])
-        ends_at = parse_iso(row["ends_at"]) or (starts_at + duration if starts_at else None)
+        default_minutes = row["service_duration_minutes"] or default_duration_for_type(row["appointment_type"])
+        ends_at = parse_iso(row["ends_at"]) or (starts_at + timedelta(minutes=default_minutes) if starts_at else None)
         if starts_at is None or ends_at is None:
             continue
+
+        existing_buffer_before = timedelta(minutes=max(int(row["service_buffer_before_minutes"] or 0), 0))
+        existing_buffer_after = timedelta(minutes=max(int(row["service_buffer_after_minutes"] or 0), 0))
+        blocked_start = starts_at - existing_buffer_before
+        blocked_end = ends_at + existing_buffer_after
         booked_windows.append(
             {
                 "id": row["id"],
-                "label": appointment_type_meta(row["appointment_type"])["label"],
+                "label": row["service_label"] or appointment_type_meta(row["appointment_type"])["label"],
                 "time_label": f"{starts_at.strftime('%H:%M')} - {ends_at.strftime('%H:%M')}",
                 "starts_at": starts_at,
                 "ends_at": ends_at,
+                "blocked_starts_at": blocked_start,
+                "blocked_ends_at": blocked_end,
+                "clinician_user_id": clinician_user_id,
+                "clinician_name": clinician_name,
             }
         )
+
+    daily_booking_count = len(booked_windows)
+    if max_bookings_per_day is not None and daily_booking_count >= max_bookings_per_day:
+        return {
+            "available_slots": [],
+            "shift_windows": shift_windows,
+            "downtime_windows": downtime_windows,
+            "booked_windows": booked_windows,
+            "daily_booking_count": daily_booking_count,
+            "max_bookings_per_day": max_bookings_per_day,
+            "clinician_user_id": clinician_user_id,
+            "clinician_name": clinician_name,
+        }
 
     available_slots = []
     seen_values = set()
@@ -1004,14 +1329,20 @@ def build_schedule_availability(
         last_start = shift_window["ends_at"] - duration
         while slot_start <= last_start:
             slot_end = slot_start + duration
+            blocked_start = slot_start - buffer_before
+            blocked_end = slot_end + buffer_after
             slot_value = format_datetime_local(slot_start)
-            if slot_start.date() == now.date() and slot_start <= now:
+
+            if slot_start <= now + min_notice:
                 slot_start += timedelta(minutes=SLOT_INCREMENT_MINUTES)
                 continue
-            if any(overlaps(slot_start, slot_end, item["starts_at"], item["ends_at"]) for item in downtime_windows):
+            if blocked_start < shift_window["starts_at"] or blocked_end > shift_window["ends_at"]:
                 slot_start += timedelta(minutes=SLOT_INCREMENT_MINUTES)
                 continue
-            if any(overlaps(slot_start, slot_end, item["starts_at"], item["ends_at"]) for item in booked_windows):
+            if any(overlaps(blocked_start, blocked_end, item["starts_at"], item["ends_at"]) for item in downtime_windows):
+                slot_start += timedelta(minutes=SLOT_INCREMENT_MINUTES)
+                continue
+            if any(overlaps(blocked_start, blocked_end, item["blocked_starts_at"], item["blocked_ends_at"]) for item in booked_windows):
                 slot_start += timedelta(minutes=SLOT_INCREMENT_MINUTES)
                 continue
             if slot_value not in seen_values:
@@ -1021,20 +1352,154 @@ def build_schedule_availability(
                         "label": f"{slot_start.strftime('%H:%M')} - {slot_end.strftime('%H:%M')}",
                         "start_label": slot_start.strftime("%H:%M"),
                         "end_label": slot_end.strftime("%H:%M"),
+                        "clinician_user_id": clinician_user_id,
+                        "clinician_name": clinician_name,
                     }
                 )
                 seen_values.add(slot_value)
             slot_start += timedelta(minutes=SLOT_INCREMENT_MINUTES)
 
     return {
-        "date_value": target_date.isoformat(),
-        "date_label": target_date.strftime("%A %d %B %Y"),
-        "location_id": location_id,
         "available_slots": available_slots,
         "shift_windows": shift_windows,
         "downtime_windows": downtime_windows,
         "booked_windows": booked_windows,
-        "error": None,
+        "daily_booking_count": daily_booking_count,
+        "max_bookings_per_day": max_bookings_per_day,
+        "clinician_user_id": clinician_user_id,
+        "clinician_name": clinician_name,
+    }
+
+
+def build_schedule_availability(
+    target_date_value: str | None,
+    clinician_user_id: int | None,
+    location_id: int | None,
+    duration_minutes: int,
+    *,
+    booking_policy: dict | None = None,
+    exclude_appointment_id: int | None = None,
+) -> dict:
+    policy = booking_policy or resolve_booking_policy(None, "care_plan", duration_minutes)
+    target_date = date_from_value(target_date_value)
+    if target_date is None:
+        return {
+            "date_value": target_date_value or "",
+            "date_label": target_date_value or "",
+            "location_id": location_id,
+            "duration_minutes": policy["duration_minutes"],
+            "buffer_before_minutes": policy["buffer_before_minutes"],
+            "buffer_after_minutes": policy["buffer_after_minutes"],
+            "min_notice_minutes": policy["min_notice_minutes"],
+            "max_bookings_per_day": policy["max_bookings_per_day"],
+            "routing_mode": policy["routing_mode"],
+            "routing_mode_label": policy["routing_mode_label"],
+            "service_id": policy["service_id"],
+            "service_label": policy["service_label"],
+            "appointment_type": policy["appointment_type"],
+            "requires_payment": policy["requires_payment"],
+            "price_amount": policy["price_amount"],
+            "currency": policy["currency"],
+            "available_slots": [],
+            "shift_windows": [],
+            "downtime_windows": [],
+            "booked_windows": [],
+            "error": "Choose a valid date.",
+        }
+
+    routing_mode = policy["routing_mode"]
+    if routing_mode == "team_round_robin" and clinician_user_id is None:
+        clinician_ids = [option["value"] for option in clinician_options()]
+    elif clinician_user_id is not None:
+        clinician_ids = [clinician_user_id]
+    else:
+        fallback_clinician = selected_clinician_user_id()
+        clinician_ids = [fallback_clinician] if fallback_clinician is not None else []
+
+    per_clinician = []
+    for current_clinician_id in clinician_ids:
+        if current_clinician_id is None:
+            continue
+        per_clinician.append(
+            build_schedule_availability_for_clinician(
+                target_date,
+                current_clinician_id,
+                location_id,
+                policy,
+                exclude_appointment_id=exclude_appointment_id,
+            )
+        )
+
+    available_slots = []
+    shift_windows = []
+    downtime_windows = []
+    booked_windows = []
+
+    if routing_mode == "team_round_robin" and len(per_clinician) > 1:
+        slot_choices: dict[str, list[dict]] = {}
+        booking_load = get_clinician_booking_count_by_date(target_date.isoformat())
+        for availability in per_clinician:
+            shift_windows.extend(availability["shift_windows"])
+            downtime_windows.extend(availability["downtime_windows"])
+            booked_windows.extend(availability["booked_windows"])
+            for slot in availability["available_slots"]:
+                slot_choices.setdefault(slot["value"], []).append(slot)
+
+        for slot_value in sorted(slot_choices.keys()):
+            candidates = slot_choices[slot_value]
+            selected_slot = min(
+                candidates,
+                key=lambda slot_item: (
+                    booking_load.get(slot_item["clinician_user_id"], 0),
+                    slot_item["clinician_name"] or "",
+                    slot_item["clinician_user_id"],
+                ),
+            )
+            slot_label = selected_slot["label"]
+            if selected_slot["clinician_name"]:
+                slot_label = f"{slot_label} · {selected_slot['clinician_name']}"
+            available_slots.append(
+                {
+                    **selected_slot,
+                    "label": slot_label,
+                }
+            )
+    else:
+        for availability in per_clinician:
+            shift_windows.extend(availability["shift_windows"])
+            downtime_windows.extend(availability["downtime_windows"])
+            booked_windows.extend(availability["booked_windows"])
+            available_slots.extend(availability["available_slots"])
+        available_slots.sort(key=lambda item: (item["value"], item.get("clinician_name") or ""))
+
+    error = None
+    if not clinician_ids:
+        error = "No chiropractor accounts are available for booking."
+    elif not per_clinician:
+        error = "No chiropractor availability could be loaded."
+
+    return {
+        "date_value": target_date.isoformat(),
+        "date_label": target_date.strftime("%A %d %B %Y"),
+        "location_id": location_id,
+        "duration_minutes": policy["duration_minutes"],
+        "buffer_before_minutes": policy["buffer_before_minutes"],
+        "buffer_after_minutes": policy["buffer_after_minutes"],
+        "min_notice_minutes": policy["min_notice_minutes"],
+        "max_bookings_per_day": policy["max_bookings_per_day"],
+        "routing_mode": policy["routing_mode"],
+        "routing_mode_label": policy["routing_mode_label"],
+        "service_id": policy["service_id"],
+        "service_label": policy["service_label"],
+        "appointment_type": policy["appointment_type"],
+        "requires_payment": policy["requires_payment"],
+        "price_amount": policy["price_amount"],
+        "currency": policy["currency"],
+        "available_slots": available_slots,
+        "shift_windows": shift_windows,
+        "downtime_windows": downtime_windows,
+        "booked_windows": booked_windows,
+        "error": error,
     }
 
 
@@ -1044,7 +1509,30 @@ def serialize_schedule_availability(availability: dict) -> dict:
         "date_label": availability["date_label"],
         "location_id": availability["location_id"],
         "error": availability["error"],
-        "available_slots": availability["available_slots"],
+        "duration_minutes": availability["duration_minutes"],
+        "buffer_before_minutes": availability["buffer_before_minutes"],
+        "buffer_after_minutes": availability["buffer_after_minutes"],
+        "min_notice_minutes": availability["min_notice_minutes"],
+        "max_bookings_per_day": availability["max_bookings_per_day"],
+        "routing_mode": availability["routing_mode"],
+        "routing_mode_label": availability["routing_mode_label"],
+        "service_id": availability["service_id"],
+        "service_label": availability["service_label"],
+        "appointment_type": availability["appointment_type"],
+        "requires_payment": availability["requires_payment"],
+        "price_amount": availability["price_amount"],
+        "currency": availability["currency"],
+        "available_slots": [
+            {
+                "value": item["value"],
+                "label": item["label"],
+                "start_label": item["start_label"],
+                "end_label": item["end_label"],
+                "clinician_user_id": item.get("clinician_user_id"),
+                "clinician_name": item.get("clinician_name"),
+            }
+            for item in availability["available_slots"]
+        ],
         "shift_windows": [
             {
                 "id": item["id"],
@@ -1053,6 +1541,8 @@ def serialize_schedule_availability(availability: dict) -> dict:
                 "window_type": item["window_type"],
                 "window_type_label": item["window_type_label"],
                 "window_tone": item["window_tone"],
+                "clinician_user_id": item.get("clinician_user_id"),
+                "clinician_name": item.get("clinician_name"),
             }
             for item in availability["shift_windows"]
         ],
@@ -1064,6 +1554,8 @@ def serialize_schedule_availability(availability: dict) -> dict:
                 "window_type": item["window_type"],
                 "window_type_label": item["window_type_label"],
                 "window_tone": item["window_tone"],
+                "clinician_user_id": item.get("clinician_user_id"),
+                "clinician_name": item.get("clinician_name"),
             }
             for item in availability["downtime_windows"]
         ],
@@ -1072,10 +1564,35 @@ def serialize_schedule_availability(availability: dict) -> dict:
                 "id": item["id"],
                 "label": item["label"],
                 "time_label": item["time_label"],
+                "clinician_user_id": item.get("clinician_user_id"),
+                "clinician_name": item.get("clinician_name"),
             }
             for item in availability["booked_windows"]
         ],
     }
+
+
+def resolve_slot_assignment(
+    starts_at: datetime,
+    clinician_user_id: int | None,
+    location_id: int | None,
+    booking_policy: dict,
+    *,
+    exclude_appointment_id: int | None = None,
+):
+    availability = build_schedule_availability(
+        starts_at.date().isoformat(),
+        clinician_user_id,
+        location_id,
+        booking_policy["duration_minutes"],
+        booking_policy=booking_policy,
+        exclude_appointment_id=exclude_appointment_id,
+    )
+    slot_value = format_datetime_local(starts_at)
+    for slot in availability["available_slots"]:
+        if slot["value"] == slot_value:
+            return slot
+    return None
 
 
 def slot_is_available(
@@ -1084,17 +1601,17 @@ def slot_is_available(
     location_id: int | None,
     duration_minutes: int,
     *,
+    booking_policy: dict | None = None,
     exclude_appointment_id: int | None = None,
 ) -> bool:
-    availability = build_schedule_availability(
-        starts_at.date().isoformat(),
+    policy = booking_policy or resolve_booking_policy(None, "care_plan", duration_minutes)
+    return resolve_slot_assignment(
+        starts_at,
         clinician_user_id,
         location_id,
-        duration_minutes,
+        policy,
         exclude_appointment_id=exclude_appointment_id,
-    )
-    slot_value = format_datetime_local(starts_at)
-    return slot_value in {item["value"] for item in availability["available_slots"]}
+    ) is not None
 
 
 def reminder_channel_meta(channel: str) -> dict:
@@ -1176,6 +1693,32 @@ def build_reminder_delivery_item(row) -> dict:
     }
 
 
+def build_booking_event_item(row) -> dict:
+    event_type = row["event_type"]
+    payload_json = row["payload_json"] or "{}"
+    try:
+        payload = json.loads(payload_json)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        payload = {}
+    return {
+        "id": row["id"],
+        "event_type": event_type,
+        "event_label": event_type.replace("_", " ").title(),
+        "appointment_id": row["appointment_id"],
+        "appointment_type": row["appointment_type"],
+        "appointment_type_label": appointment_type_meta(row["appointment_type"])["label"] if row["appointment_type"] else "Unknown",
+        "service_label": row["service_label_snapshot"] or payload.get("service_label") or "Unspecified service",
+        "patient_user_id": row["patient_user_id"],
+        "patient_name": f"{row['patient_first_name']} {row['patient_last_name']}".strip() if row["patient_first_name"] else "Unknown patient",
+        "starts_at": row["starts_at"],
+        "starts_label": format_schedule(row["starts_at"]) if row["starts_at"] else None,
+        "created_at": row["created_at"],
+        "created_label": format_schedule(row["created_at"]) or row["created_at"],
+        "delivery_status": row["delivery_status"],
+        "payload": payload,
+    }
+
+
 def log_appointment_reminder(
     appointment: dict,
     channel: str,
@@ -1246,6 +1789,39 @@ def build_appointment_item(row) -> dict:
     type_meta = appointment_type_meta(row["appointment_type"])
     status_meta = appointment_status_meta(row["status"])
     billing_meta = billing_status_meta(row["billing_status"]) if "billing_status" in row.keys() else billing_status_meta("pending")
+    service_id = row["service_id"] if "service_id" in row.keys() else None
+    service_key = row["service_key"] if "service_key" in row.keys() else None
+    service_label = (
+        (row["service_label"] if "service_label" in row.keys() else None)
+        or (row["service_label_snapshot"] if "service_label_snapshot" in row.keys() else "")
+        or type_meta["label"]
+    )
+    service_duration_minutes = (row["service_duration_minutes"] if "service_duration_minutes" in row.keys() else None) or None
+    service_buffer_before_minutes = (row["service_buffer_before_minutes"] if "service_buffer_before_minutes" in row.keys() else 0) or 0
+    service_buffer_after_minutes = (row["service_buffer_after_minutes"] if "service_buffer_after_minutes" in row.keys() else 0) or 0
+    service_min_notice_minutes = (row["service_min_notice_minutes"] if "service_min_notice_minutes" in row.keys() else 0) or 0
+    service_max_bookings_per_day = (row["service_max_bookings_per_day"] if "service_max_bookings_per_day" in row.keys() else None) or None
+    service_routing_mode = (row["service_routing_mode"] if "service_routing_mode" in row.keys() else "specific_clinician") or "specific_clinician"
+    service_currency = (row["service_currency"] if "service_currency" in row.keys() else "GBP") or "GBP"
+    service_price_amount = row["service_price_amount"] if "service_price_amount" in row.keys() else None
+    requires_payment = bool(row["requires_payment"]) if "requires_payment" in row.keys() else bool(row["service_requires_payment"] if "service_requires_payment" in row.keys() else 0)
+    payment_status = row["payment_status"] if "payment_status" in row.keys() else ("pending" if requires_payment else "not_required")
+    payment_amount = row["payment_amount"] if "payment_amount" in row.keys() else service_price_amount
+    policy_snapshot = {}
+    if "policy_snapshot_json" in row.keys() and row["policy_snapshot_json"]:
+        try:
+            policy_snapshot = json.loads(row["policy_snapshot_json"])
+        except (TypeError, ValueError, json.JSONDecodeError):
+            policy_snapshot = {}
+    min_notice_value = policy_snapshot.get("min_notice_minutes", service_min_notice_minutes)
+    policy_min_notice_minutes = int(min_notice_value) if isinstance(min_notice_value, int) else 0
+    cancellation_cutoff = starts_parsed - timedelta(minutes=policy_min_notice_minutes) if starts_parsed else None
+    can_self_cancel = bool(
+        starts_parsed
+        and row["status"] == "scheduled"
+        and cancellation_cutoff is not None
+        and datetime.now() <= cancellation_cutoff
+    )
     patient_name = None
     patient_first_name = None
     patient_last_name = None
@@ -1298,6 +1874,24 @@ def build_appointment_item(row) -> dict:
         "month_key": starts_parsed.strftime("%Y-%m") if starts_parsed else starts_at[:7],
         "location_id": row["location_id"] if "location_id" in row.keys() else None,
         "location_name": row["location_name"] if "location_name" in row.keys() else None,
+        "service_id": service_id,
+        "service_key": service_key,
+        "service_label": service_label,
+        "service_description": row["service_description"] if "service_description" in row.keys() else "",
+        "service_duration_minutes": service_duration_minutes,
+        "service_buffer_before_minutes": service_buffer_before_minutes,
+        "service_buffer_after_minutes": service_buffer_after_minutes,
+        "service_min_notice_minutes": service_min_notice_minutes,
+        "service_max_bookings_per_day": service_max_bookings_per_day,
+        "service_routing_mode": service_routing_mode,
+        "service_routing_mode_label": booking_routing_mode_meta(service_routing_mode)["label"],
+        "service_currency": service_currency,
+        "service_price_amount": service_price_amount,
+        "policy_snapshot": policy_snapshot,
+        "policy_min_notice_minutes": policy_min_notice_minutes,
+        "cancellation_cutoff_at": format_datetime_local(cancellation_cutoff),
+        "can_self_cancel": can_self_cancel,
+        "cancellation_policy_label": f"Changes allowed until {format_schedule(format_datetime_local(cancellation_cutoff))}" if cancellation_cutoff else None,
         "note": row["note"] or "",
         "patient_details": row["patient_details"] if "patient_details" in row.keys() else "",
         "clinical_note": row["clinical_note"] if "clinical_note" in row.keys() else "",
@@ -1306,6 +1900,10 @@ def build_appointment_item(row) -> dict:
         "billing_status_tone": billing_meta["tone"],
         "billing_code": row["billing_code"] if "billing_code" in row.keys() else "",
         "billing_amount": row["billing_amount"] if "billing_amount" in row.keys() else None,
+        "requires_payment": requires_payment,
+        "payment_status": payment_status,
+        "payment_amount": payment_amount,
+        "booking_channel": row["booking_channel"] if "booking_channel" in row.keys() else "portal",
         "booking_source": row["booking_source"] if "booking_source" in row.keys() else "staff_portal",
         "is_upcoming": bool(starts_parsed and row["status"] == "scheduled" and starts_parsed >= now),
         "patient_name": patient_name,
@@ -1342,6 +1940,14 @@ def serialize_appointment_for_api(item: dict, *, include_internal: bool = False)
         "clinician_user_id": item["clinician_user_id"],
         "location_id": item["location_id"],
         "location_name": item["location_name"],
+        "service_id": item["service_id"],
+        "service_key": item["service_key"],
+        "service_label": item["service_label"],
+        "service_duration_minutes": item["service_duration_minutes"],
+        "service_buffer_before_minutes": item["service_buffer_before_minutes"],
+        "service_buffer_after_minutes": item["service_buffer_after_minutes"],
+        "service_routing_mode": item["service_routing_mode"],
+        "service_routing_mode_label": item["service_routing_mode_label"],
         "appointment_type": item["type"],
         "appointment_type_label": item["type_label"],
         "status": item["status"],
@@ -1360,6 +1966,12 @@ def serialize_appointment_for_api(item: dict, *, include_internal: bool = False)
         "billing_status_label": item["billing_status_label"],
         "billing_code": item["billing_code"],
         "billing_amount": item["billing_amount"],
+        "requires_payment": item["requires_payment"],
+        "payment_status": item["payment_status"],
+        "payment_amount": item["payment_amount"],
+        "booking_channel": item["booking_channel"],
+        "can_self_cancel": item["can_self_cancel"],
+        "cancellation_cutoff_at": item["cancellation_cutoff_at"],
     }
     if include_internal:
         data["clinical_note"] = item["clinical_note"]
@@ -1439,6 +2051,20 @@ def build_staff_calendar_context(month_value: str | None = None) -> dict:
         if item["type"] in {"report_of_findings", "care_plan"} and item["reminder_bucket"] in {"urgent", "soon", "week"}
     ]
     reminders = [decorate_appointment_contacts(item) for item in reminders[:12]]
+    service_inventory = appointment_service_options(active_only=False)
+    service_counts: dict[int, int] = {}
+    for item in upcoming:
+        service_id = item.get("service_id")
+        if isinstance(service_id, int):
+            service_counts[service_id] = service_counts.get(service_id, 0) + 1
+    for service in service_inventory:
+        service["upcoming_count"] = service_counts.get(service["id"], 0)
+    booking_events = [build_booking_event_item(row) for row in get_recent_booking_events(limit=40)]
+    event_counts = {
+        "pending": sum(1 for item in booking_events if item["delivery_status"] == "pending"),
+        "delivered": sum(1 for item in booking_events if item["delivery_status"] == "delivered"),
+        "failed": sum(1 for item in booking_events if item["delivery_status"] == "failed"),
+    }
     return {
         "appointments": appointments,
         "upcoming": upcoming[:12],
@@ -1447,6 +2073,9 @@ def build_staff_calendar_context(month_value: str | None = None) -> dict:
         "reminders": reminders,
         "locations": [dict(row) for row in get_locations(active_only=False)],
         "schedule_templates": build_weekly_schedule_context(),
+        "service_inventory": service_inventory,
+        "booking_events": booking_events[:12],
+        "booking_event_counts": event_counts,
     }
 
 
@@ -1468,26 +2097,56 @@ def build_staff_reminders_context() -> dict:
 
 
 def booking_selection_context(source: str = "client") -> dict:
-    selected_appointment_type = request.args.get("appointment_type", "care_plan").strip() or "care_plan"
+    service_options = appointment_service_options(active_only=True)
+    selected_service = selected_appointment_service(request.args.get("service_id"), active_only=True, fallback_to_default=True)
+    selected_appointment_type = request.args.get("appointment_type", "").strip()
+    if selected_service is not None and not selected_appointment_type:
+        selected_appointment_type = selected_service["appointment_type"]
     if selected_appointment_type not in APPOINTMENT_TYPE_META:
         selected_appointment_type = "care_plan"
     selected_location = selected_location_id(request.args.get("location_id"))
-    selected_clinician = selected_clinician_user_id(request.args.get("clinician_user_id"))
     selected_duration = int_or_none(
-        request.args.get("duration_minutes", str(default_duration_for_type(selected_appointment_type)))
+        request.args.get(
+            "duration_minutes",
+            str(selected_service["duration_minutes"] if selected_service else default_duration_for_type(selected_appointment_type)),
+        )
     )
     if not isinstance(selected_duration, int) or not duration_is_supported(selected_duration):
-        selected_duration = default_duration_for_type(selected_appointment_type)
-    booking_date = request.args.get("appointment_date") or next_booking_date(selected_clinician, selected_location)
-    availability = build_schedule_availability(booking_date, selected_clinician, selected_location, selected_duration)
+        selected_duration = selected_service["duration_minutes"] if selected_service else default_duration_for_type(selected_appointment_type)
+    booking_policy = resolve_booking_policy(selected_service, selected_appointment_type, selected_duration)
+
+    raw_clinician_value = request.args.get("clinician_user_id")
+    selected_clinician = requested_clinician_user_id(
+        raw_clinician_value,
+        allow_any=booking_policy["routing_mode"] == "team_round_robin",
+    )
+    if booking_policy["routing_mode"] == "team_round_robin" and (raw_clinician_value or "").strip().lower() in {"", "any", "team"}:
+        selected_clinician = None
+        selected_clinician_choice = "any"
+    else:
+        selected_clinician_choice = str(selected_clinician) if selected_clinician is not None else ""
+
+    booking_date = request.args.get("appointment_date") or next_booking_date(selected_clinician, selected_location, booking_policy)
+    availability = build_schedule_availability(
+        booking_date,
+        selected_clinician,
+        selected_location,
+        booking_policy["duration_minutes"],
+        booking_policy=booking_policy,
+    )
     return {
         "location_options": location_options(),
         "clinician_options": clinician_options(),
+        "service_options": service_options,
         "duration_options": appointment_duration_options(),
         "selected_location_id": selected_location,
         "selected_clinician_id": selected_clinician,
-        "selected_duration_minutes": selected_duration,
+        "selected_clinician_choice": selected_clinician_choice,
+        "selected_duration_minutes": booking_policy["duration_minutes"],
         "selected_appointment_type": selected_appointment_type,
+        "selected_service_id": selected_service["id"] if selected_service else None,
+        "booking_policy": booking_policy,
+        "allow_any_clinician": booking_policy["routing_mode"] == "team_round_robin",
         "booking_date": booking_date,
         "booking_availability": availability,
         "booking_source": source,
@@ -1501,6 +2160,7 @@ def create_patient_appointment(
     appointment_type: str,
     starts_at: str,
     *,
+    service_id: int | None = None,
     ends_at: str | None = None,
     note: str = "",
     patient_details: str = "",
@@ -1508,17 +2168,27 @@ def create_patient_appointment(
     billing_status: str = "pending",
     billing_code: str = "",
     billing_amount: float | None = None,
+    requires_payment: bool = False,
+    payment_status: str | None = None,
+    payment_amount: float | None = None,
+    booking_channel: str = "portal",
+    service_label_snapshot: str = "",
+    policy_snapshot: dict | None = None,
     booking_source: str = "staff_portal",
     status: str = "scheduled",
     source_invitation_id: int | None = None,
 ) -> int:
     now = iso_now()
+    resolved_payment_status = payment_status or ("pending" if requires_payment else "not_required")
+    resolved_service_label = service_label_snapshot or appointment_type_meta(appointment_type)["label"]
+    policy_snapshot_json = json.dumps(policy_snapshot or {}, separators=(",", ":"))
     cursor = get_db().execute(
         """
         INSERT INTO appointments (
             patient_user_id,
             clinician_user_id,
             location_id,
+            service_id,
             appointment_type,
             status,
             starts_at,
@@ -1530,16 +2200,23 @@ def create_patient_appointment(
             billing_status,
             billing_code,
             billing_amount,
+            requires_payment,
+            payment_status,
+            payment_amount,
+            booking_channel,
+            service_label_snapshot,
+            policy_snapshot_json,
             booking_source,
             created_at,
             updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             patient_user_id,
             clinician_user_id,
             location_id,
+            service_id,
             appointment_type,
             status,
             starts_at,
@@ -1551,6 +2228,12 @@ def create_patient_appointment(
             billing_status,
             billing_code,
             billing_amount,
+            int(bool(requires_payment)),
+            resolved_payment_status,
+            payment_amount,
+            booking_channel,
+            resolved_service_label,
+            policy_snapshot_json,
             booking_source,
             now,
             now,
@@ -1594,12 +2277,20 @@ def ensure_patient_appointment(
     if existing is not None:
         return existing["id"]
 
+    service = default_service_for_appointment_type(appointment_type)
+    booking_policy = resolve_booking_policy(service, appointment_type, None)
     return create_patient_appointment(
         patient_user_id,
         clinician_user_id,
         location_id,
         appointment_type,
         starts_at,
+        service_id=booking_policy["service_id"],
+        requires_payment=booking_policy["requires_payment"],
+        payment_status="pending" if booking_policy["requires_payment"] else "not_required",
+        payment_amount=booking_policy["price_amount"],
+        service_label_snapshot=booking_policy["service_label"],
+        policy_snapshot=booking_policy,
         note=note,
         source_invitation_id=source_invitation_id,
     )
@@ -1637,12 +2328,20 @@ def complete_initial_consult_appointment(patient_user_id: int, clinician_user_id
         )
         return
 
+    service = default_service_for_appointment_type("initial_consult")
+    booking_policy = resolve_booking_policy(service, "initial_consult", None)
     create_patient_appointment(
         patient_user_id,
         clinician_user_id,
         default_location_id(),
         "initial_consult",
         visit_date,
+        service_id=booking_policy["service_id"],
+        requires_payment=booking_policy["requires_payment"],
+        payment_status="pending" if booking_policy["requires_payment"] else "not_required",
+        payment_amount=booking_policy["price_amount"],
+        service_label_snapshot=booking_policy["service_label"],
+        policy_snapshot=booking_policy,
         status="completed",
     )
 
@@ -1794,16 +2493,45 @@ def staff_patient_context(user_id: int):
 
     clinicians = clinician_options()
     locations = location_options()
-    selected_clinician_id = selected_clinician_user_id(request.args.get("clinician_user_id"))
     selected_location = selected_location_id(request.args.get("location_id"))
-    selected_appointment_type = request.args.get("appointment_type", "initial_consult").strip() or "initial_consult"
+    service_options = appointment_service_options(active_only=True)
+    selected_service = selected_appointment_service(request.args.get("service_id"), active_only=True, fallback_to_default=True)
+    selected_appointment_type = request.args.get("appointment_type", "").strip()
+    if selected_service is not None and not selected_appointment_type:
+        selected_appointment_type = selected_service["appointment_type"]
+    if not selected_appointment_type:
+        selected_appointment_type = "initial_consult"
     if selected_appointment_type not in APPOINTMENT_TYPE_META:
         selected_appointment_type = "initial_consult"
-    selected_duration = int_or_none(request.args.get("duration_minutes", str(default_duration_for_type(selected_appointment_type))))
+    selected_duration = int_or_none(
+        request.args.get(
+            "duration_minutes",
+            str(selected_service["duration_minutes"] if selected_service else default_duration_for_type(selected_appointment_type)),
+        )
+    )
     if not isinstance(selected_duration, int) or not duration_is_supported(selected_duration):
-        selected_duration = default_duration_for_type(selected_appointment_type)
-    booking_date = request.args.get("appointment_date") or next_booking_date(selected_clinician_id, selected_location)
-    booking_availability = build_schedule_availability(booking_date, selected_clinician_id, selected_location, selected_duration)
+        selected_duration = selected_service["duration_minutes"] if selected_service else default_duration_for_type(selected_appointment_type)
+    booking_policy = resolve_booking_policy(selected_service, selected_appointment_type, selected_duration)
+
+    raw_clinician_value = request.args.get("clinician_user_id")
+    selected_clinician_id = requested_clinician_user_id(
+        raw_clinician_value,
+        allow_any=booking_policy["routing_mode"] == "team_round_robin",
+    )
+    if booking_policy["routing_mode"] == "team_round_robin" and (raw_clinician_value or "").strip().lower() in {"", "any", "team"}:
+        selected_clinician_id = None
+        selected_clinician_choice = "any"
+    else:
+        selected_clinician_choice = str(selected_clinician_id) if selected_clinician_id is not None else ""
+
+    booking_date = request.args.get("appointment_date") or next_booking_date(selected_clinician_id, selected_location, booking_policy)
+    booking_availability = build_schedule_availability(
+        booking_date,
+        selected_clinician_id,
+        selected_location,
+        booking_policy["duration_minutes"],
+        booking_policy=booking_policy,
+    )
 
     submission = get_submission_for_user(patient["id"])
     visit_report = get_visit_report_for_patient(patient["id"])
@@ -1844,10 +2572,15 @@ def staff_patient_context(user_id: int):
         "location_options": locations,
         "selected_location_id": selected_location,
         "selected_clinician_id": selected_clinician_id,
+        "selected_clinician_choice": selected_clinician_choice,
         "billing_status_options": billing_status_options(),
         "duration_options": appointment_duration_options(),
-        "selected_duration_minutes": selected_duration,
+        "selected_duration_minutes": booking_policy["duration_minutes"],
         "selected_appointment_type": selected_appointment_type,
+        "service_options": service_options,
+        "selected_service_id": selected_service["id"] if selected_service else None,
+        "booking_policy": booking_policy,
+        "allow_any_clinician": booking_policy["routing_mode"] == "team_round_robin",
         "booking_date": booking_date,
         "booking_availability": booking_availability,
         "appointment_type_options": appointment_type_options(),
@@ -2216,6 +2949,8 @@ def staff_calendar():
         "staff_calendar.html",
         appointment_type_options=appointment_type_options(),
         appointment_status_options=appointment_status_options(),
+        booking_routing_mode_options=[{"value": key, "label": value["label"]} for key, value in BOOKING_ROUTING_MODE_META.items()],
+        duration_options=appointment_duration_options(),
         clinician_options=clinician_options(),
         location_options=location_options(),
         weekday_options=weekday_options(),
@@ -2227,16 +2962,23 @@ def staff_calendar():
 @bp.get("/staff/availability")
 @staff_required
 def staff_schedule_availability():
-    clinician_user_id = selected_clinician_user_id(request.args.get("clinician_user_id"))
-    location_id = selected_location_id(request.args.get("location_id"))
+    selected_service = selected_appointment_service(request.args.get("service_id"), active_only=True, fallback_to_default=False)
+    appointment_type = request.args.get("appointment_type", "").strip()
     duration_minutes = int_or_none(request.args.get("duration_minutes", "30"))
-    if not isinstance(duration_minutes, int):
-        duration_minutes = 30
+    booking_policy = resolve_booking_policy(selected_service, appointment_type, duration_minutes if isinstance(duration_minutes, int) else None)
+    clinician_user_id = requested_clinician_user_id(
+        request.args.get("clinician_user_id"),
+        allow_any=booking_policy["routing_mode"] == "team_round_robin",
+    )
+    if booking_policy["routing_mode"] == "team_round_robin" and (request.args.get("clinician_user_id", "").strip().lower() in {"", "any", "team"}):
+        clinician_user_id = None
+    location_id = selected_location_id(request.args.get("location_id"))
     availability = build_schedule_availability(
         request.args.get("date"),
         clinician_user_id,
         location_id,
-        duration_minutes,
+        booking_policy["duration_minutes"],
+        booking_policy=booking_policy,
     )
     return jsonify(serialize_schedule_availability(availability))
 
@@ -2346,6 +3088,159 @@ def create_staff_location():
     return redirect(url_for("main.staff_calendar", month=request.form.get("month") or None))
 
 
+@bp.post("/staff/booking-services")
+@staff_required
+def create_or_update_staff_booking_service():
+    service_id = int_or_none(request.form.get("service_id"))
+    label = request.form.get("label", "").strip()
+    service_key = slugify_service_key(request.form.get("service_key", "").strip() or label)
+    description = request.form.get("description", "").strip()
+    appointment_type = request.form.get("appointment_type", "").strip()
+    duration_minutes = int_or_none(request.form.get("duration_minutes"))
+    buffer_before_minutes = int_or_none(request.form.get("buffer_before_minutes", "0"))
+    buffer_after_minutes = int_or_none(request.form.get("buffer_after_minutes", "0"))
+    min_notice_minutes = int_or_none(request.form.get("min_notice_minutes", "0"))
+    max_bookings_per_day = int_or_none(request.form.get("max_bookings_per_day", ""))
+    routing_mode = request.form.get("routing_mode", "").strip() or "specific_clinician"
+    requires_payment = request.form.get("requires_payment") == "on"
+    price_amount = float_or_none(request.form.get("price_amount"))
+    currency = (request.form.get("currency", "").strip() or "GBP").upper()
+    display_order = int_or_none(request.form.get("display_order", "0"))
+    active = 0 if request.form.get("active") == "0" else 1
+
+    error = None
+    if not label:
+        error = "Service label is required."
+    elif not service_key:
+        error = "Service key is required."
+    elif appointment_type not in APPOINTMENT_TYPE_META:
+        error = "Choose a valid appointment type."
+    elif not isinstance(duration_minutes, int) or not duration_is_supported(duration_minutes):
+        error = "Choose a supported appointment length."
+    elif not isinstance(buffer_before_minutes, int) or buffer_before_minutes < 0 or buffer_before_minutes > 120:
+        error = "Buffer before must be between 0 and 120 minutes."
+    elif not isinstance(buffer_after_minutes, int) or buffer_after_minutes < 0 or buffer_after_minutes > 120:
+        error = "Buffer after must be between 0 and 120 minutes."
+    elif not isinstance(min_notice_minutes, int) or min_notice_minutes < 0 or min_notice_minutes > 20160:
+        error = "Minimum notice must be between 0 and 20,160 minutes."
+    elif max_bookings_per_day not in (None, "") and (not isinstance(max_bookings_per_day, int) or max_bookings_per_day < 1 or max_bookings_per_day > 60):
+        error = "Max bookings/day must be between 1 and 60."
+    elif routing_mode not in BOOKING_ROUTING_MODE_META:
+        error = "Choose a valid routing mode."
+    elif requires_payment and not isinstance(price_amount, float):
+        error = "Enter a numeric price when payment is required."
+    elif not re.fullmatch(r"[A-Z]{3}", currency):
+        error = "Currency must be a 3-letter code."
+    elif not isinstance(display_order, int) or display_order < 0 or display_order > 1000:
+        error = "Display order must be between 0 and 1000."
+
+    db = get_db()
+    existing = get_appointment_service(service_id) if isinstance(service_id, int) else None
+    if error is None:
+        duplicate = db.execute(
+            "SELECT id FROM appointment_services WHERE service_key = ? LIMIT 1",
+            (service_key,),
+        ).fetchone()
+        if duplicate is not None and (existing is None or duplicate["id"] != existing["id"]):
+            error = "That service key already exists."
+
+    if error is None:
+        now = iso_now()
+        if existing is None:
+            db.execute(
+                """
+                INSERT INTO appointment_services (
+                    service_key,
+                    label,
+                    description,
+                    appointment_type,
+                    duration_minutes,
+                    buffer_before_minutes,
+                    buffer_after_minutes,
+                    requires_payment,
+                    price_amount,
+                    currency,
+                    min_notice_minutes,
+                    max_bookings_per_day,
+                    routing_mode,
+                    active,
+                    display_order,
+                    created_at,
+                    updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    service_key,
+                    label,
+                    description,
+                    appointment_type,
+                    duration_minutes,
+                    buffer_before_minutes,
+                    buffer_after_minutes,
+                    int(requires_payment),
+                    price_amount if isinstance(price_amount, float) else None,
+                    currency,
+                    min_notice_minutes,
+                    max_bookings_per_day if isinstance(max_bookings_per_day, int) else None,
+                    routing_mode,
+                    active,
+                    display_order,
+                    now,
+                    now,
+                ),
+            )
+            flash("Booking service added.", "success")
+        else:
+            db.execute(
+                """
+                UPDATE appointment_services
+                SET service_key = ?,
+                    label = ?,
+                    description = ?,
+                    appointment_type = ?,
+                    duration_minutes = ?,
+                    buffer_before_minutes = ?,
+                    buffer_after_minutes = ?,
+                    requires_payment = ?,
+                    price_amount = ?,
+                    currency = ?,
+                    min_notice_minutes = ?,
+                    max_bookings_per_day = ?,
+                    routing_mode = ?,
+                    active = ?,
+                    display_order = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    service_key,
+                    label,
+                    description,
+                    appointment_type,
+                    duration_minutes,
+                    buffer_before_minutes,
+                    buffer_after_minutes,
+                    int(requires_payment),
+                    price_amount if isinstance(price_amount, float) else None,
+                    currency,
+                    min_notice_minutes,
+                    max_bookings_per_day if isinstance(max_bookings_per_day, int) else None,
+                    routing_mode,
+                    active,
+                    display_order,
+                    now,
+                    existing["id"],
+                ),
+            )
+            flash("Booking service updated.", "success")
+        db.commit()
+    else:
+        flash(error, "error")
+
+    return redirect(url_for("main.staff_calendar", month=request.form.get("month") or None))
+
+
 @bp.route("/staff/reminders")
 @staff_required
 def staff_reminders():
@@ -2440,12 +3335,28 @@ def create_staff_patient_appointment(user_id: int):
     if patient is None:
         abort(404)
 
+    selected_service = selected_appointment_service(request.form.get("service_id"), active_only=True, fallback_to_default=False)
     appointment_type = request.form.get("appointment_type", "").strip()
-    clinician_user_id = selected_clinician_user_id(request.form.get("clinician_user_id"))
+    if selected_service is not None and not appointment_type:
+        appointment_type = selected_service["appointment_type"]
+    duration_minutes = int_or_none(
+        request.form.get(
+            "duration_minutes",
+            str(selected_service["duration_minutes"] if selected_service else default_duration_for_type(appointment_type or "care_plan")),
+        )
+    )
+    booking_policy = resolve_booking_policy(selected_service, appointment_type, duration_minutes if isinstance(duration_minutes, int) else None)
+
+    raw_clinician_value = request.form.get("clinician_user_id")
+    clinician_user_id = requested_clinician_user_id(
+        raw_clinician_value,
+        allow_any=booking_policy["routing_mode"] == "team_round_robin",
+    )
+    if booking_policy["routing_mode"] == "team_round_robin" and (raw_clinician_value or "").strip().lower() in {"", "any", "team"}:
+        clinician_user_id = None
     location_id = selected_location_id(request.form.get("location_id"))
     appointment_date = request.form.get("appointment_date", "").strip()
     slot_start = request.form.get("slot_start", "").strip()
-    duration_minutes = int_or_none(request.form.get("duration_minutes", str(default_duration_for_type(appointment_type))))
     starts_at = request.form.get("starts_at", "").strip()
     ends_at = request.form.get("ends_at", "").strip() or None
     note = request.form.get("note", "").strip()
@@ -2458,23 +3369,20 @@ def create_staff_patient_appointment(user_id: int):
         error = "Choose a valid appointment type."
     elif location_id is None:
         error = "Choose a valid location."
-    elif clinician_user_id is None:
+    elif booking_policy["routing_mode"] != "team_round_robin" and clinician_user_id is None:
         error = "Choose a valid chiropractor."
     elif not isinstance(repeat_count, int) or repeat_count < 1 or repeat_count > 24:
         error = "Repeat count must be between 1 and 24."
     elif not isinstance(repeat_every_days, int) or repeat_every_days < 1 or repeat_every_days > 30:
         error = "Repeat interval must be between 1 and 30 days."
     elif slot_start:
-        if not isinstance(duration_minutes, int) or not duration_is_supported(duration_minutes):
-            error = "Choose a supported appointment length."
-        else:
-            starts_parsed = parse_iso(slot_start)
-            if starts_parsed is None:
-                error = "Choose a valid available time slot."
-            elif appointment_date and starts_parsed.date().isoformat() != appointment_date:
-                error = "Selected time slot does not match the chosen date."
-            elif not slot_is_available(starts_parsed, clinician_user_id, location_id, duration_minutes):
-                error = "Selected time slot is no longer available within the chiropractor schedule at this location."
+        starts_parsed = parse_iso(slot_start)
+        if starts_parsed is None:
+            error = "Choose a valid available time slot."
+        elif appointment_date and starts_parsed.date().isoformat() != appointment_date:
+            error = "Selected time slot does not match the chosen date."
+        elif resolve_slot_assignment(starts_parsed, clinician_user_id, location_id, booking_policy) is None:
+            error = "Selected time slot is no longer available within the clinic schedule at this location."
     elif not starts_at:
         error = "Appointment start time is required."
     else:
@@ -2486,26 +3394,31 @@ def create_staff_patient_appointment(user_id: int):
             error = "Appointment end time is invalid."
         elif ends_parsed and starts_parsed and ends_parsed <= starts_parsed:
             error = "Appointment end time must be after the start time."
+        elif booking_policy["routing_mode"] == "team_round_robin" and clinician_user_id is None:
+            error = "Choose a chiropractor when manually entering a start time for team-routed services."
 
     if error is None:
-        created_slots = []
+        created_slots: list[tuple[str, str | None, int | None]] = []
         if slot_start:
             base_start = parse_iso(slot_start)
-            duration = timedelta(minutes=duration_minutes)
+            duration = timedelta(minutes=booking_policy["duration_minutes"])
             for index in range(repeat_count):
                 item_start = base_start + timedelta(days=repeat_every_days * index)
-                item_end = item_start + duration
-                if not slot_is_available(item_start, clinician_user_id, location_id, duration_minutes):
+                assignment = resolve_slot_assignment(item_start, clinician_user_id, location_id, booking_policy)
+                if assignment is None:
                     error = (
-                        f"{item_start.strftime('%d %b %Y %H:%M')} is outside chiropractor shift hours, "
-                        "falls in downtime, or is already booked for this location."
+                        f"{item_start.strftime('%d %b %Y %H:%M')} is outside shift hours, "
+                        "falls in downtime, violates service policy, or is already booked."
                     )
                     break
-                created_slots.append((format_datetime_local(item_start), format_datetime_local(item_end)))
+                assigned_clinician_id = assignment.get("clinician_user_id") or clinician_user_id
+                item_end = item_start + duration
+                created_slots.append((format_datetime_local(item_start), format_datetime_local(item_end), assigned_clinician_id))
         else:
             duration = None
             if ends_at:
                 duration = parse_iso(ends_at) - parse_iso(starts_at)
+            assigned_clinician_id = clinician_user_id
             for index in range(repeat_count):
                 item_start = parse_iso(starts_at) + timedelta(days=repeat_every_days * index)
                 item_end = item_start + duration if duration is not None else None
@@ -2513,26 +3426,46 @@ def create_staff_patient_appointment(user_id: int):
                     (
                         format_datetime_local(item_start),
                         format_datetime_local(item_end) if item_end else None,
+                        assigned_clinician_id,
                     )
                 )
 
     if error is None:
         created = 0
-        for item_start, item_end in created_slots:
-            create_patient_appointment(
+        for item_start, item_end, item_clinician_id in created_slots:
+            appointment_id = create_patient_appointment(
                 user_id,
-                clinician_user_id,
+                item_clinician_id,
                 location_id,
                 appointment_type,
                 item_start,
+                service_id=booking_policy["service_id"],
                 ends_at=item_end,
                 note=note,
                 patient_details=patient_details,
+                requires_payment=booking_policy["requires_payment"],
+                payment_status="pending" if booking_policy["requires_payment"] else "not_required",
+                payment_amount=booking_policy["price_amount"],
+                booking_channel="staff",
+                service_label_snapshot=booking_policy["service_label"],
+                policy_snapshot=booking_policy,
                 booking_source="staff_portal",
+            )
+            log_booking_event(
+                "booking_created",
+                appointment_id,
+                user_id,
+                {
+                    "source": "staff_portal",
+                    "service_id": booking_policy["service_id"],
+                    "service_label": booking_policy["service_label"],
+                    "location_id": location_id,
+                    "clinician_user_id": item_clinician_id,
+                },
             )
             created += 1
         get_db().commit()
-        label = appointment_type_meta(appointment_type)["label"]
+        label = booking_policy["service_label"] or appointment_type_meta(appointment_type)["label"]
         if created == 1:
             flash(f"{label} scheduled.", "success")
         else:
@@ -2545,9 +3478,10 @@ def create_staff_patient_appointment(user_id: int):
             "main.staff_patient_detail",
             user_id=user_id,
             location_id=location_id,
-            clinician_user_id=clinician_user_id,
+            clinician_user_id="any" if clinician_user_id is None and booking_policy["routing_mode"] == "team_round_robin" else clinician_user_id,
+            service_id=booking_policy["service_id"],
             appointment_type=appointment_type,
-            duration_minutes=duration_minutes if isinstance(duration_minutes, int) else None,
+            duration_minutes=booking_policy["duration_minutes"],
             appointment_date=appointment_date or (slot_start[:10] if slot_start else None),
         )
     )
@@ -2646,6 +3580,27 @@ def update_staff_patient_appointment(user_id: int, appointment_id: int):
                 user_id,
             ),
         )
+        event_type = "booking_updated"
+        if action == "cancel":
+            event_type = "booking_cancelled"
+        elif action == "reopen":
+            event_type = "booking_reopened"
+        elif starts_at != appointment["starts_at"]:
+            event_type = "booking_rescheduled"
+        elif action == "complete":
+            event_type = "booking_completed"
+        log_booking_event(
+            event_type,
+            appointment_id,
+            user_id,
+            {
+                "source": "staff_portal",
+                "appointment_type": appointment_type,
+                "status": status,
+                "starts_at": starts_at,
+                "ends_at": ends_at,
+            },
+        )
         get_db().commit()
         if action == "complete":
             flash("Appointment marked completed.", "success")
@@ -2672,12 +3627,27 @@ def appointments():
 @bp.post("/appointments/self-book")
 @client_required
 def self_book_appointment():
+    selected_service = selected_appointment_service(request.form.get("service_id"), active_only=True, fallback_to_default=False)
     appointment_type = request.form.get("appointment_type", "").strip()
-    clinician_user_id = selected_clinician_user_id(request.form.get("clinician_user_id"))
+    if selected_service is not None and not appointment_type:
+        appointment_type = selected_service["appointment_type"]
+    duration_minutes = int_or_none(
+        request.form.get(
+            "duration_minutes",
+            str(selected_service["duration_minutes"] if selected_service else default_duration_for_type(appointment_type or "care_plan")),
+        )
+    )
+    booking_policy = resolve_booking_policy(selected_service, appointment_type, duration_minutes if isinstance(duration_minutes, int) else None)
+    raw_clinician_value = request.form.get("clinician_user_id")
+    clinician_user_id = requested_clinician_user_id(
+        raw_clinician_value,
+        allow_any=booking_policy["routing_mode"] == "team_round_robin",
+    )
+    if booking_policy["routing_mode"] == "team_round_robin" and (raw_clinician_value or "").strip().lower() in {"", "any", "team"}:
+        clinician_user_id = None
     location_id = selected_location_id(request.form.get("location_id"))
     appointment_date = request.form.get("appointment_date", "").strip()
     slot_start = request.form.get("slot_start", "").strip()
-    duration_minutes = int_or_none(request.form.get("duration_minutes", str(default_duration_for_type(appointment_type))))
     patient_details = request.form.get("patient_details", "").strip()
 
     error = None
@@ -2685,10 +3655,8 @@ def self_book_appointment():
         error = "Choose a valid appointment type."
     elif location_id is None:
         error = "Choose a valid clinic location."
-    elif clinician_user_id is None:
+    elif booking_policy["routing_mode"] != "team_round_robin" and clinician_user_id is None:
         error = "Choose a valid chiropractor."
-    elif not isinstance(duration_minutes, int) or not duration_is_supported(duration_minutes):
-        error = "Choose a supported appointment length."
     elif not slot_start:
         error = "Choose an available time slot."
     else:
@@ -2697,25 +3665,52 @@ def self_book_appointment():
             error = "Choose a valid available time slot."
         elif appointment_date and starts_parsed.date().isoformat() != appointment_date:
             error = "Selected slot does not match the chosen date."
-        elif not slot_is_available(starts_parsed, clinician_user_id, location_id, duration_minutes):
+        elif resolve_slot_assignment(starts_parsed, clinician_user_id, location_id, booking_policy) is None:
             error = "Selected slot is no longer available."
 
     if error is None:
         starts_parsed = parse_iso(slot_start)
-        ends_parsed = starts_parsed + timedelta(minutes=duration_minutes)
-        create_patient_appointment(
+        assignment = resolve_slot_assignment(starts_parsed, clinician_user_id, location_id, booking_policy)
+        assigned_clinician_id = assignment.get("clinician_user_id") if assignment else clinician_user_id
+        ends_parsed = starts_parsed + timedelta(minutes=booking_policy["duration_minutes"])
+        appointment_id = create_patient_appointment(
             g.user["id"],
-            clinician_user_id,
+            assigned_clinician_id,
             location_id,
             appointment_type,
             format_datetime_local(starts_parsed),
+            service_id=booking_policy["service_id"],
             ends_at=format_datetime_local(ends_parsed),
             note=patient_details,
             patient_details=patient_details,
+            requires_payment=booking_policy["requires_payment"],
+            payment_status="pending" if booking_policy["requires_payment"] else "not_required",
+            payment_amount=booking_policy["price_amount"],
+            booking_channel="portal_link",
+            service_label_snapshot=booking_policy["service_label"],
+            policy_snapshot=booking_policy,
             booking_source="patient_portal",
         )
+        log_booking_event(
+            "booking_created",
+            appointment_id,
+            g.user["id"],
+            {
+                "source": "patient_portal",
+                "service_id": booking_policy["service_id"],
+                "service_label": booking_policy["service_label"],
+                "location_id": location_id,
+                "clinician_user_id": assigned_clinician_id,
+            },
+        )
         get_db().commit()
-        flash("Appointment booked from your portal.", "success")
+        if booking_policy["requires_payment"] and isinstance(booking_policy["price_amount"], (int, float)):
+            flash(
+                f"Appointment booked. Payment of {booking_policy['price_amount']:.2f} {booking_policy['currency']} is marked pending.",
+                "success",
+            )
+        else:
+            flash("Appointment booked from your portal.", "success")
     else:
         flash(error, "error")
 
@@ -2723,12 +3718,51 @@ def self_book_appointment():
         url_for(
             "main.appointments",
             location_id=location_id,
-            clinician_user_id=clinician_user_id,
+            clinician_user_id="any" if clinician_user_id is None and booking_policy["routing_mode"] == "team_round_robin" else clinician_user_id,
+            service_id=booking_policy["service_id"],
             appointment_type=appointment_type or None,
-            duration_minutes=duration_minutes if isinstance(duration_minutes, int) else None,
+            duration_minutes=booking_policy["duration_minutes"],
             appointment_date=appointment_date or (slot_start[:10] if slot_start else None),
         )
     )
+
+
+@bp.post("/appointments/<int:appointment_id>/cancel")
+@client_required
+def cancel_self_booked_appointment(appointment_id: int):
+    appointment_row = get_appointment_with_people(appointment_id)
+    if appointment_row is None or appointment_row["patient_user_id"] != g.user["id"]:
+        abort(404)
+
+    appointment = build_appointment_item(appointment_row)
+    if appointment["status"] != "scheduled":
+        flash("Only scheduled appointments can be cancelled.", "error")
+        return redirect(url_for("main.appointments"))
+    if not appointment["can_self_cancel"]:
+        flash("This appointment is inside the minimum notice window and can no longer be cancelled online.", "error")
+        return redirect(url_for("main.appointments"))
+
+    get_db().execute(
+        """
+        UPDATE appointments
+        SET status = 'cancelled',
+            updated_at = ?
+        WHERE id = ? AND patient_user_id = ?
+        """,
+        (iso_now(), appointment_id, g.user["id"]),
+    )
+    log_booking_event(
+        "booking_cancelled",
+        appointment_id,
+        g.user["id"],
+        {
+            "source": "patient_portal",
+            "self_service": True,
+        },
+    )
+    get_db().commit()
+    flash("Appointment cancelled. You can book a new slot anytime.", "success")
+    return redirect(url_for("main.appointments"))
 
 
 @bp.route("/staff/patients/<int:user_id>")
@@ -3349,19 +4383,37 @@ def api_locations():
     )
 
 
+@bp.get("/api/booking-services")
+@login_required
+def api_booking_services():
+    return jsonify(
+        {
+            "ok": True,
+            "services": appointment_service_options(active_only=not is_staff(g.user)),
+        }
+    )
+
+
 @bp.get("/api/availability")
 @login_required
 def api_availability():
-    clinician_user_id = selected_clinician_user_id(request.args.get("clinician_user_id"))
-    location_id = selected_location_id(request.args.get("location_id"))
+    selected_service = selected_appointment_service(request.args.get("service_id"), active_only=True, fallback_to_default=False)
+    appointment_type = request.args.get("appointment_type", "").strip()
     duration_minutes = int_or_none(request.args.get("duration_minutes", "30"))
-    if not isinstance(duration_minutes, int):
-        duration_minutes = 30
+    booking_policy = resolve_booking_policy(selected_service, appointment_type, duration_minutes if isinstance(duration_minutes, int) else None)
+    clinician_user_id = requested_clinician_user_id(
+        request.args.get("clinician_user_id"),
+        allow_any=booking_policy["routing_mode"] == "team_round_robin",
+    )
+    if booking_policy["routing_mode"] == "team_round_robin" and (request.args.get("clinician_user_id", "").strip().lower() in {"", "any", "team"}):
+        clinician_user_id = None
+    location_id = selected_location_id(request.args.get("location_id"))
     availability = build_schedule_availability(
         request.args.get("date"),
         clinician_user_id,
         location_id,
-        duration_minutes,
+        booking_policy["duration_minutes"],
+        booking_policy=booking_policy,
     )
     return jsonify({"ok": True, "availability": serialize_schedule_availability(availability)})
 
@@ -3383,11 +4435,34 @@ def api_appointments():
         return jsonify({"ok": True, "appointments": appointments_payload})
 
     incoming = request.get_json(silent=True) or {}
+    incoming_service_id = incoming.get("service_id")
+    selected_service = selected_appointment_service(
+        "" if incoming_service_id is None else str(incoming_service_id),
+        active_only=True,
+        fallback_to_default=False,
+    )
     appointment_type = str(incoming.get("appointment_type", "")).strip()
-    clinician_user_id = selected_clinician_user_id(str(incoming.get("clinician_user_id", "")))
+    if selected_service is not None and not appointment_type:
+        appointment_type = selected_service["appointment_type"]
+    duration_minutes = int_or_none(
+        str(
+            incoming.get(
+                "duration_minutes",
+                selected_service["duration_minutes"] if selected_service else default_duration_for_type(appointment_type or "care_plan"),
+            )
+        )
+    )
+    booking_policy = resolve_booking_policy(selected_service, appointment_type, duration_minutes if isinstance(duration_minutes, int) else None)
+    incoming_clinician_value = incoming.get("clinician_user_id")
+    raw_clinician_value = "" if incoming_clinician_value is None else str(incoming_clinician_value).strip()
+    clinician_user_id = requested_clinician_user_id(
+        raw_clinician_value,
+        allow_any=booking_policy["routing_mode"] == "team_round_robin",
+    )
+    if booking_policy["routing_mode"] == "team_round_robin" and raw_clinician_value.lower() in {"", "any", "team"}:
+        clinician_user_id = None
     location_id = selected_location_id(str(incoming.get("location_id", "")))
     slot_start = str(incoming.get("slot_start", "")).strip()
-    duration_minutes = int_or_none(str(incoming.get("duration_minutes", default_duration_for_type(appointment_type))))
     patient_details = str(incoming.get("patient_details", "")).strip()
 
     if is_staff(g.user):
@@ -3404,30 +4479,51 @@ def api_appointments():
         errors.append("Choose a valid appointment type.")
     if location_id is None:
         errors.append("Choose a valid location.")
-    if clinician_user_id is None:
+    if booking_policy["routing_mode"] != "team_round_robin" and clinician_user_id is None:
         errors.append("Choose a valid chiropractor.")
-    if not isinstance(duration_minutes, int) or not duration_is_supported(duration_minutes):
-        errors.append("Choose a supported appointment length.")
     starts_parsed = parse_iso(slot_start)
+    slot_assignment = None
     if starts_parsed is None:
         errors.append("Choose a valid available time slot.")
-    elif not slot_is_available(starts_parsed, clinician_user_id, location_id, duration_minutes):
+    else:
+        slot_assignment = resolve_slot_assignment(starts_parsed, clinician_user_id, location_id, booking_policy)
+    if starts_parsed is not None and slot_assignment is None:
         errors.append("Selected slot is no longer available.")
 
     if errors:
         return jsonify({"ok": False, "errors": errors}), 400
 
-    ends_parsed = starts_parsed + timedelta(minutes=duration_minutes)
+    assigned_clinician_id = slot_assignment.get("clinician_user_id") if slot_assignment else clinician_user_id
+    ends_parsed = starts_parsed + timedelta(minutes=booking_policy["duration_minutes"])
     appointment_id = create_patient_appointment(
         patient_user_id,
-        clinician_user_id,
+        assigned_clinician_id,
         location_id,
         appointment_type,
         format_datetime_local(starts_parsed),
+        service_id=booking_policy["service_id"],
         ends_at=format_datetime_local(ends_parsed),
         note=patient_details,
         patient_details=patient_details,
+        requires_payment=booking_policy["requires_payment"],
+        payment_status="pending" if booking_policy["requires_payment"] else "not_required",
+        payment_amount=booking_policy["price_amount"],
+        booking_channel="api",
+        service_label_snapshot=booking_policy["service_label"],
+        policy_snapshot=booking_policy,
         booking_source=booking_source,
+    )
+    log_booking_event(
+        "booking_created",
+        appointment_id,
+        patient_user_id,
+        {
+            "source": booking_source,
+            "service_id": booking_policy["service_id"],
+            "service_label": booking_policy["service_label"],
+            "location_id": location_id,
+            "clinician_user_id": assigned_clinician_id,
+        },
     )
     get_db().commit()
     appointment = build_appointment_item(get_appointment_with_people(appointment_id))
