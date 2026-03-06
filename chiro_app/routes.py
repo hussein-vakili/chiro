@@ -127,6 +127,21 @@ MESSAGE_TOPIC_META = {
     "billing": {"label": "Billing / Insurance", "tone": "sky"},
 }
 
+LEAD_STATUS_META = {
+    "new": {"label": "New request", "tone": "warm"},
+    "invited": {"label": "Invite sent", "tone": "sky"},
+    "converted": {"label": "Converted", "tone": "life"},
+    "closed_lost": {"label": "Closed", "tone": "muted"},
+}
+
+LEAD_SOURCE_OPTIONS = [
+    {"value": "website", "label": "Website"},
+    {"value": "google", "label": "Google"},
+    {"value": "referral", "label": "Referral"},
+    {"value": "instagram", "label": "Instagram"},
+    {"value": "phone", "label": "Phone"},
+]
+
 BOOKING_ROUTING_MODE_META = {
     "specific_clinician": {"label": "Specific chiropractor"},
     "team_round_robin": {"label": "Any available chiropractor"},
@@ -159,6 +174,8 @@ TIME_FORMAT_OPTIONS = [
 DEFAULT_TIME_FORMAT = "24h"
 DEFAULT_BOOKING_SEARCH_WINDOW_DAYS = 21
 DEFAULT_MAX_ACTIVE_CHIROPRACTORS = 3
+PUBLIC_BOOKING_HOLD_MINUTES = 30
+STAFF_INVITE_EXPIRY_DAYS = 14
 APP_SETTING_DEFAULTS = {
     "practice_practitioner_name": "",
     "practice_registration_number": "",
@@ -1286,11 +1303,292 @@ def get_latest_invitation_for_user(user_id: int):
     ).fetchone()
 
 
+def get_lead(lead_id: int):
+    return get_db().execute(
+        """
+        SELECT
+            l.*,
+            inv.token AS invitation_token,
+            inv.expires_at AS invitation_expires_at,
+            inv.accepted_at AS invitation_accepted_at,
+            loc.name AS location_name,
+            c.first_name AS clinician_first_name,
+            c.last_name AS clinician_last_name,
+            s.label AS service_label
+        FROM leads l
+        LEFT JOIN invitations inv ON inv.id = l.invitation_id
+        LEFT JOIN locations loc ON loc.id = l.preferred_location_id
+        LEFT JOIN users c ON c.id = l.preferred_clinician_user_id
+        LEFT JOIN appointment_services s ON s.id = l.preferred_service_id
+        WHERE l.id = ?
+        """,
+        (lead_id,),
+    ).fetchone()
+
+
+def get_recent_leads(limit: int = 12, statuses: tuple[str, ...] | None = None):
+    query = """
+        SELECT
+            l.*,
+            inv.token AS invitation_token,
+            inv.expires_at AS invitation_expires_at,
+            inv.accepted_at AS invitation_accepted_at,
+            loc.name AS location_name,
+            c.first_name AS clinician_first_name,
+            c.last_name AS clinician_last_name,
+            s.label AS service_label
+        FROM leads l
+        LEFT JOIN invitations inv ON inv.id = l.invitation_id
+        LEFT JOIN locations loc ON loc.id = l.preferred_location_id
+        LEFT JOIN users c ON c.id = l.preferred_clinician_user_id
+        LEFT JOIN appointment_services s ON s.id = l.preferred_service_id
+    """
+    params: list = []
+    if statuses:
+        placeholders = ",".join("?" for _ in statuses)
+        query += f" WHERE l.status IN ({placeholders})"
+        params.extend(statuses)
+    query += """
+        ORDER BY
+            CASE WHEN l.requested_starts_at IS NULL OR TRIM(l.requested_starts_at) = '' THEN 1 ELSE 0 END ASC,
+            l.requested_starts_at ASC,
+            l.created_at DESC,
+            l.id DESC
+        LIMIT ?
+    """
+    params.append(limit)
+    return get_db().execute(query, tuple(params)).fetchall()
+
+
+def get_open_lead_count() -> int:
+    row = get_db().execute(
+        """
+        SELECT COUNT(*) AS count
+        FROM leads
+        WHERE status IN ('new', 'invited')
+        """
+    ).fetchone()
+    return int(row["count"] or 0) if row else 0
+
+
+def build_lead_item(row) -> dict:
+    clinician_name = None
+    if "clinician_first_name" in row.keys() and row["clinician_first_name"]:
+        clinician_name = f"{row['clinician_first_name']} {row['clinician_last_name']}".strip()
+    requested_label = format_schedule(row["requested_starts_at"]) if row["requested_starts_at"] else "No preferred slot selected"
+    status_meta = lead_status_meta((row["status"] or "new").strip().lower())
+    source_label = next(
+        (option["label"] for option in LEAD_SOURCE_OPTIONS if option["value"] == row["source"]),
+        (row["source"] or "Website").replace("_", " ").title(),
+    )
+    invite_url = None
+    has_active_invite = False
+    if "invitation_token" in row.keys() and row["invitation_token"] and not row["invitation_accepted_at"] and not is_expired(row["invitation_expires_at"]):
+        invite_url = url_for("main.accept_invite", token=row["invitation_token"])
+        has_active_invite = True
+    return {
+        "id": row["id"],
+        "first_name": row["first_name"],
+        "last_name": row["last_name"],
+        "full_name": f"{row['first_name']} {row['last_name']}".strip(),
+        "email": row["email"],
+        "phone": row["phone"] or "",
+        "source": row["source"] or "website",
+        "source_label": source_label,
+        "status": row["status"] or "new",
+        "status_label": status_meta["label"],
+        "status_tone": status_meta["tone"],
+        "service_label": row["service_label"] or "New Patient Visit",
+        "location_name": row["location_name"] or "",
+        "clinician_name": clinician_name,
+        "requested_starts_at": row["requested_starts_at"],
+        "requested_label": requested_label,
+        "reason": row["reason"] or "",
+        "notes": row["notes"] or "",
+        "created_at": row["created_at"],
+        "created_label": format_schedule(row["created_at"]) or row["created_at"],
+        "create_invite_url": url_for("main.staff_new_invitation", lead_id=row["id"]),
+        "invite_url": invite_url,
+        "has_active_invite": has_active_invite,
+    }
+
+
 def get_invitation_by_token(token: str):
     return get_db().execute(
         "SELECT * FROM invitations WHERE token = ?",
         (token,),
     ).fetchone()
+
+
+def utc_future_timestamp(*, minutes: int | None = None, days: int | None = None) -> str:
+    offset = timedelta(minutes=minutes or 0) + timedelta(days=days or 0)
+    return (datetime.utcnow() + offset).replace(microsecond=0).isoformat() + "Z"
+
+
+def slot_hold_is_active(row) -> bool:
+    return bool(row is not None and (row["status"] or "active") == "active" and not is_expired(row["expires_at"]))
+
+
+def get_invitation_slot_hold(invitation_id: int):
+    return get_db().execute(
+        """
+        SELECT
+            sh.*,
+            s.label AS service_label,
+            s.duration_minutes AS service_duration_minutes,
+            s.buffer_before_minutes AS service_buffer_before_minutes,
+            s.buffer_after_minutes AS service_buffer_after_minutes,
+            loc.name AS location_name,
+            c.first_name AS clinician_first_name,
+            c.last_name AS clinician_last_name
+        FROM appointment_slot_holds sh
+        LEFT JOIN appointment_services s ON s.id = sh.service_id
+        LEFT JOIN locations loc ON loc.id = sh.location_id
+        LEFT JOIN users c ON c.id = sh.clinician_user_id
+        WHERE sh.invitation_id = ?
+        LIMIT 1
+        """,
+        (invitation_id,),
+    ).fetchone()
+
+
+def get_clinician_slot_holds_for_date(
+    target_date: str,
+    clinician_user_id: int | None,
+    *,
+    exclude_hold_id: int | None = None,
+):
+    if clinician_user_id is None:
+        return []
+
+    params = [clinician_user_id, target_date]
+    query = """
+        SELECT
+            sh.*,
+            s.label AS service_label,
+            s.duration_minutes AS service_duration_minutes,
+            s.buffer_before_minutes AS service_buffer_before_minutes,
+            s.buffer_after_minutes AS service_buffer_after_minutes
+        FROM appointment_slot_holds sh
+        LEFT JOIN appointment_services s ON s.id = sh.service_id
+        WHERE sh.clinician_user_id = ?
+          AND sh.status = 'active'
+          AND substr(sh.starts_at, 1, 10) = ?
+    """
+    if exclude_hold_id is not None:
+        query += " AND sh.id != ?"
+        params.append(exclude_hold_id)
+    query += " ORDER BY sh.starts_at ASC"
+    rows = get_db().execute(query, tuple(params)).fetchall()
+    return [row for row in rows if slot_hold_is_active(row)]
+
+
+def build_slot_hold_item(row) -> dict | None:
+    if row is None:
+        return None
+    clinician_name = None
+    if "clinician_first_name" in row.keys() and row["clinician_first_name"]:
+        clinician_name = f"{row['clinician_first_name']} {row['clinician_last_name']}".strip()
+    return {
+        "id": row["id"],
+        "appointment_label": format_schedule(row["starts_at"]) or row["starts_at"],
+        "expires_label": format_schedule(row["expires_at"]) or row["expires_at"],
+        "location_name": row["location_name"] if "location_name" in row.keys() else None,
+        "clinician_name": clinician_name,
+        "service_label": row["service_label"] if "service_label" in row.keys() else appointment_type_meta(row["appointment_type"])["label"],
+        "is_active": slot_hold_is_active(row),
+    }
+
+
+def create_invitation_record(
+    *,
+    email: str,
+    first_name: str,
+    last_name: str,
+    appointment_at: str | None,
+    note: str,
+    created_by: int | None,
+    expires_at: str,
+):
+    now = iso_now()
+    token = secrets.token_urlsafe(24)
+    cursor = get_db().execute(
+        """
+        INSERT INTO invitations (
+            email,
+            first_name,
+            last_name,
+            appointment_at,
+            note,
+            token,
+            expires_at,
+            created_at,
+            created_by
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (email, first_name, last_name, appointment_at, note, token, expires_at, now, created_by),
+    )
+    return get_db().execute("SELECT * FROM invitations WHERE id = ?", (cursor.lastrowid,)).fetchone()
+
+
+def upsert_invitation_slot_hold(
+    *,
+    invitation_id: int,
+    lead_id: int | None,
+    clinician_user_id: int,
+    location_id: int | None,
+    booking_policy: dict,
+    starts_at: datetime,
+    expires_at: str,
+):
+    now = iso_now()
+    ends_at = starts_at + timedelta(minutes=booking_policy["duration_minutes"])
+    get_db().execute(
+        """
+        INSERT INTO appointment_slot_holds (
+            invitation_id,
+            lead_id,
+            clinician_user_id,
+            location_id,
+            service_id,
+            appointment_type,
+            starts_at,
+            ends_at,
+            status,
+            expires_at,
+            created_at,
+            updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)
+        ON CONFLICT(invitation_id) DO UPDATE
+        SET lead_id = excluded.lead_id,
+            clinician_user_id = excluded.clinician_user_id,
+            location_id = excluded.location_id,
+            service_id = excluded.service_id,
+            appointment_type = excluded.appointment_type,
+            starts_at = excluded.starts_at,
+            ends_at = excluded.ends_at,
+            status = 'active',
+            expires_at = excluded.expires_at,
+            consumed_appointment_id = NULL,
+            updated_at = excluded.updated_at
+        """,
+        (
+            invitation_id,
+            lead_id,
+            clinician_user_id,
+            location_id,
+            booking_policy["service_id"],
+            booking_policy["appointment_type"],
+            format_datetime_local(starts_at),
+            format_datetime_local(ends_at),
+            expires_at,
+            now,
+            now,
+        ),
+    )
+    return get_invitation_slot_hold(invitation_id)
 
 
 def get_reset_token(token: str):
@@ -1563,12 +1861,17 @@ def get_active_care_plan(patient_user_id: int):
         """
         SELECT
             cp.*,
+            loc.name AS location_name,
+            c.first_name AS clinician_first_name,
+            c.last_name AS clinician_last_name,
             s.label AS service_label,
             s.description AS service_description,
             s.duration_minutes AS service_duration_minutes,
             s.price_amount AS service_price_amount,
             s.currency AS service_currency
         FROM care_plans cp
+        LEFT JOIN locations loc ON loc.id = cp.location_id
+        LEFT JOIN users c ON c.id = cp.clinician_user_id
         LEFT JOIN appointment_services s ON s.id = cp.service_id
         WHERE cp.patient_user_id = ?
           AND cp.status = 'active'
@@ -1608,6 +1911,26 @@ def get_care_plan_visit(visit_id: int):
         LIMIT 1
         """,
         (visit_id,),
+    ).fetchone()
+
+
+def get_care_plan_visit_by_appointment(appointment_id: int):
+    return get_db().execute(
+        """
+        SELECT
+            cpv.*,
+            cp.patient_user_id,
+            cp.clinician_user_id AS plan_clinician_user_id,
+            cp.location_id AS plan_location_id,
+            cp.service_id AS plan_service_id,
+            cp.booking_mode AS plan_booking_mode,
+            cp.status AS plan_status
+        FROM care_plan_visits cpv
+        JOIN care_plans cp ON cp.id = cpv.care_plan_id
+        WHERE cpv.appointment_id = ?
+        LIMIT 1
+        """,
+        (appointment_id,),
     ).fetchone()
 
 
@@ -1827,15 +2150,21 @@ def sync_care_plan_visit_for_appointment(appointment_id: int) -> None:
     if row is None:
         return
     visit_status = "scheduled"
+    booked = 1
+    linked_appointment_id = appointment_id
     if row["status"] == "completed":
         visit_status = "completed"
     elif row["status"] == "cancelled":
-        visit_status = "cancelled"
+        # Re-open cancelled care-plan visits so the patient can rebook the same step in their plan.
+        visit_status = "unbooked"
+        booked = 0
+        linked_appointment_id = None
     get_db().execute(
         """
         UPDATE care_plan_visits
         SET status = ?,
-            booked = 1,
+            booked = ?,
+            appointment_id = ?,
             suggested_date = ?,
             suggested_starts_at = ?,
             patient_details = ?,
@@ -1845,6 +2174,8 @@ def sync_care_plan_visit_for_appointment(appointment_id: int) -> None:
         """,
         (
             visit_status,
+            booked,
+            linked_appointment_id,
             row["starts_at"][:10],
             row["starts_at"],
             row["patient_details"] or "",
@@ -1986,7 +2317,23 @@ def get_clinician_booking_count_by_date(target_date: str) -> dict[int, int]:
         """,
         (target_date,),
     ).fetchall()
-    return {row["clinician_user_id"]: row["booking_count"] for row in rows}
+    counts = {row["clinician_user_id"]: row["booking_count"] for row in rows}
+    hold_rows = get_db().execute(
+        """
+        SELECT clinician_user_id, expires_at
+        FROM appointment_slot_holds
+        WHERE status = 'active'
+          AND clinician_user_id IS NOT NULL
+          AND substr(starts_at, 1, 10) = ?
+        """,
+        (target_date,),
+    ).fetchall()
+    for row in hold_rows:
+        if is_expired(row["expires_at"]):
+            continue
+        clinician_user_id = row["clinician_user_id"]
+        counts[clinician_user_id] = counts.get(clinician_user_id, 0) + 1
+    return counts
 
 
 def get_recent_appointment_reminders(limit: int = 30):
@@ -2225,6 +2572,20 @@ def message_topic_meta(topic: str) -> dict:
     )
 
 
+def lead_source_options() -> list[dict]:
+    return LEAD_SOURCE_OPTIONS
+
+
+def lead_status_meta(status: str) -> dict:
+    return LEAD_STATUS_META.get(
+        status,
+        {
+            "label": status.replace("_", " ").title(),
+            "tone": "sky",
+        },
+    )
+
+
 def default_duration_for_type(appointment_type: str) -> int:
     return APPOINTMENT_DURATION_DEFAULTS.get(appointment_type, 30)
 
@@ -2407,6 +2768,48 @@ def next_booking_date(
     return today.isoformat()
 
 
+def normalized_booking_date_value(
+    preferred_date_value: str | None,
+    clinician_user_id: int | None,
+    location_id: int | None,
+    booking_policy: dict | None,
+    *,
+    slot_increment_minutes: int = DEFAULT_SLOT_INCREMENT_MINUTES,
+) -> str:
+    target_date = date_from_value(preferred_date_value)
+    today = date.today()
+    latest_allowed_date = today + timedelta(days=current_booking_search_window_days())
+    if target_date is None:
+        return next_booking_date(
+            clinician_user_id,
+            location_id,
+            booking_policy,
+            slot_increment_minutes=slot_increment_minutes,
+        )
+    if target_date < today:
+        return next_booking_date(
+            clinician_user_id,
+            location_id,
+            booking_policy,
+            slot_increment_minutes=slot_increment_minutes,
+        )
+    if not same_day_booking_enabled() and target_date <= today:
+        return next_booking_date(
+            clinician_user_id,
+            location_id,
+            booking_policy,
+            slot_increment_minutes=slot_increment_minutes,
+        )
+    if target_date > latest_allowed_date:
+        return next_booking_date(
+            clinician_user_id,
+            location_id,
+            booking_policy,
+            slot_increment_minutes=slot_increment_minutes,
+        )
+    return target_date.isoformat()
+
+
 def overlaps(start_a: datetime, end_a: datetime, start_b: datetime, end_b: datetime) -> bool:
     return start_a < end_b and start_b < end_a
 
@@ -2483,6 +2886,32 @@ def build_schedule_availability_for_clinician(
             {
                 "id": row["id"],
                 "label": row["service_label"] or appointment_type_meta(row["appointment_type"])["label"],
+                "time_label": format_time_range(starts_at, ends_at),
+                "starts_at": starts_at,
+                "ends_at": ends_at,
+                "blocked_starts_at": blocked_start,
+                "blocked_ends_at": blocked_end,
+                "clinician_user_id": clinician_user_id,
+                "clinician_name": clinician_name,
+            }
+        )
+
+    for row in get_clinician_slot_holds_for_date(target_date.isoformat(), clinician_user_id):
+        starts_at = parse_iso(row["starts_at"])
+        default_minutes = row["service_duration_minutes"] or default_duration_for_type(row["appointment_type"])
+        ends_at = parse_iso(row["ends_at"]) or (starts_at + timedelta(minutes=default_minutes) if starts_at else None)
+        if starts_at is None or ends_at is None:
+            continue
+
+        existing_buffer_before = timedelta(minutes=max(int(row["service_buffer_before_minutes"] or 0), 0))
+        existing_buffer_after = timedelta(minutes=max(int(row["service_buffer_after_minutes"] or 0), 0))
+        blocked_start = starts_at - existing_buffer_before
+        blocked_end = ends_at + existing_buffer_after
+        hold_label = row["service_label"] or appointment_type_meta(row["appointment_type"])["label"]
+        booked_windows.append(
+            {
+                "id": f"hold-{row['id']}",
+                "label": f"{hold_label} hold",
                 "time_label": format_time_range(starts_at, ends_at),
                 "starts_at": starts_at,
                 "ends_at": ends_at,
@@ -3285,6 +3714,400 @@ def build_patient_schedule_context(patient_user_id: int, month_value: str | None
     }
 
 
+def get_patient_unread_message_count(patient_user_id: int) -> int:
+    row = get_db().execute(
+        """
+        SELECT COUNT(*) AS count
+        FROM patient_messages
+        WHERE patient_user_id = ?
+          AND sender_role IN ('admin', 'clinician')
+          AND read_by_patient_at IS NULL
+        """,
+        (patient_user_id,),
+    ).fetchone()
+    return int(row["count"] or 0) if row else 0
+
+
+def get_patient_message_preview(patient_user_id: int, limit: int = 3) -> list[dict]:
+    rows = get_db().execute(
+        """
+        SELECT
+            pm.*,
+            sender.first_name AS sender_first_name,
+            sender.last_name AS sender_last_name
+        FROM patient_messages pm
+        LEFT JOIN users sender ON sender.id = pm.sender_user_id
+        WHERE pm.patient_user_id = ?
+        ORDER BY pm.created_at DESC, pm.id DESC
+        LIMIT ?
+        """,
+        (patient_user_id, limit),
+    ).fetchall()
+
+    items: list[dict] = []
+    for row in rows:
+        sender_name = " ".join(part for part in [row["sender_first_name"], row["sender_last_name"]] if part).strip()
+        if not sender_name:
+            sender_name = "Chiropractor" if row["sender_role"] in {"admin", "clinician"} else "Patient"
+        topic_meta = message_topic_meta(row["topic"] or "appointment")
+        items.append(
+            {
+                "id": row["id"],
+                "sender_role": row["sender_role"],
+                "sender_name": sender_name,
+                "topic": row["topic"] or "appointment",
+                "topic_label": topic_meta["label"],
+                "topic_tone": topic_meta["tone"],
+                "body": row["body"] or "",
+                "created_at": row["created_at"],
+                "created_label": format_schedule(row["created_at"]) or row["created_at"],
+                "is_unread_for_patient": bool(
+                    row["sender_role"] in {"admin", "clinician"} and row["read_by_patient_at"] is None
+                ),
+            }
+        )
+    return items
+
+
+def build_client_dashboard_context(patient_user_id: int, month_value: str | None = None) -> dict:
+    submission = get_submission_for_user(patient_user_id)
+    invitation = get_latest_invitation_for_user(patient_user_id)
+    visit_report = get_visit_report_for_patient(patient_user_id)
+    schedule = build_patient_schedule_context(patient_user_id, month_value)
+    care_plan = build_care_plan_context(patient_user_id)
+    care_plan_adherence = care_plan["adherence"]
+    next_appointment = schedule["next_appointment"]
+    unread_messages = get_patient_unread_message_count(patient_user_id)
+    recent_messages = get_patient_message_preview(patient_user_id, limit=3)
+    completed_history = [item for item in schedule["history"] if item["status"] == "completed"]
+    cancelled_history = [item for item in schedule["history"] if item["status"] == "cancelled"]
+
+    if submission is None:
+        intake_status = {
+            "value": "Not started",
+            "detail": "Your onboarding form is still waiting to be completed.",
+            "tone": "warm",
+            "action_label": "Start intake",
+        }
+    elif submission["status"] == "submitted":
+        intake_status = {
+            "value": "Submitted",
+            "detail": f"Last updated {submission['updated_at'][:10]}.",
+            "tone": "life",
+            "action_label": "Review intake",
+        }
+    else:
+        intake_status = {
+            "value": "Draft in progress",
+            "detail": f"Draft saved {submission['updated_at'][:10]}.",
+            "tone": "warm",
+            "action_label": "Continue intake",
+        }
+
+    if visit_report and visit_report["report_status"] == "published":
+        results_status = {
+            "value": "Published",
+            "detail": "Your chiropractor has shared findings and recommendations in the portal.",
+            "tone": "life",
+            "action_label": "Open results",
+        }
+    elif schedule["counts"].get("report_of_findings", 0):
+        results_status = {
+            "value": "Report visit booked",
+            "detail": "Your report of findings appointment is on the calendar.",
+            "tone": "sky",
+            "action_label": "See appointment",
+        }
+    else:
+        results_status = {
+            "value": "Pending",
+            "detail": "Results will appear after your assessment has been reviewed and published.",
+            "tone": "muted",
+            "action_label": "Open results",
+        }
+
+    care_plan_status = {
+        "value": care_plan_adherence["title"] if care_plan_adherence["exists"] else "Locked",
+        "detail": care_plan_adherence["detail"],
+        "tone": care_plan_adherence["tone"],
+        "action_label": care_plan_adherence["action_label"],
+        "action_url": care_plan_adherence["action_url"],
+    }
+
+    if submission is None or submission["status"] != "submitted":
+        next_step = {
+            "eyebrow": "Next best step",
+            "title": "Finish your intake form",
+            "detail": "The clinic needs your history, consent, and current symptoms before your care plan can move forward.",
+            "action_label": intake_status["action_label"],
+            "action_url": url_for("main.intake"),
+            "tone": intake_status["tone"],
+        }
+    elif care_plan_adherence["exists"] and care_plan_adherence["state"] in {"overdue", "needs_booking"}:
+        next_step = {
+            "eyebrow": "Next best step",
+            "title": care_plan_adherence["title"],
+            "detail": care_plan_adherence["detail"],
+            "action_label": care_plan_adherence["action_label"],
+            "action_url": care_plan_adherence["action_url"],
+            "tone": care_plan_adherence["tone"],
+        }
+    elif unread_messages:
+        next_step = {
+            "eyebrow": "Next best step",
+            "title": f"Read your {unread_messages} new message{'s' if unread_messages != 1 else ''}",
+            "detail": "Your chiropractor has sent you an update in the secure client thread.",
+            "action_label": "Open messages",
+            "action_url": url_for("main.patient_messages"),
+            "tone": "rose",
+        }
+    elif next_appointment:
+        detail_parts = [next_appointment["starts_label"]]
+        if next_appointment["location_name"]:
+            detail_parts.append(next_appointment["location_name"])
+        next_step = {
+            "eyebrow": "Next best step",
+            "title": f"Prepare for your {next_appointment['type_label'].lower()}",
+            "detail": " · ".join(detail_parts),
+            "action_label": "Open calendar",
+            "action_url": url_for("main.appointments"),
+            "tone": next_appointment["type_tone"],
+        }
+    elif visit_report and visit_report["report_status"] == "published":
+        next_step = {
+            "eyebrow": "Next best step",
+            "title": "Review your published findings",
+            "detail": "Your portal now includes the clinic summary, findings, and recommendations from your assessment.",
+            "action_label": "View results",
+            "action_url": url_for("main.results"),
+            "tone": "life",
+        }
+    else:
+        next_step = {
+            "eyebrow": "Next best step",
+            "title": "Book your next visit",
+            "detail": "Use the portal calendar to find the next available appointment that matches your current plan.",
+            "action_label": "Book from portal",
+            "action_url": url_for("main.appointments"),
+            "tone": "sky",
+        }
+
+    portal_metrics = [
+        {
+            "label": "Intake",
+            "value": intake_status["value"],
+            "detail": intake_status["detail"],
+            "tone": intake_status["tone"],
+        },
+        {
+            "label": "Upcoming visits",
+            "value": str(len(schedule["upcoming"])),
+            "detail": (
+                f"Next: {next_appointment['type_label']} · {next_appointment['starts_label']}"
+                if next_appointment
+                else "No future appointments are booked yet."
+            ),
+            "tone": "sky" if next_appointment else "muted",
+        },
+        {
+            "label": "Unread messages",
+            "value": str(unread_messages),
+            "detail": (
+                "New replies from your care team are waiting."
+                if unread_messages
+                else "Your secure thread is up to date."
+            ),
+            "tone": "rose" if unread_messages else "life",
+        },
+        {
+            "label": "Care plan",
+            "value": care_plan_adherence["progress_label"],
+            "detail": care_plan_adherence["detail"],
+            "tone": care_plan_adherence["tone"],
+        },
+    ]
+
+    portal_actions = [
+        {
+            "label": "Intake",
+            "title": intake_status["action_label"],
+            "detail": intake_status["detail"],
+            "badge": intake_status["value"],
+            "tone": intake_status["tone"],
+            "url": url_for("main.intake"),
+        },
+        {
+            "label": "Appointments",
+            "title": care_plan_adherence["action_label"] if care_plan_adherence["exists"] else "Open calendar",
+            "detail": care_plan_adherence["detail"] if care_plan_adherence["exists"] else (
+                f"{len(schedule['upcoming'])} upcoming visit{'s' if len(schedule['upcoming']) != 1 else ''} in your portal."
+                if schedule["upcoming"]
+                else "See booked visits and self-book the next available slot."
+            ),
+            "badge": (
+                care_plan_adherence["title"]
+                if care_plan_adherence["exists"]
+                else next_appointment["type_label"] if next_appointment else "Nothing booked"
+            ),
+            "tone": care_plan_adherence["tone"] if care_plan_adherence["exists"] else next_appointment["type_tone"] if next_appointment else "muted",
+            "url": care_plan_adherence["action_url"] if care_plan_adherence["exists"] else url_for("main.appointments"),
+        },
+        {
+            "label": "Results",
+            "title": results_status["action_label"],
+            "detail": results_status["detail"],
+            "badge": results_status["value"],
+            "tone": results_status["tone"],
+            "url": url_for("main.results"),
+        },
+        {
+            "label": "Messages",
+            "title": "Open messages",
+            "detail": (
+                "See the latest replies from your chiropractor."
+                if recent_messages
+                else "Start a secure thread with your chiropractic team."
+            ),
+            "badge": f"{unread_messages} unread" if unread_messages else "Up to date",
+            "tone": "rose" if unread_messages else "life",
+            "url": url_for("main.patient_messages"),
+        },
+    ]
+
+    portal_journey = [
+        {
+            "step": "01",
+            "label": "Intake",
+            "title": intake_status["value"],
+            "detail": intake_status["detail"],
+            "tone": intake_status["tone"],
+            "url": url_for("main.intake"),
+            "action_label": intake_status["action_label"],
+        },
+        {
+            "step": "02",
+            "label": "Results",
+            "title": results_status["value"],
+            "detail": results_status["detail"],
+            "tone": results_status["tone"],
+            "url": url_for("main.results"),
+            "action_label": results_status["action_label"],
+        },
+        {
+            "step": "03",
+            "label": "Care plan",
+            "title": care_plan_adherence["title"] if care_plan_adherence["exists"] else care_plan_status["value"],
+            "detail": care_plan_status["detail"],
+            "tone": care_plan_status["tone"],
+            "url": care_plan_status["action_url"],
+            "action_label": care_plan_status["action_label"],
+        },
+        {
+            "step": "04",
+            "label": "Messages",
+            "title": f"{unread_messages} unread" if unread_messages else "Thread up to date",
+            "detail": (
+                "Your care team has replied and is waiting on you."
+                if unread_messages
+                else "Use secure messages for updates, symptoms, and care questions."
+            ),
+            "tone": "rose" if unread_messages else "life",
+            "url": url_for("main.patient_messages"),
+            "action_label": "Open messages",
+        },
+    ]
+
+    if visit_report and visit_report["report_status"] == "published":
+        results_highlight = {
+            "title": "Published findings",
+            "summary": visit_report["patient_summary"] or "Your chiropractor has published your assessment summary.",
+            "supporting": visit_report["care_plan"] or visit_report["follow_up_plan"] or visit_report["patient_recommendations"],
+            "action_label": "Review full results",
+            "action_url": url_for("main.results"),
+        }
+    else:
+        results_highlight = {
+            "title": "Results pipeline",
+            "summary": "Your findings and care recommendations will appear here after the clinic finishes reviewing your assessment.",
+            "supporting": invitation["note"] if invitation and invitation["note"] else "",
+            "action_label": "Open results",
+            "action_url": url_for("main.results"),
+        }
+
+    return {
+        "submission": submission,
+        "invitation": invitation,
+        "visit_report": visit_report,
+        "schedule": schedule,
+        "care_plan": care_plan,
+        "next_appointment": next_appointment,
+        "recent_messages": recent_messages,
+        "unread_message_count": unread_messages,
+        "completed_visit_count": len(completed_history),
+        "cancelled_visit_count": len(cancelled_history),
+        "recent_history": schedule["history"][:4],
+        "portal_metrics": portal_metrics,
+        "portal_actions": portal_actions,
+        "portal_journey": portal_journey,
+        "next_step": next_step,
+        "results_highlight": results_highlight,
+    }
+
+
+def get_active_care_plan_patients(limit: int = 24):
+    return get_db().execute(
+        """
+        SELECT
+            cp.patient_user_id,
+            cp.updated_at,
+            u.first_name,
+            u.last_name,
+            u.email
+        FROM care_plans cp
+        JOIN users u ON u.id = cp.patient_user_id
+        WHERE cp.status = 'active'
+        ORDER BY cp.updated_at DESC, cp.id DESC
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+
+
+def build_staff_care_plan_follow_up_queue(limit: int = 8) -> list[dict]:
+    items: list[dict] = []
+    for row in get_active_care_plan_patients(limit=24):
+        care_plan = build_care_plan_context(row["patient_user_id"])
+        adherence = care_plan["adherence"]
+        if not adherence["staff_follow_up"]:
+            continue
+        next_action_visit = adherence["next_action_visit"]
+        items.append(
+            {
+                "patient_user_id": row["patient_user_id"],
+                "patient_name": f"{row['first_name']} {row['last_name']}".strip(),
+                "patient_email": row["email"],
+                "state": adherence["state"],
+                "title": adherence["title"],
+                "detail": adherence["detail"],
+                "tone": adherence["tone"],
+                "priority": adherence["staff_priority"],
+                "progress_label": adherence["progress_label"],
+                "visit_label": next_action_visit["label"] if next_action_visit is not None else None,
+                "visit_date_label": next_action_visit["suggested_long_label"] if next_action_visit is not None else None,
+                "open_chart_url": url_for("main.staff_patient_detail", user_id=row["patient_user_id"]),
+                "book_visit_url": next_action_visit["staff_booking_url"] if next_action_visit is not None else url_for("main.staff_patient_detail", user_id=row["patient_user_id"]),
+            }
+        )
+    items.sort(
+        key=lambda item: (
+            -item["priority"],
+            item["visit_date_label"] or "",
+            item["patient_name"],
+        )
+    )
+    return items[:limit]
+
+
 def build_staff_calendar_context(month_value: str | None = None) -> dict:
     month_start = month_start_from_value(month_value)
     appointments = [build_appointment_item(row) for row in get_all_appointments()]
@@ -3389,6 +4212,7 @@ def build_database_summary() -> dict:
     counts = {
         "users": db.execute("SELECT COUNT(*) AS count FROM users").fetchone()["count"],
         "appointments": db.execute("SELECT COUNT(*) AS count FROM appointments").fetchone()["count"],
+        "leads": db.execute("SELECT COUNT(*) AS count FROM leads").fetchone()["count"],
         "messages": db.execute("SELECT COUNT(*) AS count FROM patient_messages").fetchone()["count"],
         "journal_entries": db.execute("SELECT COUNT(*) AS count FROM practitioner_journal_entries").fetchone()["count"],
         "locations": db.execute("SELECT COUNT(*) AS count FROM locations").fetchone()["count"],
@@ -3492,7 +4316,12 @@ def booking_selection_context(source: str = "client") -> dict:
     else:
         selected_clinician_choice = str(selected_clinician) if selected_clinician is not None else ""
 
-    booking_date = request.args.get("appointment_date") or next_booking_date(selected_clinician, selected_location, booking_policy)
+    booking_date = normalized_booking_date_value(
+        request.args.get("appointment_date"),
+        selected_clinician,
+        selected_location,
+        booking_policy,
+    )
     availability = build_schedule_availability(
         booking_date,
         selected_clinician,
@@ -3516,6 +4345,157 @@ def booking_selection_context(source: str = "client") -> dict:
         "booking_date": booking_date,
         "booking_availability": availability,
         "booking_source": source,
+    }
+
+
+def patient_portal_booking_context(patient_user_id: int) -> dict:
+    booking = booking_selection_context("patient_portal")
+    care_plan = build_care_plan_context(patient_user_id)
+    selected_care_plan_visit_id = int_or_none(request.args.get("care_plan_visit_id"))
+    selected_care_plan_visit_row = None
+    if isinstance(selected_care_plan_visit_id, int):
+        candidate_visit = get_care_plan_visit(selected_care_plan_visit_id)
+        if (
+            candidate_visit is not None
+            and candidate_visit["patient_user_id"] == patient_user_id
+            and candidate_visit["plan_status"] == "active"
+            and candidate_visit["appointment_id"] is None
+        ):
+            selected_care_plan_visit_row = candidate_visit
+
+    if selected_care_plan_visit_row is None:
+        return {
+            **booking,
+            "care_plan": care_plan,
+            "selected_care_plan_visit": None,
+        }
+
+    selected_service = default_service_for_appointment_type("care_plan")
+    if care_plan["plan"] is not None and isinstance(care_plan["plan"]["service_id"], int):
+        plan_service = selected_appointment_service(
+            str(care_plan["plan"]["service_id"]),
+            active_only=True,
+            fallback_to_default=False,
+        )
+        if plan_service is not None and plan_service["appointment_type"] == "care_plan":
+            selected_service = plan_service
+    booking_policy = resolve_booking_policy(
+        selected_service,
+        "care_plan",
+        selected_care_plan_visit_row["duration_minutes"] or default_duration_for_type("care_plan"),
+    )
+    booking_policy = care_plan_visit_policy(
+        booking_policy,
+        {
+            "visit_kind": selected_care_plan_visit_row["visit_kind"],
+            "duration_minutes": selected_care_plan_visit_row["duration_minutes"] or booking_policy["duration_minutes"],
+        },
+    )
+    booking_policy["service_label"] = selected_care_plan_visit_row["label"] or booking_policy["service_label"]
+    selected_location = selected_location_id(
+        request.args.get("location_id") or (
+            str(selected_care_plan_visit_row["plan_location_id"])
+            if selected_care_plan_visit_row["plan_location_id"] is not None
+            else None
+        )
+    )
+    selected_clinician_id = requested_clinician_user_id(
+        request.args.get("clinician_user_id") or (
+            str(selected_care_plan_visit_row["plan_clinician_user_id"])
+            if selected_care_plan_visit_row["plan_clinician_user_id"] is not None
+            else None
+        ),
+        allow_any=booking_policy["routing_mode"] == "team_round_robin",
+    )
+    if booking_policy["routing_mode"] == "team_round_robin" and (request.args.get("clinician_user_id", "").strip().lower() in {"", "any", "team"}):
+        selected_clinician_id = None
+        selected_clinician_choice = "any"
+    else:
+        selected_clinician_choice = str(selected_clinician_id) if selected_clinician_id is not None else ""
+    booking_date = normalized_booking_date_value(
+        request.args.get("appointment_date") or selected_care_plan_visit_row["suggested_date"],
+        selected_clinician_id,
+        selected_location,
+        booking_policy,
+    )
+    availability = build_schedule_availability(
+        booking_date,
+        selected_clinician_id,
+        selected_location,
+        booking_policy["duration_minutes"],
+        booking_policy=booking_policy,
+    )
+    selected_visit_item = next(
+        (item for item in care_plan["visits"] if item["id"] == selected_care_plan_visit_row["id"]),
+        build_care_plan_visit_item(selected_care_plan_visit_row),
+    )
+    return {
+        **booking,
+        "care_plan": care_plan,
+        "selected_care_plan_visit": selected_visit_item,
+        "selected_service_id": selected_service["id"] if selected_service is not None else None,
+        "selected_appointment_type": "care_plan",
+        "selected_duration_minutes": booking_policy["duration_minutes"],
+        "selected_location_id": selected_location,
+        "selected_clinician_id": selected_clinician_id,
+        "selected_clinician_choice": selected_clinician_choice,
+        "booking_policy": booking_policy,
+        "booking_date": booking_date,
+        "booking_availability": availability,
+    }
+
+
+def public_lead_booking_context(values=None) -> dict:
+    values = values or request.args
+    selected_service = default_service_for_appointment_type("initial_consult") or selected_appointment_service(
+        values.get("service_id"),
+        active_only=True,
+        fallback_to_default=True,
+    )
+    if selected_service is None:
+        selected_service = selected_appointment_service(active_only=True, fallback_to_default=True)
+    selected_location = selected_location_id(values.get("location_id"))
+    booking_policy = resolve_booking_policy(
+        selected_service,
+        "initial_consult",
+        selected_service["duration_minutes"] if selected_service else default_duration_for_type("initial_consult"),
+    )
+    raw_clinician_value = values.get("clinician_user_id")
+    selected_clinician = requested_clinician_user_id(
+        raw_clinician_value,
+        allow_any=booking_policy["routing_mode"] == "team_round_robin",
+    )
+    if booking_policy["routing_mode"] == "team_round_robin" and (raw_clinician_value or "").strip().lower() in {"", "any", "team"}:
+        selected_clinician = None
+        selected_clinician_choice = "any"
+    else:
+        selected_clinician_choice = str(selected_clinician) if selected_clinician is not None else ""
+    booking_date = values.get("appointment_date") or next_booking_date(
+        selected_clinician,
+        selected_location,
+        booking_policy,
+    )
+    availability = build_schedule_availability(
+        booking_date,
+        selected_clinician,
+        selected_location,
+        booking_policy["duration_minutes"],
+        booking_policy=booking_policy,
+    )
+    return {
+        "location_options": location_options(),
+        "clinician_options": clinician_options(),
+        "lead_source_options": lead_source_options(),
+        "selected_service": selected_service,
+        "selected_location_id": selected_location,
+        "selected_clinician_id": selected_clinician,
+        "selected_clinician_choice": selected_clinician_choice,
+        "selected_duration_minutes": booking_policy["duration_minutes"],
+        "selected_appointment_type": "initial_consult",
+        "booking_policy": booking_policy,
+        "booking_date": booking_date,
+        "booking_availability": availability,
+        "booking_source": "public_lead",
     }
 
 
@@ -3615,6 +4595,7 @@ def ensure_patient_appointment(
     appointment_type: str,
     starts_at: str | None,
     *,
+    ends_at: str | None = None,
     note: str = "",
     source_invitation_id: int | None = None,
 ) -> int | None:
@@ -3652,6 +4633,7 @@ def ensure_patient_appointment(
         appointment_type,
         starts_at,
         service_id=booking_policy["service_id"],
+        ends_at=ends_at,
         requires_payment=booking_policy["requires_payment"],
         payment_status="pending" if booking_policy["requires_payment"] else "not_required",
         payment_amount=booking_policy["price_amount"],
@@ -3751,6 +4733,9 @@ def staff_dashboard_context(month_value: str | None = None) -> dict:
     active_invitations = [dict(row) for row in invitation_rows if not is_expired(row["expires_at"])]
     for invite in active_invitations:
         invite["appointment_label"] = format_schedule(invite["appointment_at"]) if invite["appointment_at"] else None
+    open_leads = [build_lead_item(row) for row in get_recent_leads(limit=8, statuses=("new", "invited"))]
+    open_lead_count = get_open_lead_count()
+    care_plan_follow_up_queue = build_staff_care_plan_follow_up_queue(limit=8)
 
     calendar_context = build_staff_calendar_context(month_value)
     next_appointments = {}
@@ -3775,6 +4760,10 @@ def staff_dashboard_context(month_value: str | None = None) -> dict:
         "patient_count": len(patients),
         "submitted_count": sum(1 for row in patients if row["intake_status"] == "submitted"),
         "pending_invite_count": len(active_invitations),
+        "open_leads": open_leads,
+        "open_lead_count": open_lead_count,
+        "care_plan_follow_up_queue": care_plan_follow_up_queue,
+        "care_plan_follow_up_count": len(care_plan_follow_up_queue),
     }
 
 
@@ -3940,6 +4929,215 @@ def build_care_plan_calendar_months(visits: list[dict]) -> list[dict]:
     return months
 
 
+def build_care_plan_booking_url(visit: dict, plan: dict | None, *, endpoint: str, patient_user_id: int | None = None) -> str:
+    selected_service = None
+    if plan is not None and isinstance(plan.get("service_id"), int):
+        candidate_service = selected_appointment_service(
+            str(plan["service_id"]),
+            active_only=True,
+            fallback_to_default=False,
+        )
+        if candidate_service is not None and candidate_service["appointment_type"] == "care_plan":
+            selected_service = candidate_service
+    duration_minutes = visit.get("duration_minutes") or (
+        selected_service["duration_minutes"] if selected_service is not None else default_duration_for_type("care_plan")
+    )
+    booking_policy = resolve_booking_policy(selected_service, "care_plan", duration_minutes)
+    booking_policy = care_plan_visit_policy(
+        booking_policy,
+        {
+            "visit_kind": visit.get("visit_kind"),
+            "duration_minutes": duration_minutes,
+        },
+    )
+    values = {
+        "care_plan_visit_id": visit["id"],
+        "appointment_type": "care_plan",
+        "duration_minutes": duration_minutes,
+        "appointment_date": normalized_booking_date_value(
+            visit.get("suggested_date"),
+            plan.get("clinician_user_id") if plan is not None else None,
+            plan.get("location_id") if plan is not None else None,
+            booking_policy,
+        ),
+    }
+    if plan is not None:
+        if isinstance(plan.get("service_id"), int):
+            values["service_id"] = plan["service_id"]
+        if isinstance(plan.get("location_id"), int):
+            values["location_id"] = plan["location_id"]
+        if isinstance(plan.get("clinician_user_id"), int):
+            values["clinician_user_id"] = plan["clinician_user_id"]
+    if endpoint == "main.staff_patient_detail":
+        values["user_id"] = patient_user_id
+    return url_for(endpoint, **values)
+
+
+def build_care_plan_adherence_summary(care_plan_context: dict) -> dict:
+    if not care_plan_context.get("plan"):
+        return {
+            "exists": False,
+            "state": "locked",
+            "tone": "muted",
+            "title": "Care plan not yet published",
+            "detail": "Your chiropractor will publish the next stage of care here after your review.",
+            "action_label": "Open appointments",
+            "action_url": url_for("main.appointments"),
+            "secondary_action_label": "Open messages",
+            "secondary_action_url": url_for("main.patient_messages"),
+            "next_booked": None,
+            "next_action_visit": None,
+            "needs_booking_count": 0,
+            "overdue_count": 0,
+            "progress_label": "No active plan",
+            "completion_percent": 0,
+            "staff_follow_up": False,
+            "staff_priority": 0,
+        }
+
+    plan = care_plan_context["plan"]
+    visits = care_plan_context["visits"]
+    today_key = date.today().isoformat()
+    total_visits = max(int(plan["total_visits"] or 0), len(visits), 1)
+    completed_count = int(care_plan_context["stats"]["completed"])
+    completion_percent = round((completed_count / total_visits) * 100)
+    overdue_visits = sorted(
+        [
+            item for item in visits
+            if item["status"] == "unbooked" and item["suggested_date"] < today_key
+        ],
+        key=lambda item: (item["suggested_date"], item["visit_number"]),
+    )
+    open_visits = sorted(
+        [
+            item for item in visits
+            if item["status"] == "unbooked" and item["suggested_date"] >= today_key
+        ],
+        key=lambda item: (item["suggested_date"], item["visit_number"]),
+    )
+    booked_visits = sorted(
+        [
+            item for item in visits
+            if item["status"] == "scheduled" and item["effective_date_value"] >= today_key
+        ],
+        key=lambda item: (item["effective_date_value"], item["visit_number"]),
+    )
+    next_booked = booked_visits[0] if booked_visits else None
+    next_action_visit = overdue_visits[0] if overdue_visits else (open_visits[0] if open_visits else None)
+
+    if plan["status"] == "completed":
+        return {
+            "exists": True,
+            "state": "completed",
+            "tone": "life",
+            "title": "You've completed this stage of care",
+            "detail": "Your recommended care-plan visits are complete. Keep an eye on the portal for your next review or maintenance visit.",
+            "action_label": "View appointment history",
+            "action_url": url_for("main.appointments"),
+            "secondary_action_label": "Open results",
+            "secondary_action_url": url_for("main.results"),
+            "next_booked": next_booked,
+            "next_action_visit": None,
+            "needs_booking_count": 0,
+            "overdue_count": 0,
+            "progress_label": f"{completed_count} of {total_visits} visits completed",
+            "completion_percent": completion_percent,
+            "staff_follow_up": False,
+            "staff_priority": 0,
+        }
+
+    if overdue_visits:
+        focus_visit = overdue_visits[0]
+        return {
+            "exists": True,
+            "state": "overdue",
+            "tone": "rose",
+            "title": "You're due for your next visit",
+            "detail": (
+                f"{len(overdue_visits)} care-plan visit{'s are' if len(overdue_visits) != 1 else ' is'} overdue. "
+                f"Rebook {focus_visit['label'].lower()} to stay on track."
+            ),
+            "action_label": "Rebook overdue visit",
+            "action_url": focus_visit["patient_booking_url"],
+            "secondary_action_label": "Message clinic",
+            "secondary_action_url": url_for("main.patient_messages"),
+            "next_booked": next_booked,
+            "next_action_visit": focus_visit,
+            "needs_booking_count": len(open_visits) + len(overdue_visits),
+            "overdue_count": len(overdue_visits),
+            "progress_label": f"{completed_count} of {total_visits} visits completed",
+            "completion_percent": completion_percent,
+            "staff_follow_up": True,
+            "staff_priority": 3,
+        }
+
+    if next_action_visit is not None:
+        focus_visit = next_action_visit
+        detail = f"{focus_visit['label']} is ready to book for {focus_visit['suggested_long_label']}."
+        if next_booked is not None:
+            detail = f"Your next visit is booked for {next_booked['effective_label']}. You can also secure {focus_visit['label'].lower()} now."
+        return {
+            "exists": True,
+            "state": "needs_booking",
+            "tone": "warm" if next_booked is not None else "sky",
+            "title": "Book your next recommended visit",
+            "detail": detail,
+            "action_label": "Book next visit",
+            "action_url": focus_visit["patient_booking_url"],
+            "secondary_action_label": "Open full calendar",
+            "secondary_action_url": url_for("main.appointments"),
+            "next_booked": next_booked,
+            "next_action_visit": focus_visit,
+            "needs_booking_count": len(open_visits),
+            "overdue_count": 0,
+            "progress_label": f"{completed_count} of {total_visits} visits completed",
+            "completion_percent": completion_percent,
+            "staff_follow_up": next_booked is None,
+            "staff_priority": 2 if next_booked is None else 1,
+        }
+
+    if next_booked is not None:
+        return {
+            "exists": True,
+            "state": "on_track",
+            "tone": "life",
+            "title": "You're on track",
+            "detail": f"Your next care-plan visit is booked for {next_booked['effective_label']}.",
+            "action_label": "View care-plan calendar",
+            "action_url": url_for("main.appointments"),
+            "secondary_action_label": "Message clinic",
+            "secondary_action_url": url_for("main.patient_messages"),
+            "next_booked": next_booked,
+            "next_action_visit": None,
+            "needs_booking_count": 0,
+            "overdue_count": 0,
+            "progress_label": f"{completed_count} of {total_visits} visits completed",
+            "completion_percent": completion_percent,
+            "staff_follow_up": False,
+            "staff_priority": 0,
+        }
+
+    return {
+        "exists": True,
+        "state": "active",
+        "tone": "muted",
+        "title": "Care plan is active",
+        "detail": "The clinic has published your plan. Open appointments to confirm the next step.",
+        "action_label": "Open appointments",
+        "action_url": url_for("main.appointments"),
+        "secondary_action_label": "Message clinic",
+        "secondary_action_url": url_for("main.patient_messages"),
+        "next_booked": None,
+        "next_action_visit": None,
+        "needs_booking_count": 0,
+        "overdue_count": 0,
+        "progress_label": f"{completed_count} of {total_visits} visits completed",
+        "completion_percent": completion_percent,
+        "staff_follow_up": False,
+        "staff_priority": 0,
+    }
+
+
 def build_care_plan_context(patient_user_id: int) -> dict:
     care_plan_row = get_active_care_plan(patient_user_id)
     if care_plan_row is None:
@@ -3955,6 +5153,8 @@ def build_care_plan_context(patient_user_id: int) -> dict:
                 "remaining": 0,
             },
             "next_unbooked": None,
+            "next_booked": None,
+            "adherence": build_care_plan_adherence_summary({"plan": None}),
         }
 
     visit_rows = get_care_plan_visits(care_plan_row["id"])
@@ -3967,7 +5167,42 @@ def build_care_plan_context(patient_user_id: int) -> dict:
             continue
         appointment_map[row["appointment_id"]] = decorate_appointment_contacts(build_appointment_item(appointment_row))
 
+    clinician_name = None
+    if care_plan_row["clinician_first_name"]:
+        clinician_name = f"{care_plan_row['clinician_first_name']} {care_plan_row['clinician_last_name']}".strip()
+    plan_item = {
+        "id": care_plan_row["id"],
+        "title": care_plan_row["title"] or care_plan_title_default(care_plan_row["duration_weeks"], care_plan_row["frequency_per_week"]),
+        "frequency_per_week": care_plan_row["frequency_per_week"],
+        "frequency_label": "Twice weekly" if care_plan_row["frequency_per_week"] == 2 else "Weekly",
+        "duration_weeks": care_plan_row["duration_weeks"],
+        "total_visits": care_plan_row["total_visits"],
+        "midpoint_visit_number": care_plan_row["midpoint_visit_number"],
+        "booking_mode": care_plan_row["booking_mode"],
+        "booking_mode_label": care_plan_booking_mode_meta(care_plan_row["booking_mode"])["label"],
+        "status": care_plan_row["status"],
+        "status_label": care_plan_row["status"].replace("_", " ").title(),
+        "service_id": care_plan_row["service_id"],
+        "service_label": care_plan_row["service_label"] or "Care plan visit",
+        "start_date": care_plan_row["start_date"],
+        "start_slot": care_plan_row["start_slot"],
+        "start_label": format_schedule(care_plan_row["start_slot"]) if care_plan_row["start_slot"] else care_plan_row["start_date"],
+        "note": care_plan_row["note"] or "",
+        "patient_details": care_plan_row["patient_details"] or "",
+        "location_id": care_plan_row["location_id"],
+        "location_name": care_plan_row["location_name"],
+        "clinician_user_id": care_plan_row["clinician_user_id"],
+        "clinician_name": clinician_name,
+    }
     visit_items = [build_care_plan_visit_item(row, appointment_map.get(row["appointment_id"])) for row in visit_rows]
+    for visit in visit_items:
+        visit["patient_booking_url"] = build_care_plan_booking_url(visit, plan_item, endpoint="main.appointments")
+        visit["staff_booking_url"] = build_care_plan_booking_url(
+            visit,
+            plan_item,
+            endpoint="main.staff_patient_detail",
+            patient_user_id=patient_user_id,
+        )
     stats = {
         "completed": sum(1 for item in visit_items if item["status"] == "completed"),
         "booked": sum(1 for item in visit_items if item["booked"]),
@@ -3975,33 +5210,39 @@ def build_care_plan_context(patient_user_id: int) -> dict:
         "cancelled": sum(1 for item in visit_items if item["status"] == "cancelled"),
     }
     stats["remaining"] = len(visit_items) - stats["completed"] - stats["cancelled"]
-
-    return {
-        "plan": {
-            "id": care_plan_row["id"],
-            "title": care_plan_row["title"] or care_plan_title_default(care_plan_row["duration_weeks"], care_plan_row["frequency_per_week"]),
-            "frequency_per_week": care_plan_row["frequency_per_week"],
-            "frequency_label": "Twice weekly" if care_plan_row["frequency_per_week"] == 2 else "Weekly",
-            "duration_weeks": care_plan_row["duration_weeks"],
-            "total_visits": care_plan_row["total_visits"],
-            "midpoint_visit_number": care_plan_row["midpoint_visit_number"],
-            "booking_mode": care_plan_row["booking_mode"],
-            "booking_mode_label": care_plan_booking_mode_meta(care_plan_row["booking_mode"])["label"],
-            "status": care_plan_row["status"],
-            "status_label": care_plan_row["status"].replace("_", " ").title(),
-            "service_id": care_plan_row["service_id"],
-            "service_label": care_plan_row["service_label"] or "Care plan visit",
-            "start_date": care_plan_row["start_date"],
-            "start_slot": care_plan_row["start_slot"],
-            "start_label": format_schedule(care_plan_row["start_slot"]) if care_plan_row["start_slot"] else care_plan_row["start_date"],
-            "note": care_plan_row["note"] or "",
-            "patient_details": care_plan_row["patient_details"] or "",
-        },
+    next_unbooked = next(
+        iter(
+            sorted(
+                (item for item in visit_items if item["status"] == "unbooked"),
+                key=lambda item: (item["suggested_date"], item["visit_number"]),
+            )
+        ),
+        None,
+    )
+    next_booked = next(
+        iter(
+            sorted(
+                (
+                    item
+                    for item in visit_items
+                    if item["status"] == "scheduled" and item["effective_date_value"] >= date.today().isoformat()
+                ),
+                key=lambda item: (item["effective_date_value"], item["visit_number"]),
+            )
+        ),
+        None,
+    )
+    context = {
+        "plan": plan_item,
         "visits": visit_items,
         "months": build_care_plan_calendar_months(visit_items),
         "stats": stats,
-        "next_unbooked": next((item for item in visit_items if item["status"] == "unbooked"), None),
+        "next_unbooked": next_unbooked,
+        "next_booked": next_booked,
     }
+    context["adherence"] = build_care_plan_adherence_summary(context)
+
+    return context
 
 
 def staff_patient_context(user_id: int):
@@ -4078,11 +5319,15 @@ def staff_patient_context(user_id: int):
     if selected_care_plan_visit_row is not None and not request.args.get("location_id"):
         selected_location = selected_location_id(str(selected_care_plan_visit_row["plan_location_id"]))
 
-    booking_date = request.args.get("appointment_date")
-    if not booking_date and selected_care_plan_visit_row is not None:
-        booking_date = selected_care_plan_visit_row["suggested_date"]
-    if not booking_date:
-        booking_date = next_booking_date(selected_clinician_id, selected_location, booking_policy)
+    booking_date = normalized_booking_date_value(
+        request.args.get("appointment_date") or (
+            selected_care_plan_visit_row["suggested_date"] if selected_care_plan_visit_row is not None else None
+        ),
+        selected_clinician_id,
+        selected_location,
+        booking_policy,
+        slot_increment_minutes=selected_slot_increment,
+    )
     booking_availability = build_schedule_availability(
         booking_date,
         selected_clinician_id,
@@ -4224,6 +5469,218 @@ def index():
     return redirect(url_for("main.login"))
 
 
+@bp.route("/new-patient", methods=("GET", "POST"))
+def new_patient_request():
+    if g.user is not None and g.user["role"] == "client":
+        return redirect(dashboard_redirect_for(g.user))
+
+    if request.method == "POST":
+        form_source = request.form
+    else:
+        form_source = request.args
+
+    form_data = {
+        "first_name": form_source.get("first_name", "").strip(),
+        "last_name": form_source.get("last_name", "").strip(),
+        "email": form_source.get("email", "").strip().lower(),
+        "phone": form_source.get("phone", "").strip(),
+        "reason": form_source.get("reason", "").strip(),
+        "source": form_source.get("source", "website").strip().lower() or "website",
+        "location_id": form_source.get("location_id", ""),
+        "clinician_user_id": form_source.get("clinician_user_id", ""),
+        "appointment_date": form_source.get("appointment_date", ""),
+        "slot_start": form_source.get("slot_start", ""),
+    }
+    context = public_lead_booking_context(form_source)
+
+    if request.method == "POST":
+        booking_policy = context["booking_policy"]
+        location_id = selected_location_id(form_data["location_id"])
+        clinician_user_id = requested_clinician_user_id(
+            form_data["clinician_user_id"],
+            allow_any=booking_policy["routing_mode"] == "team_round_robin",
+        )
+        if booking_policy["routing_mode"] == "team_round_robin" and form_data["clinician_user_id"].lower() in {"", "any", "team"}:
+            clinician_user_id = None
+        source_values = {option["value"] for option in lead_source_options()}
+
+        error = None
+        if not form_data["first_name"] or not form_data["last_name"]:
+            error = "First and last name are required."
+        elif not form_data["email"]:
+            error = "Email is required."
+        elif not form_data["phone"]:
+            error = "Phone number is required."
+        elif not form_data["reason"]:
+            error = "Tell the clinic why you are booking."
+        elif form_data["source"] not in source_values:
+            error = "Choose a valid lead source."
+        elif location_id is None:
+            error = "Choose a valid clinic location."
+        elif booking_policy["routing_mode"] != "team_round_robin" and clinician_user_id is None:
+            error = "Choose a valid chiropractor."
+        elif not form_data["appointment_date"]:
+            error = "Choose a date for your preferred consultation."
+        elif not form_data["slot_start"]:
+            error = "Choose an available time slot."
+
+        db = get_db()
+        existing_user = None
+        if error is None:
+            existing_user = db.execute(
+                "SELECT id FROM users WHERE email = ?",
+                (form_data["email"],),
+            ).fetchone()
+            if existing_user is not None:
+                error = "An account already exists for that email. Sign in to manage or book appointments."
+
+        starts_parsed = parse_iso(form_data["slot_start"]) if form_data["slot_start"] else None
+        slot_assignment = None
+        if error is None and starts_parsed is None:
+            error = "Choose a valid available time slot."
+        elif error is None and starts_parsed.date().isoformat() != form_data["appointment_date"]:
+            error = "Selected time slot does not match the chosen date."
+        elif error is None:
+            slot_assignment = resolve_slot_assignment(starts_parsed, clinician_user_id, location_id, booking_policy)
+            if slot_assignment is None:
+                error = "That consultation slot is no longer available. Choose another available time."
+
+        open_lead = None
+        if error is None:
+            open_lead = db.execute(
+                """
+                SELECT *
+                FROM leads
+                WHERE email = ?
+                  AND status IN ('new', 'invited')
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (form_data["email"],),
+            ).fetchone()
+            if open_lead is not None and open_lead["invitation_id"] is not None:
+                active_invitation = db.execute(
+                    """
+                    SELECT *
+                    FROM invitations
+                    WHERE id = ?
+                    """,
+                    (open_lead["invitation_id"],),
+                ).fetchone()
+                if active_invitation is not None and active_invitation["accepted_at"] is None and not is_expired(active_invitation["expires_at"]):
+                    flash("Your consultation slot is still reserved. Finish creating your portal account below.", "success")
+                    return redirect(url_for("main.accept_invite", token=active_invitation["token"]))
+
+        if error is None:
+            now = iso_now()
+            slot_value = slot_assignment["value"] if slot_assignment is not None else format_datetime_local(starts_parsed)
+            payload = (
+                form_data["first_name"],
+                form_data["last_name"],
+                form_data["email"],
+                form_data["phone"],
+                form_data["source"],
+                booking_policy["service_id"],
+                location_id,
+                slot_assignment["clinician_user_id"] if slot_assignment is not None else clinician_user_id,
+                slot_value,
+                form_data["reason"],
+                "",
+                now,
+            )
+            if open_lead is None:
+                lead_cursor = db.execute(
+                    """
+                    INSERT INTO leads (
+                        first_name,
+                        last_name,
+                        email,
+                        phone,
+                        source,
+                        preferred_service_id,
+                        preferred_location_id,
+                        preferred_clinician_user_id,
+                        requested_starts_at,
+                        reason,
+                        notes,
+                        created_at,
+                        updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    payload + (now,),
+                )
+                lead_id = lead_cursor.lastrowid
+            else:
+                db.execute(
+                    """
+                    UPDATE leads
+                    SET first_name = ?,
+                        last_name = ?,
+                        email = ?,
+                        phone = ?,
+                        source = ?,
+                        preferred_service_id = ?,
+                        preferred_location_id = ?,
+                        preferred_clinician_user_id = ?,
+                        requested_starts_at = ?,
+                        reason = ?,
+                        notes = ?,
+                        updated_at = ?,
+                        status = 'new'
+                    WHERE id = ?
+                    """,
+                    payload + (open_lead["id"],),
+                )
+                lead_id = open_lead["id"]
+
+            hold_expires_at = utc_future_timestamp(minutes=PUBLIC_BOOKING_HOLD_MINUTES)
+            invitation = create_invitation_record(
+                email=form_data["email"],
+                first_name=form_data["first_name"],
+                last_name=form_data["last_name"],
+                appointment_at=slot_value,
+                note=form_data["reason"],
+                created_by=slot_assignment["clinician_user_id"] if slot_assignment is not None else clinician_user_id,
+                expires_at=hold_expires_at,
+            )
+            upsert_invitation_slot_hold(
+                invitation_id=invitation["id"],
+                lead_id=lead_id,
+                clinician_user_id=slot_assignment["clinician_user_id"],
+                location_id=location_id,
+                booking_policy=booking_policy,
+                starts_at=starts_parsed,
+                expires_at=hold_expires_at,
+            )
+            db.execute(
+                """
+                UPDATE leads
+                SET status = 'invited',
+                    invitation_id = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (invitation["id"], now, lead_id),
+            )
+            db.commit()
+            flash(
+                f"Your consultation slot is reserved for {PUBLIC_BOOKING_HOLD_MINUTES} minutes. Finish creating your portal account to confirm it.",
+                "success",
+            )
+            return redirect(url_for("main.accept_invite", token=invitation["token"]))
+
+        flash(error, "error")
+
+    return render_template("new_patient_request.html", form_data=form_data, **context)
+
+
+@bp.get("/api/public-availability")
+def public_availability():
+    context = public_lead_booking_context(request.args)
+    return jsonify({"ok": True, "availability": serialize_schedule_availability(context["booking_availability"])})
+
+
 @bp.route("/signup", methods=("GET", "POST"))
 def signup():
     if g.user is not None:
@@ -4275,7 +5732,10 @@ def accept_invite(token: str):
         return redirect(dashboard_redirect_for(g.user))
 
     invitation = get_invitation_by_token(token)
+    slot_hold = get_invitation_slot_hold(invitation["id"]) if invitation is not None else None
     invalid = invitation is None or invitation["accepted_at"] is not None or is_expired(invitation["expires_at"])
+    if not invalid and slot_hold is not None and not slot_hold_is_active(slot_hold):
+        invalid = True
     if invalid:
         return render_template("accept_invite.html", invitation=None, invalid=True)
 
@@ -4291,6 +5751,13 @@ def accept_invite(token: str):
             error = "Passwords do not match."
         elif get_db().execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone() is not None:
             error = "An account with that email already exists. Sign in instead."
+
+        if error is None:
+            now = iso_now()
+            db = get_db()
+            slot_hold = get_invitation_slot_hold(invitation["id"])
+            if slot_hold is not None and not slot_hold_is_active(slot_hold):
+                error = "That reserved consultation slot has expired. Request a new booking link from the clinic."
 
         if error is None:
             now = iso_now()
@@ -4316,14 +5783,36 @@ def accept_invite(token: str):
                 """,
                 (now, cursor.lastrowid, invitation["id"]),
             )
-            ensure_patient_appointment(
+            appointment_id = ensure_patient_appointment(
                 cursor.lastrowid,
-                invitation["created_by"],
-                default_location_id(),
-                "initial_consult",
-                invitation["appointment_at"],
+                slot_hold["clinician_user_id"] if slot_hold is not None else invitation["created_by"],
+                slot_hold["location_id"] if slot_hold is not None else default_location_id(),
+                slot_hold["appointment_type"] if slot_hold is not None else "initial_consult",
+                slot_hold["starts_at"] if slot_hold is not None else invitation["appointment_at"],
+                ends_at=slot_hold["ends_at"] if slot_hold is not None else None,
                 note=invitation["note"] or "",
                 source_invitation_id=invitation["id"],
+            )
+            if slot_hold is not None:
+                db.execute(
+                    """
+                    UPDATE appointment_slot_holds
+                    SET status = 'consumed',
+                        consumed_appointment_id = ?,
+                        updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (appointment_id, now, slot_hold["id"]),
+                )
+            db.execute(
+                """
+                UPDATE leads
+                SET status = 'converted',
+                    converted_user_id = ?,
+                    updated_at = ?
+                WHERE invitation_id = ?
+                """,
+                (cursor.lastrowid, now, invitation["id"]),
             )
             db.commit()
             session.clear()
@@ -4333,7 +5822,13 @@ def accept_invite(token: str):
 
         flash(error, "error")
 
-    return render_template("accept_invite.html", invitation=invitation, invalid=False)
+    return render_template(
+        "accept_invite.html",
+        invitation=invitation,
+        invalid=False,
+        slot_hold=build_slot_hold_item(slot_hold),
+        reserved_appointment_label=format_schedule(slot_hold["starts_at"] if slot_hold is not None else invitation["appointment_at"]),
+    )
 
 
 @bp.route("/login", methods=("GET", "POST"))
@@ -4453,18 +5948,8 @@ def dashboard():
         context = staff_dashboard_context(request.args.get("month"))
         return render_template("staff_dashboard.html", **context)
 
-    submission = get_submission_for_user(g.user["id"])
-    invitation = get_latest_invitation_for_user(g.user["id"])
-    visit_report = get_visit_report_for_patient(g.user["id"])
-    schedule = build_patient_schedule_context(g.user["id"])
-    return render_template(
-        "dashboard.html",
-        submission=submission,
-        invitation=invitation,
-        visit_report=visit_report,
-        schedule=schedule,
-        next_appointment=schedule["next_appointment"],
-    )
+    context = build_client_dashboard_context(g.user["id"], request.args.get("month"))
+    return render_template("dashboard.html", **context)
 
 
 @bp.route("/staff/dashboard")
@@ -4790,13 +6275,33 @@ def update_staff_learning_progress():
 @staff_required
 def staff_new_invitation():
     created_invitation = None
+    created_slot_hold = None
+    lead_id = int_or_none(request.values.get("lead_id"))
+    linked_lead = get_lead(lead_id) if isinstance(lead_id, int) else None
+    invite_prefill = {
+        "lead_id": str(linked_lead["id"]) if linked_lead is not None else "",
+        "first_name": request.values.get("first_name", "").strip(),
+        "last_name": request.values.get("last_name", "").strip(),
+        "email": request.values.get("email", "").strip().lower(),
+        "appointment_at": request.values.get("appointment_at", "").strip(),
+        "note": request.values.get("note", "").strip(),
+    }
+    if linked_lead is not None:
+        invite_prefill = {
+            "lead_id": str(linked_lead["id"]),
+            "first_name": linked_lead["first_name"],
+            "last_name": linked_lead["last_name"],
+            "email": linked_lead["email"],
+            "appointment_at": linked_lead["requested_starts_at"] or "",
+            "note": linked_lead["reason"] or linked_lead["notes"] or "",
+        }
 
     if request.method == "POST":
-        first_name = request.form.get("first_name", "").strip()
-        last_name = request.form.get("last_name", "").strip()
-        email = request.form.get("email", "").strip().lower()
-        appointment_at = request.form.get("appointment_at", "").strip() or None
-        note = request.form.get("note", "").strip()
+        first_name = invite_prefill["first_name"]
+        last_name = invite_prefill["last_name"]
+        email = invite_prefill["email"]
+        appointment_at = invite_prefill["appointment_at"] or None
+        note = invite_prefill["note"]
 
         error = None
         if not first_name or not last_name:
@@ -4804,35 +6309,69 @@ def staff_new_invitation():
         elif not email:
             error = "Patient email is required."
 
+        initial_service = default_service_for_appointment_type("initial_consult")
+        booking_policy = resolve_booking_policy(initial_service, "initial_consult", None)
+        location_id = selected_location_id(
+            str(linked_lead["preferred_location_id"]) if linked_lead is not None and linked_lead["preferred_location_id"] is not None else None
+        )
+        clinician_user_id = selected_clinician_user_id(
+            str(linked_lead["preferred_clinician_user_id"]) if linked_lead is not None and linked_lead["preferred_clinician_user_id"] is not None else None
+        )
+        appointment_at_parsed = parse_iso(appointment_at) if appointment_at else None
+        slot_assignment = None
+        if error is None and appointment_at and appointment_at_parsed is None:
+            error = "Choose a valid appointment date and time."
+        elif error is None and appointment_at_parsed is not None:
+            slot_assignment = resolve_slot_assignment(appointment_at_parsed, clinician_user_id, location_id, booking_policy)
+            if slot_assignment is None:
+                error = "That appointment slot is no longer available. Choose another time."
+
         if error is None:
             now = iso_now()
-            expires_at = (datetime.utcnow() + timedelta(days=14)).replace(microsecond=0).isoformat() + "Z"
-            token = secrets.token_urlsafe(24)
+            expires_at = utc_future_timestamp(days=STAFF_INVITE_EXPIRY_DAYS)
             db = get_db()
-            cursor = db.execute(
-                """
-                INSERT INTO invitations (
-                    email,
-                    first_name,
-                    last_name,
-                    appointment_at,
-                    note,
-                    token,
-                    expires_at,
-                    created_at,
-                    created_by
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (email, first_name, last_name, appointment_at, note, token, expires_at, now, g.user["id"]),
+            created_invitation = create_invitation_record(
+                email=email,
+                first_name=first_name,
+                last_name=last_name,
+                appointment_at=slot_assignment["value"] if slot_assignment is not None else appointment_at,
+                note=note,
+                created_by=g.user["id"],
+                expires_at=expires_at,
             )
+            if slot_assignment is not None and appointment_at_parsed is not None:
+                created_slot_hold = upsert_invitation_slot_hold(
+                    invitation_id=created_invitation["id"],
+                    lead_id=linked_lead["id"] if linked_lead is not None else None,
+                    clinician_user_id=slot_assignment["clinician_user_id"],
+                    location_id=location_id,
+                    booking_policy=booking_policy,
+                    starts_at=appointment_at_parsed,
+                    expires_at=expires_at,
+                )
+            if linked_lead is not None:
+                db.execute(
+                    """
+                    UPDATE leads
+                    SET status = 'invited',
+                        invitation_id = ?,
+                        updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (created_invitation["id"], now, linked_lead["id"]),
+                )
             db.commit()
-            created_invitation = db.execute("SELECT * FROM invitations WHERE id = ?", (cursor.lastrowid,)).fetchone()
-            flash("Invitation created.", "success")
+            flash("Invitation created from the lead request." if linked_lead is not None else "Invitation created.", "success")
         else:
             flash(error, "error")
 
-    return render_template("invite_form.html", created_invitation=created_invitation)
+    return render_template(
+        "invite_form.html",
+        created_invitation=created_invitation,
+        created_slot_hold=build_slot_hold_item(created_slot_hold),
+        invite_prefill=invite_prefill,
+        linked_lead=build_lead_item(linked_lead) if linked_lead is not None else None,
+    )
 
 
 @bp.route("/staff/calendar")
@@ -6173,7 +7712,7 @@ def update_staff_patient_appointment(user_id: int, appointment_id: int):
 @client_required
 def appointments():
     schedule = build_patient_schedule_context(g.user["id"], request.args.get("month"))
-    booking = booking_selection_context("patient_portal")
+    booking = patient_portal_booking_context(g.user["id"])
     booking_disabled_reason = None
     if not online_booking_enabled():
         booking_disabled_reason = "Online booking is disabled in clinic settings. Contact the clinic to schedule a visit."
@@ -6198,6 +7737,17 @@ def self_book_appointment():
         )
     )
     booking_policy = resolve_booking_policy(selected_service, appointment_type, duration_minutes if isinstance(duration_minutes, int) else None)
+    care_plan_visit_id = int_or_none(request.form.get("care_plan_visit_id"))
+    care_plan_visit = get_care_plan_visit(care_plan_visit_id) if isinstance(care_plan_visit_id, int) else None
+    if care_plan_visit is not None:
+        booking_policy = care_plan_visit_policy(
+            booking_policy,
+            {
+                "visit_kind": care_plan_visit["visit_kind"],
+                "duration_minutes": care_plan_visit["duration_minutes"] or booking_policy["duration_minutes"],
+            },
+        )
+        booking_policy["service_label"] = care_plan_visit["label"] or booking_policy["service_label"]
     raw_clinician_value = request.form.get("clinician_user_id")
     clinician_user_id = requested_clinician_user_id(
         raw_clinician_value,
@@ -6213,6 +7763,12 @@ def self_book_appointment():
     error = None
     if appointment_type not in APPOINTMENT_TYPE_META:
         error = "Choose a valid appointment type."
+    elif care_plan_visit is not None and appointment_type != "care_plan":
+        error = "This rebooking link is only for care-plan visits."
+    elif isinstance(care_plan_visit_id, int) and (care_plan_visit is None or care_plan_visit["patient_user_id"] != g.user["id"]):
+        error = "That care-plan visit could not be loaded."
+    elif care_plan_visit is not None and care_plan_visit["appointment_id"] is not None:
+        error = "That care-plan step is already booked."
     elif location_id is None:
         error = "Choose a valid clinic location."
     elif booking_policy["routing_mode"] != "team_round_robin" and clinician_user_id is None:
@@ -6251,6 +7807,27 @@ def self_book_appointment():
             policy_snapshot=booking_policy,
             booking_source="patient_portal",
         )
+        if care_plan_visit is not None:
+            get_db().execute(
+                """
+                UPDATE care_plan_visits
+                SET appointment_id = ?,
+                    booked = 1,
+                    status = 'scheduled',
+                    patient_details = ?,
+                    note = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    appointment_id,
+                    patient_details,
+                    patient_details,
+                    iso_now(),
+                    care_plan_visit["id"],
+                ),
+            )
+            refresh_care_plan_status(care_plan_visit["care_plan_id"])
         log_booking_event(
             "booking_created",
             appointment_id,
@@ -6264,7 +7841,9 @@ def self_book_appointment():
             },
         )
         get_db().commit()
-        if booking_policy["requires_payment"] and isinstance(booking_policy["price_amount"], (int, float)):
+        if care_plan_visit is not None:
+            flash("Your next recommended care-plan visit is booked.", "success")
+        elif booking_policy["requires_payment"] and isinstance(booking_policy["price_amount"], (int, float)):
             flash(
                 f"Appointment booked. Payment of {booking_policy['price_amount']:.2f} {booking_policy['currency']} is marked pending.",
                 "success",
@@ -6280,6 +7859,7 @@ def self_book_appointment():
             location_id=location_id,
             clinician_user_id="any" if clinician_user_id is None and booking_policy["routing_mode"] == "team_round_robin" else clinician_user_id,
             service_id=booking_policy["service_id"],
+            care_plan_visit_id=care_plan_visit["id"] if care_plan_visit is not None and error is not None else None,
             appointment_type=appointment_type or None,
             duration_minutes=booking_policy["duration_minutes"],
             appointment_date=appointment_date or (slot_start[:10] if slot_start else None),
@@ -6295,6 +7875,7 @@ def cancel_self_booked_appointment(appointment_id: int):
         abort(404)
 
     appointment = build_appointment_item(appointment_row)
+    linked_care_plan_visit = get_care_plan_visit_by_appointment(appointment_id)
     if appointment["status"] != "scheduled":
         flash("Only scheduled appointments can be cancelled.", "error")
         return redirect(url_for("main.appointments"))
@@ -6322,6 +7903,24 @@ def cancel_self_booked_appointment(appointment_id: int):
     )
     sync_care_plan_visit_for_appointment(appointment_id)
     get_db().commit()
+    if linked_care_plan_visit is not None and linked_care_plan_visit["patient_user_id"] == g.user["id"]:
+        flash("Appointment cancelled. Choose a new time to stay on track with your care plan.", "success")
+        return redirect(
+            build_care_plan_booking_url(
+                {
+                    "id": linked_care_plan_visit["id"],
+                    "visit_kind": linked_care_plan_visit["visit_kind"],
+                    "duration_minutes": linked_care_plan_visit["duration_minutes"] or default_duration_for_type("care_plan"),
+                    "suggested_date": appointment["day_key"],
+                },
+                {
+                    "service_id": linked_care_plan_visit["plan_service_id"],
+                    "location_id": linked_care_plan_visit["plan_location_id"],
+                    "clinician_user_id": linked_care_plan_visit["plan_clinician_user_id"],
+                },
+                endpoint="main.appointments",
+            )
+        )
     flash("Appointment cancelled. You can book a new slot anytime.", "success")
     return redirect(url_for("main.appointments"))
 

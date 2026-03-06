@@ -14,6 +14,7 @@
       <strong>{{ patient_count }} patients</strong>
       <small>{{ submitted_count }} submitted intakes</small>
       <small>{{ pending_invite_count }} active invites</small>
+      <small>{{ open_lead_count }} open lead requests</small>
     </div>
   </section>
 
@@ -178,6 +179,84 @@
   </section>
 
   <section class="dashboard-grid">
+    <article class="panel">
+      <div class="panel-label">Care-plan follow-up</div>
+      <div class="panel-actions" style="margin-top:12px">
+        <span class="status-dot sky">{{ care_plan_follow_up_count }} needing action</span>
+      </div>
+      {% if care_plan_follow_up_queue %}
+        <div class="invite-stack" style="margin-top:16px">
+          {% for item in care_plan_follow_up_queue %}
+            <div class="mini-card">
+              <div class="agenda-item-head">
+                <div>
+                  <strong>{{ item["patient_name"] }}</strong>
+                  <small>{{ item["patient_email"] }}</small>
+                </div>
+                <span class="status-dot {{ item['tone'] }}">{{ item["title"] }}</span>
+              </div>
+              <small>{{ item["progress_label"] }}</small>
+              <small>{{ item["detail"] }}</small>
+              {% if item["visit_label"] %}
+                <small>{{ item["visit_label"] }} · {{ item["visit_date_label"] }}</small>
+              {% endif %}
+              <div class="tiny-actions">
+                <a class="tiny-button sky" href="{{ item['book_visit_url'] }}">Book next visit</a>
+                <a class="table-link" href="{{ item['open_chart_url'] }}">Open patient chart</a>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p style="margin-top:12px">No care-plan follow-up actions are waiting right now.</p>
+      {% endif %}
+    </article>
+  </section>
+
+  <section class="dashboard-grid">
+    <article class="panel">
+      <div class="panel-label">New patient requests</div>
+      <div class="panel-actions" style="margin-top:12px">
+        <a class="primary-button" href="{{ url_for('main.new_patient_request') }}">Open public page</a>
+      </div>
+      {% if open_leads %}
+        <div class="invite-stack">
+          {% for lead in open_leads %}
+            <div class="mini-card">
+              <div class="agenda-item-head">
+                <div>
+                  <strong>{{ lead["full_name"] }}</strong>
+                  <small>{{ lead["email"] }}</small>
+                </div>
+                <span class="status-dot {{ lead['status_tone'] }}">{{ lead["status_label"] }}</span>
+              </div>
+              <small>{{ lead["service_label"] }} · {{ lead["requested_label"] }}</small>
+              {% if lead["location_name"] %}
+                <small>{{ lead["location_name"] }}</small>
+              {% endif %}
+              {% if lead["clinician_name"] %}
+                <small>{{ lead["clinician_name"] }}</small>
+              {% endif %}
+              {% if lead["phone"] %}
+                <small>{{ lead["phone"] }}</small>
+              {% endif %}
+              <small>{{ lead["source_label"] }}</small>
+              {% if lead["reason"] %}
+                <small>{{ lead["reason"] }}</small>
+              {% endif %}
+              {% if lead["has_active_invite"] and lead["invite_url"] %}
+                <a class="table-link" href="{{ lead['invite_url'] }}">Open invite</a>
+              {% else %}
+                <a class="table-link" href="{{ lead['create_invite_url'] }}">Create invite</a>
+              {% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p>No open lead requests yet.</p>
+      {% endif %}
+    </article>
+
     <article class="panel">
       <div class="panel-label">Active invites</div>
       <div class="panel-actions" style="margin-top:12px">

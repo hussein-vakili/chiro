@@ -16,7 +16,14 @@
     {% else %}
       <div class="auth-eyebrow">Clinic invitation</div>
       <h1>Finish setting up your account</h1>
-      <p>This invite is for {{ invitation["first_name"] }} {{ invitation["last_name"] }} at {{ invitation["email"] }}{% if invitation["appointment_at"] %}, with an appointment on {{ invitation["appointment_at"].replace("T", " ") }}{% endif %}.</p>
+      <p>This invite is for {{ invitation["first_name"] }} {{ invitation["last_name"] }} at {{ invitation["email"] }}{% if reserved_appointment_label %}, with an appointment on {{ reserved_appointment_label }}{% endif %}.</p>
+      {% if slot_hold %}
+        <div class="info-box">
+          <strong>Reserved slot</strong><br>
+          {{ slot_hold["service_label"] }}{% if slot_hold["clinician_name"] %} with {{ slot_hold["clinician_name"] }}{% endif %}{% if slot_hold["location_name"] %} at {{ slot_hold["location_name"] }}{% endif %}.<br>
+          This reservation is held until {{ slot_hold["expires_label"] }}.
+        </div>
+      {% endif %}
       {% if invitation["note"] %}
         <div class="info-box">{{ invitation["note"] }}</div>
       {% endif %}

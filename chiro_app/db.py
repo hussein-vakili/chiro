@@ -70,6 +70,63 @@ CREATE TABLE IF NOT EXISTS invitations (
 CREATE INDEX IF NOT EXISTS idx_invitations_email ON invitations(email);
 CREATE INDEX IF NOT EXISTS idx_invitations_token ON invitations(token);
 
+CREATE TABLE IF NOT EXISTS appointment_slot_holds (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    invitation_id INTEGER,
+    lead_id INTEGER,
+    clinician_user_id INTEGER NOT NULL,
+    location_id INTEGER,
+    service_id INTEGER,
+    appointment_type TEXT NOT NULL DEFAULT 'initial_consult',
+    starts_at TEXT NOT NULL,
+    ends_at TEXT,
+    status TEXT NOT NULL DEFAULT 'active',
+    expires_at TEXT NOT NULL,
+    consumed_appointment_id INTEGER,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (invitation_id) REFERENCES invitations(id) ON DELETE SET NULL,
+    FOREIGN KEY (lead_id) REFERENCES leads(id) ON DELETE SET NULL,
+    FOREIGN KEY (clinician_user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (location_id) REFERENCES locations(id) ON DELETE SET NULL,
+    FOREIGN KEY (service_id) REFERENCES appointment_services(id) ON DELETE SET NULL,
+    FOREIGN KEY (consumed_appointment_id) REFERENCES appointments(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_appointment_slot_holds_clinician_date ON appointment_slot_holds(clinician_user_id, starts_at);
+CREATE INDEX IF NOT EXISTS idx_appointment_slot_holds_status_expires ON appointment_slot_holds(status, expires_at);
+CREATE INDEX IF NOT EXISTS idx_appointment_slot_holds_lead ON appointment_slot_holds(lead_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_appointment_slot_holds_invitation_unique ON appointment_slot_holds(invitation_id);
+
+CREATE TABLE IF NOT EXISTS leads (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    first_name TEXT NOT NULL,
+    last_name TEXT NOT NULL,
+    email TEXT NOT NULL COLLATE NOCASE,
+    phone TEXT NOT NULL DEFAULT '',
+    source TEXT NOT NULL DEFAULT 'website',
+    status TEXT NOT NULL DEFAULT 'new',
+    preferred_service_id INTEGER,
+    preferred_location_id INTEGER,
+    preferred_clinician_user_id INTEGER,
+    requested_starts_at TEXT,
+    reason TEXT NOT NULL DEFAULT '',
+    notes TEXT NOT NULL DEFAULT '',
+    invitation_id INTEGER,
+    converted_user_id INTEGER,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (preferred_service_id) REFERENCES appointment_services(id) ON DELETE SET NULL,
+    FOREIGN KEY (preferred_location_id) REFERENCES locations(id) ON DELETE SET NULL,
+    FOREIGN KEY (preferred_clinician_user_id) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (invitation_id) REFERENCES invitations(id) ON DELETE SET NULL,
+    FOREIGN KEY (converted_user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_leads_status_created ON leads(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_leads_email ON leads(email);
+CREATE INDEX IF NOT EXISTS idx_leads_requested_starts_at ON leads(requested_starts_at);
+
 CREATE TABLE IF NOT EXISTS password_reset_tokens (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
@@ -800,6 +857,27 @@ def init_db() -> None:
         _ensure_column(db, "appointments", column_name, definition)
     db.execute("CREATE INDEX IF NOT EXISTS idx_appointments_location ON appointments(location_id)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_appointments_service ON appointments(service_id)")
+    slot_hold_columns = {
+        "invitation_id": "INTEGER",
+        "lead_id": "INTEGER",
+        "clinician_user_id": "INTEGER NOT NULL DEFAULT 0",
+        "location_id": "INTEGER",
+        "service_id": "INTEGER",
+        "appointment_type": "TEXT NOT NULL DEFAULT 'initial_consult'",
+        "starts_at": "TEXT NOT NULL DEFAULT ''",
+        "ends_at": "TEXT",
+        "status": "TEXT NOT NULL DEFAULT 'active'",
+        "expires_at": "TEXT NOT NULL DEFAULT ''",
+        "consumed_appointment_id": "INTEGER",
+        "created_at": "TEXT NOT NULL DEFAULT ''",
+        "updated_at": "TEXT NOT NULL DEFAULT ''",
+    }
+    for column_name, definition in slot_hold_columns.items():
+        _ensure_column(db, "appointment_slot_holds", column_name, definition)
+    db.execute("CREATE INDEX IF NOT EXISTS idx_appointment_slot_holds_clinician_date ON appointment_slot_holds(clinician_user_id, starts_at)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_appointment_slot_holds_status_expires ON appointment_slot_holds(status, expires_at)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_appointment_slot_holds_lead ON appointment_slot_holds(lead_id)")
+    db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_appointment_slot_holds_invitation_unique ON appointment_slot_holds(invitation_id)")
     schedule_window_columns = {
         "location_id": "INTEGER",
     }

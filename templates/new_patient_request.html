@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+
+{% block title %}New Patient Consultation · {{ ui_branding["clinic_name"] }}{% endblock %}
+
+{% block content %}
+  <section class="hero-panel">
+    <div>
+      <div class="auth-eyebrow">New patient</div>
+      <h1>Reserve your first chiropractic consultation.</h1>
+      <p>Choose a live clinic slot, tell the team what is bringing you in, and finish your portal setup straight away without a phone call.</p>
+    </div>
+    <div class="status-card">
+      <span>First visit</span>
+      <strong>{{ selected_service["label"] if selected_service else "New Patient Visit" }}</strong>
+      <small>{{ selected_duration_minutes }} minute appointment</small>
+      {% if booking_policy["price_amount"] is not none %}
+        <small>{{ booking_policy["price_amount"] }} {{ booking_policy["currency"] }}</small>
+      {% endif %}
+      <small>Your slot is held for 30 minutes while you finish signup.</small>
+    </div>
+  </section>
+
+  <section class="dashboard-grid">
+    <article class="panel">
+      <div class="panel-label">Consultation booking</div>
+      <form method="post" class="auth-form" id="publicLeadForm">
+        <div class="split">
+          <label>
+            <span>First name</span>
+            <input type="text" name="first_name" value="{{ form_data['first_name'] }}" autocomplete="given-name" required>
+          </label>
+          <label>
+            <span>Last name</span>
+            <input type="text" name="last_name" value="{{ form_data['last_name'] }}" autocomplete="family-name" required>
+          </label>
+        </div>
+        <div class="split">
+          <label>
+            <span>Email</span>
+            <input type="email" name="email" value="{{ form_data['email'] }}" autocomplete="email" required>
+          </label>
+          <label>
+            <span>Phone</span>
+            <input type="tel" name="phone" value="{{ form_data['phone'] }}" autocomplete="tel" required>
+          </label>
+        </div>
+        <label>
+          <span>Reason for visit</span>
+          <textarea name="reason" rows="4" placeholder="Neck pain, headaches, low back pain, postural strain, sports issue..." required>{{ form_data['reason'] }}</textarea>
+        </label>
+        <label>
+          <span>How did you hear about us?</span>
+          <select name="source" required>
+            {% for option in lead_source_options %}
+              <option value="{{ option['value'] }}" {% if form_data['source'] == option['value'] %}selected{% endif %}>{{ option["label"] }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <div class="split">
+          <label>
+            <span>Location</span>
+            <select name="location_id" id="publicLeadLocation" required>
+              {% for option in location_options %}
+                <option value="{{ option['value'] }}" {% if selected_location_id == option['value'] %}selected{% endif %}>{{ option["label"] }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>
+            <span>Chiropractor</span>
+            <select name="clinician_user_id" id="publicLeadClinician" required>
+              {% for option in clinician_options %}
+                <option value="{{ option['value'] }}" {% if selected_clinician_id == option['value'] %}selected{% endif %}>{{ option["label"] }}</option>
+              {% endfor %}
+            </select>
+          </label>
+        </div>
+        <div class="split">
+          <label>
+            <span>Preferred date</span>
+            <input type="date" name="appointment_date" id="publicLeadDate" value="{{ booking_date }}" required>
+          </label>
+          <label>
+            <span>Available slot</span>
+            <select name="slot_start" id="publicLeadSlot" required>
+              {% for item in booking_availability["available_slots"] %}
+                <option value="{{ item['value'] }}" {% if form_data['slot_start'] == item['value'] %}selected{% endif %}>{{ item["label"] }}</option>
+              {% endfor %}
+            </select>
+            <small class="field-hint" id="publicLeadSlotHint">
+              {% if booking_availability["available_slots"] %}
+                {{ booking_availability["available_slots"]|length }} live consultation slots are available for {{ booking_availability["date_label"] }}.
+              {% else %}
+                No live consultation slots are available for that day yet.
+              {% endif %}
+            </small>
+          </label>
+        </div>
+        <button type="submit" class="primary-button">Reserve consultation slot</button>
+      </form>
+    </article>
+
+    <article class="panel">
+      <div class="panel-label">What happens next</div>
+      <h2>Fast account activation</h2>
+      <p>Once you choose a slot, the app reserves it immediately and sends you into secure account setup so the booking can be confirmed against the live clinic calendar.</p>
+      <div class="info-box">
+        <strong>{{ selected_service["label"] if selected_service else "New Patient Visit" }}</strong><br>
+        {{ selected_service["description"] if selected_service else "Comprehensive first appointment with exam and consultation." }}
+      </div>
+      <ul class="check-list">
+        <li>Preferred date: {{ booking_availability["date_label"] }}</li>
+        <li>Location: {% for option in location_options %}{% if option['value'] == selected_location_id %}{{ option["label"] }}{% endif %}{% endfor %}</li>
+        <li>Chiropractor: {% for option in clinician_options %}{% if option['value'] == selected_clinician_id %}{{ option["label"] }}{% endif %}{% endfor %}</li>
+        <li>Reservation window: 30 minutes to finish setup</li>
+      </ul>
+      <p class="muted-copy">If you already have an account with this clinic, sign in instead so your existing portal data stays attached to the correct record.</p>
+      <div class="panel-actions">
+        <a class="secondary-button" href="{{ url_for('main.login') }}">Sign in instead</a>
+        <a class="secondary-button" href="{{ url_for('main.signup') }}">Create account only</a>
+      </div>
+    </article>
+  </section>
+{% endblock %}
+
+{% block scripts %}
+  <script>
+    (() => {
+      const locationInput = document.getElementById("publicLeadLocation");
+      const clinicianInput = document.getElementById("publicLeadClinician");
+      const dateInput = document.getElementById("publicLeadDate");
+      const slotInput = document.getElementById("publicLeadSlot");
+      const slotHint = document.getElementById("publicLeadSlotHint");
+      if (!locationInput || !clinicianInput || !dateInput || !slotInput || !slotHint) {
+        return;
+      }
+
+      async function loadAvailability() {
+        const params = new URLSearchParams({
+          location_id: locationInput.value,
+          clinician_user_id: clinicianInput.value,
+          date: dateInput.value,
+        });
+        const currentValue = slotInput.value;
+        let response;
+        try {
+          response = await fetch(`/api/public-availability?${params.toString()}`, {
+            headers: { "X-Requested-With": "fetch" },
+          });
+        } catch (_) {
+          slotInput.innerHTML = "";
+          slotInput.disabled = true;
+          slotHint.textContent = "Could not load live consultation slots.";
+          return;
+        }
+        if (!response.ok) {
+          slotInput.innerHTML = "";
+          slotInput.disabled = true;
+          slotHint.textContent = "Could not load live consultation slots.";
+          return;
+        }
+        const payload = await response.json();
+        const slots = (payload.availability && payload.availability.available_slots) || [];
+        slotInput.innerHTML = "";
+        for (const item of slots) {
+          const option = document.createElement("option");
+          option.value = item.value;
+          option.textContent = item.label;
+          slotInput.appendChild(option);
+        }
+        slotInput.disabled = slots.length === 0;
+        if (currentValue && slots.some((item) => item.value === currentValue)) {
+          slotInput.value = currentValue;
+        }
+        slotHint.textContent = slots.length
+          ? `${slots.length} live consultation slots are available for ${payload.availability.date_label}.`
+          : "No live consultation slots are available for that day yet.";
+      }
+
+      [locationInput, clinicianInput, dateInput].forEach((input) => {
+        input.addEventListener("change", loadAvailability);
+      });
+    })();
+  </script>
+{% endblock %}

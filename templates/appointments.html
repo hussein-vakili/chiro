@@ -9,11 +9,15 @@
     <div>
       <div class="auth-eyebrow">Appointments</div>
       <h1>Your visit calendar.</h1>
-      <p>Track your booked appointments and move through a Claude-style booking flow that stays synced with live service rules, calendar availability, and your current care plan.</p>
+      <p>Track your booked appointments and move through a booking flow that stays synced with live service rules, calendar availability, and your current care plan.</p>
     </div>
     <div class="status-card">
-      <span>Next visit</span>
-      {% if schedule["next_appointment"] %}
+      <span>{% if care_plan["plan"] %}Care plan{% else %}Next visit{% endif %}</span>
+      {% if care_plan["plan"] %}
+        <strong>{{ care_plan["adherence"]["title"] }}</strong>
+        <small>{{ care_plan["adherence"]["detail"] }}</small>
+        <small>{{ care_plan["adherence"]["progress_label"] }}</small>
+      {% elif schedule["next_appointment"] %}
         <strong>{{ schedule["next_appointment"]["type_label"] }}</strong>
         <small>{{ schedule["next_appointment"]["starts_label"] }}</small>
         {% if schedule["next_appointment"]["location_name"] %}
@@ -38,6 +42,62 @@
       <span class="legend-chip warm">{{ schedule["counts"]["care_plan"] }} Care Plan Visit</span>
     </div>
   </section>
+
+  {% if care_plan["plan"] %}
+    <section class="dashboard-grid">
+      <article class="panel">
+        <div class="panel-label">Care-plan progress</div>
+        <h2>{{ care_plan["plan"]["title"] }}</h2>
+        <p>{{ care_plan["plan"]["frequency_label"] }} for {{ care_plan["plan"]["duration_weeks"] }} weeks · {{ care_plan["plan"]["total_visits"] }} visits</p>
+        <div class="metric-grid" style="margin-top:16px">
+          <article class="metric-card">
+            <span>Completed</span>
+            <strong>{{ care_plan["stats"]["completed"] }}</strong>
+            <small>{{ care_plan["adherence"]["progress_label"] }}</small>
+          </article>
+          <article class="metric-card">
+            <span>Booked next</span>
+            <strong>{{ 1 if care_plan["adherence"]["next_booked"] else 0 }}</strong>
+            <small>{% if care_plan["adherence"]["next_booked"] %}{{ care_plan["adherence"]["next_booked"]["effective_label"] }}{% else %}Nothing booked yet{% endif %}</small>
+          </article>
+          <article class="metric-card">
+            <span>Needs booking</span>
+            <strong>{{ care_plan["adherence"]["needs_booking_count"] }}</strong>
+            <small>{{ care_plan["adherence"]["detail"] }}</small>
+          </article>
+        </div>
+        <div class="panel-actions" style="margin-top:16px">
+          <a class="primary-button" href="{{ care_plan['adherence']['action_url'] }}">{{ care_plan["adherence"]["action_label"] }}</a>
+          <a class="secondary-button" href="{{ care_plan['adherence']['secondary_action_url'] }}">{{ care_plan["adherence"]["secondary_action_label"] }}</a>
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-label">Next recommended step</div>
+        {% if care_plan["adherence"]["next_action_visit"] %}
+          <h2>{{ care_plan["adherence"]["next_action_visit"]["label"] }}</h2>
+          <p>{{ care_plan["adherence"]["next_action_visit"]["suggested_long_label"] }}</p>
+          <div class="info-box">
+            {% if care_plan["adherence"]["state"] == "overdue" %}
+              This visit is overdue. Rebook it now to get your plan back on schedule.
+            {% else %}
+              This is the next recommended visit in your current plan.
+            {% endif %}
+          </div>
+          <div class="panel-actions">
+            <a class="primary-button" href="{{ care_plan['adherence']['next_action_visit']['patient_booking_url'] }}">Book this visit</a>
+          </div>
+        {% elif care_plan["adherence"]["next_booked"] %}
+          <h2>You're on track</h2>
+          <p>{{ care_plan["adherence"]["next_booked"]["effective_label"] }}</p>
+          <div class="info-box">Your next care-plan visit is already booked. Use the calendar below if you need to make a change.</div>
+        {% else %}
+          <h2>{{ care_plan["adherence"]["title"] }}</h2>
+          <p>{{ care_plan["adherence"]["detail"] }}</p>
+        {% endif %}
+      </article>
+    </section>
+  {% endif %}
 
   <section class="panel booking-wizard-panel">
     <div class="booking-wizard-head">
@@ -83,6 +143,7 @@
         </select>
         <input type="hidden" name="appointment_type" id="patientBookingTypeHidden" value="{{ booking_policy['appointment_type'] }}">
         <input type="hidden" name="duration_minutes" id="patientBookingDurationHidden" value="{{ booking_policy['duration_minutes'] }}">
+        <input type="hidden" name="care_plan_visit_id" value="{{ selected_care_plan_visit['id'] if selected_care_plan_visit else '' }}">
         <input type="hidden" name="appointment_date" id="patientBookingDate" value="{{ booking_date }}">
         <input type="hidden" name="slot_start" id="patientBookingSlot" value="">
 
@@ -123,49 +184,56 @@
         <section class="booking-step-panel" data-booking-step="0">
           <div class="booking-step-head">
             <h2>What type of appointment do you need?</h2>
-            <p>Select a live service from the clinic inventory. Each option below is connected to the same durations, notice periods, payment flags, and routing rules used by the staff calendar.</p>
+            <p>{% if selected_care_plan_visit %}Your next recommended care-plan visit is already loaded below. Continue to choose a live slot and confirm the booking.{% else %}Select a live service from the clinic inventory. Each option below is connected to the same durations, notice periods, payment flags, and routing rules used by the staff calendar.{% endif %}</p>
           </div>
-          <div class="booking-service-grid" id="patientBookingServiceCards">
-            {% for service in service_options %}
-              {% set service_code = 'CP' %}
-              {% if service['appointment_type'] == 'initial_consult' %}
-                {% set service_code = 'IC' %}
-              {% elif service['appointment_type'] == 'report_of_findings' %}
-                {% set service_code = 'ROF' %}
-              {% elif 'urgent' in service['service_key']|lower or 'acute' in service['label']|lower %}
-                {% set service_code = 'URG' %}
-              {% endif %}
-              <button
-                type="button"
-                class="booking-service-card{% if service['id'] == selected_service_id %} active{% endif %}"
-                data-service-card="{{ service['id'] }}"
-                aria-pressed="{{ 'true' if service['id'] == selected_service_id else 'false' }}"
-              >
-                <div class="booking-service-card-top">
-                  <div class="booking-service-icon">{{ service_code }}</div>
-                  <div class="booking-service-pick">&#10003;</div>
-                </div>
-                <div>
-                  <h3>{{ service["label"] }}</h3>
-                  <p>{{ service["description"] or service["appointment_type_label"] ~ ' booking connected to the live clinic calendar.' }}</p>
-                </div>
-                <div class="booking-service-meta">
-                  <span>{{ service["duration_minutes"] }} min</span>
-                  <span>{{ service["routing_mode_label"] }}</span>
-                  <span class="booking-service-price">
-                    {% if service["price_amount"] is not none %}
-                      {{ '%.2f'|format(service["price_amount"]) }} {{ service["currency"] }}
-                    {% else %}
-                      No pre-payment
-                    {% endif %}
-                  </span>
-                </div>
-                <div class="booking-service-note">
-                  {{ service["appointment_type_label"] }}{% if service["min_notice_minutes"] %} · {{ service["min_notice_minutes"] }} minute notice{% endif %}{% if service["max_bookings_per_day"] %} · max {{ service["max_bookings_per_day"] }}/day{% endif %}
-                </div>
-              </button>
-            {% endfor %}
-          </div>
+          {% if selected_care_plan_visit %}
+            <div class="info-box">
+              <strong>{{ selected_care_plan_visit["label"] }}</strong><br>
+              {{ selected_care_plan_visit["suggested_long_label"] }} · {{ selected_care_plan_visit["duration_minutes"] }} min
+            </div>
+          {% else %}
+            <div class="booking-service-grid" id="patientBookingServiceCards">
+              {% for service in service_options %}
+                {% set service_code = 'CP' %}
+                {% if service['appointment_type'] == 'initial_consult' %}
+                  {% set service_code = 'IC' %}
+                {% elif service['appointment_type'] == 'report_of_findings' %}
+                  {% set service_code = 'ROF' %}
+                {% elif 'urgent' in service['service_key']|lower or 'acute' in service['label']|lower %}
+                  {% set service_code = 'URG' %}
+                {% endif %}
+                <button
+                  type="button"
+                  class="booking-service-card{% if service['id'] == selected_service_id %} active{% endif %}"
+                  data-service-card="{{ service['id'] }}"
+                  aria-pressed="{{ 'true' if service['id'] == selected_service_id else 'false' }}"
+                >
+                  <div class="booking-service-card-top">
+                    <div class="booking-service-icon">{{ service_code }}</div>
+                    <div class="booking-service-pick">&#10003;</div>
+                  </div>
+                  <div>
+                    <h3>{{ service["label"] }}</h3>
+                    <p>{{ service["description"] or service["appointment_type_label"] ~ ' booking connected to the live clinic calendar.' }}</p>
+                  </div>
+                  <div class="booking-service-meta">
+                    <span>{{ service["duration_minutes"] }} min</span>
+                    <span>{{ service["routing_mode_label"] }}</span>
+                    <span class="booking-service-price">
+                      {% if service["price_amount"] is not none %}
+                        {{ '%.2f'|format(service["price_amount"]) }} {{ service["currency"] }}
+                      {% else %}
+                        No pre-payment
+                      {% endif %}
+                    </span>
+                  </div>
+                  <div class="booking-service-note">
+                    {{ service["appointment_type_label"] }}{% if service["min_notice_minutes"] %} · {{ service["min_notice_minutes"] }} minute notice{% endif %}{% if service["max_bookings_per_day"] %} · max {{ service["max_bookings_per_day"] }}/day{% endif %}
+                  </div>
+                </button>
+              {% endfor %}
+            </div>
+          {% endif %}
         </section>
 
         <section class="booking-step-panel is-hidden" data-booking-step="1">
@@ -196,13 +264,18 @@
                     </select>
                   </label>
                 </div>
-                <div class="booking-summary-card">
-                  <small id="patientServiceSummary">{{ booking_policy["service_label"] }} · {{ booking_policy["duration_minutes"] }} min · {{ booking_policy["routing_mode_label"] }}</small>
-                  <strong id="patientSelectedDateLabel">{{ booking_availability['date_label'] }}</strong>
-                  <p id="patientBookingPolicyHint">{{ booking_policy["min_notice_minutes"] }} minute minimum notice{% if booking_policy["max_bookings_per_day"] %} · max {{ booking_policy["max_bookings_per_day"] }} bookings per chiropractor/day{% endif %}.</p>
-                  <small id="patientPaymentHint">{% if booking_policy['requires_payment'] and booking_policy['price_amount'] is not none %}Payment due: {{ '%.2f'|format(booking_policy['price_amount']) }} {{ booking_policy['currency'] }}{% else %}No payment required at booking{% endif %}</small>
-                </div>
+              <div class="booking-summary-card">
+                <small id="patientServiceSummary">{{ booking_policy["service_label"] }} · {{ booking_policy["duration_minutes"] }} min · {{ booking_policy["routing_mode_label"] }}</small>
+                <strong id="patientSelectedDateLabel">{{ booking_availability['date_label'] }}</strong>
+                <p id="patientBookingPolicyHint">{{ booking_policy["min_notice_minutes"] }} minute minimum notice{% if booking_policy["max_bookings_per_day"] %} · max {{ booking_policy["max_bookings_per_day"] }} bookings per chiropractor/day{% endif %}.</p>
+                <small id="patientPaymentHint">{% if booking_policy['requires_payment'] and booking_policy['price_amount'] is not none %}Payment due: {{ '%.2f'|format(booking_policy['price_amount']) }} {{ booking_policy['currency'] }}{% else %}No payment required at booking{% endif %}</small>
               </div>
+              {% if selected_care_plan_visit %}
+                <div class="info-box" style="margin-top:14px">
+                  This booking is linked to {{ selected_care_plan_visit["label"] }} in your active care plan.
+                </div>
+              {% endif %}
+            </div>
 
               <div class="pb-mini-shell">
                 <div class="pb-mini-head">

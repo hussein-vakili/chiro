@@ -7,110 +7,188 @@
     <div>
       <div class="auth-eyebrow">Client dashboard</div>
       <h1>{{ g.user["first_name"] }}, your onboarding is ready.</h1>
-      <p>This dashboard is your home screen. Start here, then open intake, appointments, or results as needed.</p>
+      <p>Your dashboard is the home screen for appointments, results, messages, and the next step in your care journey.</p>
     </div>
     <div class="status-card">
-      <span>Account email</span>
-      <strong>{{ g.user["email"] }}</strong>
-      <small>Secure local portal session</small>
-      {% if next_appointment %}
-        <small>Next appointment: {{ next_appointment["type_label"] }} · {{ next_appointment["starts_label"] }}</small>
-        {% if next_appointment["location_name"] %}
-          <small>{{ next_appointment["location_name"] }}</small>
-        {% endif %}
-        {% if next_appointment["reminder_label"] %}
-          <small>{{ next_appointment["reminder_label"] }}</small>
-        {% endif %}
+      <span>{{ next_step["eyebrow"] }}</span>
+      <strong>{{ next_step["title"] }}</strong>
+      <small>{{ next_step["detail"] }}</small>
+      {% if care_plan["adherence"]["exists"] %}
+        <small>{{ care_plan["adherence"]["progress_label"] }}</small>
       {% endif %}
+      <small>{{ g.user["email"] }}</small>
+      <div class="panel-actions">
+        <a class="primary-button" href="{{ next_step['action_url'] }}">{{ next_step["action_label"] }}</a>
+      </div>
     </div>
+  </section>
+
+  <section class="metric-grid" style="margin-top:18px">
+    {% for metric in portal_metrics %}
+      <article class="metric-card">
+        <span>{{ metric["label"] }}</span>
+        <strong>{{ metric["value"] }}</strong>
+        <small>{{ metric["detail"] }}</small>
+      </article>
+    {% endfor %}
   </section>
 
   <section class="dashboard-nav-grid">
-    <a class="portal-link-card" href="{{ url_for('main.intake') }}">
-      <span class="portal-link-label">Intake</span>
-      <strong>{{ "Review your intake" if submission and submission["status"] == "submitted" else "Open intake" }}</strong>
-      <small>{{ "Check what you submitted and update anything the clinic asks for." if submission and submission["status"] == "submitted" else "Start or continue your onboarding form from your dashboard." }}</small>
-    </a>
-    <a class="portal-link-card" href="{{ url_for('main.appointments') }}">
-      <span class="portal-link-label">Appointments</span>
-      <strong>Open calendar</strong>
-      <small>See your upcoming visits, future appointments, and available booking options.</small>
-    </a>
-    <a class="portal-link-card" href="{{ url_for('main.results') }}">
-      <span class="portal-link-label">Results</span>
-      <strong>View your results</strong>
-      <small>Return to your published findings and care recommendations when they are ready.</small>
-    </a>
+    {% for action in portal_actions %}
+      <a class="portal-link-card" href="{{ action['url'] }}">
+        <div class="portal-link-top">
+          <div>
+            <span class="portal-link-label">{{ action["label"] }}</span>
+            <strong>{{ action["title"] }}</strong>
+          </div>
+          <span class="status-dot {{ action['tone'] }}">{{ action["badge"] }}</span>
+        </div>
+        <small>{{ action["detail"] }}</small>
+      </a>
+    {% endfor %}
   </section>
+
+  {% if care_plan["plan"] %}
+    <section class="dashboard-grid">
+      <article class="panel">
+        <div class="panel-label">Care plan</div>
+        <div class="agenda-item-head">
+          <div>
+            <h2>{{ care_plan["plan"]["title"] }}</h2>
+            <p>{{ care_plan["plan"]["frequency_label"] }} for {{ care_plan["plan"]["duration_weeks"] }} weeks · {{ care_plan["plan"]["total_visits"] }} visits</p>
+          </div>
+          <span class="status-dot {{ care_plan['adherence']['tone'] }}">{{ care_plan["adherence"]["title"] }}</span>
+        </div>
+        <div class="metric-grid" style="margin-top:16px">
+          <article class="metric-card">
+            <span>Progress</span>
+            <strong>{{ care_plan["adherence"]["completion_percent"] }}%</strong>
+            <small>{{ care_plan["adherence"]["progress_label"] }}</small>
+          </article>
+          <article class="metric-card">
+            <span>Booked</span>
+            <strong>{{ care_plan["stats"]["booked"] }}</strong>
+            <small>{{ care_plan["stats"]["remaining"] }} visits remaining in this plan.</small>
+          </article>
+          <article class="metric-card">
+            <span>Needs booking</span>
+            <strong>{{ care_plan["adherence"]["needs_booking_count"] }}</strong>
+            <small>{{ care_plan["adherence"]["detail"] }}</small>
+          </article>
+        </div>
+        {% if care_plan["adherence"]["next_booked"] %}
+          <div class="info-box">Next booked visit: {{ care_plan["adherence"]["next_booked"]["effective_label"] }}</div>
+        {% endif %}
+        <div class="panel-actions">
+          <a class="primary-button" href="{{ care_plan['adherence']['action_url'] }}">{{ care_plan["adherence"]["action_label"] }}</a>
+          <a class="secondary-button" href="{{ care_plan['adherence']['secondary_action_url'] }}">{{ care_plan["adherence"]["secondary_action_label"] }}</a>
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-label">Next recommended step</div>
+        {% if care_plan["adherence"]["next_action_visit"] %}
+          <h2>{{ care_plan["adherence"]["next_action_visit"]["label"] }}</h2>
+          <p>{{ care_plan["adherence"]["next_action_visit"]["suggested_long_label"] }}</p>
+          <div class="info-box">
+            {% if care_plan["adherence"]["state"] == "overdue" %}
+              You are overdue for this step in your plan. Rebooking it now keeps your schedule moving.
+            {% else %}
+              This is the next recommended visit in your plan. Booking it now keeps your progress on track.
+            {% endif %}
+          </div>
+          <div class="panel-actions">
+            <a class="primary-button" href="{{ care_plan['adherence']['next_action_visit']['patient_booking_url'] }}">Book next visit</a>
+            <a class="secondary-button" href="{{ url_for('main.appointments') }}">Open care-plan calendar</a>
+          </div>
+        {% elif care_plan["adherence"]["next_booked"] %}
+          <h2>You're on track</h2>
+          <p>{{ care_plan["adherence"]["next_booked"]["effective_label"] }}</p>
+          <div class="info-box">Your next care-plan visit is already booked. Use the portal calendar if you need to make a change.</div>
+          <div class="panel-actions">
+            <a class="primary-button" href="{{ url_for('main.appointments') }}">Open calendar</a>
+          </div>
+        {% else %}
+          <h2>{{ care_plan["adherence"]["title"] }}</h2>
+          <p>{{ care_plan["adherence"]["detail"] }}</p>
+          <div class="panel-actions">
+            <a class="primary-button" href="{{ care_plan['adherence']['action_url'] }}">{{ care_plan["adherence"]["action_label"] }}</a>
+          </div>
+        {% endif %}
+      </article>
+    </section>
+  {% endif %}
 
   <section class="dashboard-grid">
     <article class="panel">
-      <div class="panel-label">Progress</div>
-      <h2>Your dashboard is the home screen</h2>
-      <p>Open the part of the portal you need, then come back here for your current status and next steps.</p>
-    </article>
-
-    <article class="panel">
-      <div class="panel-label">Intake status</div>
-      {% if submission %}
-        <h2>{{ "Submitted" if submission["status"] == "submitted" else "Draft in progress" }}</h2>
-        <p>Last updated {{ submission["updated_at"][:10] }}.</p>
-        {% if visit_report and visit_report["report_status"] == "published" %}
-          <div class="info-box">Your chiropractor has published your initial consultation and physical exam results to the portal.</div>
+      <div class="panel-label">Portal snapshot</div>
+      <h2>{{ next_step["title"] }}</h2>
+      <p>{{ next_step["detail"] }}</p>
+      <div class="panel-actions">
+        <a class="primary-button" href="{{ next_step['action_url'] }}">{{ next_step["action_label"] }}</a>
+        {% if next_appointment %}
+          <a class="secondary-button" href="{{ url_for('main.appointments') }}">Manage appointments</a>
         {% endif %}
-        <div class="panel-actions">
-          <a class="primary-button" href="{{ url_for('main.intake') }}">{{ "Review intake" if submission["status"] == "submitted" else "Continue intake" }}</a>
-          <a class="secondary-button" href="{{ url_for('main.results') }}">View results</a>
-        </div>
-      {% else %}
-        <h2>Not started</h2>
-        <p>Your account is active, but the onboarding form has not been submitted yet.</p>
-        <div class="panel-actions">
-          <a class="primary-button" href="{{ url_for('main.intake') }}">Start intake</a>
-        </div>
-      {% endif %}
-    </article>
-  </section>
-
-  <section class="dashboard-grid">
-    <article class="panel">
-      <div class="panel-label">Appointments</div>
-      {% if next_appointment %}
-        <h2>{{ next_appointment["type_label"] }}</h2>
-        <p>{{ next_appointment["starts_label"] }}</p>
-        {% if next_appointment["location_name"] %}
-          <div class="info-box">{{ next_appointment["location_name"] }}</div>
-        {% endif %}
-        {% if next_appointment["note"] %}
-          <div class="info-box">{{ next_appointment["note"] }}</div>
-        {% endif %}
-        <div class="panel-actions">
-          <a class="primary-button" href="{{ url_for('main.appointments') }}">Open calendar</a>
-        </div>
-      {% else %}
-        <h2>No appointments scheduled</h2>
-        <p>Once the clinic books your visits, they will appear in a calendar with clear visit types and future dates.</p>
-      {% endif %}
-      {% if invitation and invitation["note"] and not next_appointment %}
+      </div>
+      {% if next_appointment and next_appointment["cancellation_policy_label"] %}
+        <div class="info-box">{{ next_appointment["cancellation_policy_label"] }}</div>
+      {% elif invitation and invitation["note"] %}
         <div class="info-box">{{ invitation["note"] }}</div>
       {% endif %}
     </article>
+
+    <article class="panel">
+      <div class="panel-label">Care journey</div>
+      <div class="portal-journey-list">
+        {% for item in portal_journey %}
+          <div class="mini-card portal-journey-item">
+            <div class="portal-journey-head">
+              <div class="portal-journey-main">
+                <span class="portal-journey-step">{{ item["step"] }}</span>
+                <div class="portal-journey-copy">
+                  <span class="portal-link-label">{{ item["label"] }}</span>
+                  <strong>{{ item["title"] }}</strong>
+                  <small>{{ item["detail"] }}</small>
+                </div>
+              </div>
+              <a class="table-link" href="{{ item['url'] }}">{{ item["action_label"] }}</a>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </article>
   </section>
 
-  <section class="dashboard-grid" style="grid-template-columns:1fr">
+  <section class="dashboard-grid">
     <article class="panel">
-      <div class="panel-label">Future visits</div>
+      <div class="panel-label">Upcoming visits</div>
       {% if schedule["upcoming"] %}
-        <div class="invite-stack">
-          {% for appointment in schedule["upcoming"][:6] %}
-            <div class="mini-card">
-              <strong>{{ appointment["type_label"] }}</strong>
-              <small>{{ appointment["starts_label"] }}</small>
-              {% if appointment["location_name"] %}
-                <small>{{ appointment["location_name"] }}</small>
-              {% endif %}
-              {% if appointment["note"] %}
-                <small>{{ appointment["note"] }}</small>
+        <div class="agenda-list">
+          {% for appointment in schedule["upcoming"][:4] %}
+            <div class="agenda-item">
+              <div class="agenda-item-head">
+                <div>
+                  <span class="appointment-chip {{ appointment['type_tone'] }}">{{ appointment["type_label"] }}</span>
+                  <h3>{{ appointment["date_label"] }}</h3>
+                </div>
+                <span class="status-dot {{ appointment['status_tone'] }}">{{ appointment["status_label"] }}</span>
+              </div>
+              <p>{{ appointment["time_label"] }}{% if appointment["end_time_label"] %} - {{ appointment["end_time_label"] }}{% endif %}</p>
+              <div class="agenda-meta">
+                {% if appointment["location_name"] %}
+                  <span class="availability-chip life">{{ appointment["location_name"] }}</span>
+                {% endif %}
+                {% if appointment["reminder_label"] %}
+                  <span class="legend-chip {{ appointment['reminder_tone'] }}">{{ appointment["reminder_label"] }}</span>
+                {% endif %}
+                {% if appointment["clinician_name"] %}
+                  <span class="muted-copy">Assigned to {{ appointment["clinician_name"] }}</span>
+                {% endif %}
+              </div>
+              {% if appointment["patient_details"] %}
+                <p>{{ appointment["patient_details"] }}</p>
+              {% elif appointment["note"] %}
+                <p>{{ appointment["note"] }}</p>
               {% endif %}
             </div>
           {% endfor %}
@@ -123,6 +201,84 @@
         <div class="panel-actions">
           <a class="primary-button" href="{{ url_for('main.appointments') }}">Book from portal</a>
         </div>
+      {% endif %}
+    </article>
+
+    <article class="panel">
+      <div class="panel-label">Recent messages</div>
+      {% if recent_messages %}
+        <div class="invite-stack">
+          {% for item in recent_messages %}
+            <div class="mini-card">
+              <div class="agenda-item-head">
+                <div>
+                  <span class="status-dot {{ item['topic_tone'] }}">{{ item["topic_label"] }}</span>
+                  <strong>{{ item["sender_name"] }}</strong>
+                </div>
+                {% if item["is_unread_for_patient"] %}
+                  <span class="status-dot rose">New</span>
+                {% endif %}
+              </div>
+              <small>{{ item["created_label"] }}</small>
+              <div class="portal-message-preview">{{ item["body"] }}</div>
+            </div>
+          {% endfor %}
+        </div>
+        <div class="panel-actions">
+          <a class="primary-button" href="{{ url_for('main.patient_messages') }}">Open messages</a>
+        </div>
+      {% else %}
+        <p>No messages yet. Use the secure thread when you need to update the clinic or ask a question.</p>
+        <div class="panel-actions">
+          <a class="primary-button" href="{{ url_for('main.patient_messages') }}">Start a message</a>
+        </div>
+      {% endif %}
+    </article>
+  </section>
+
+  <section class="dashboard-grid">
+    <article class="panel">
+      <div class="panel-label">{{ results_highlight["title"] }}</div>
+      <h2>{{ "Your results are live" if visit_report and visit_report["report_status"] == "published" else "What comes next" }}</h2>
+      <p>{{ results_highlight["summary"] }}</p>
+      {% if results_highlight["supporting"] %}
+        <div class="info-box">{{ results_highlight["supporting"] }}</div>
+      {% endif %}
+      <div class="panel-actions">
+        <a class="primary-button" href="{{ results_highlight['action_url'] }}">{{ results_highlight["action_label"] }}</a>
+      </div>
+    </article>
+
+    <article class="panel">
+      <div class="panel-label">Visit history</div>
+      <div class="portal-summary-tags">
+        <span class="mini-tag mini-tag-accent">{{ completed_visit_count }} completed</span>
+        <span class="mini-tag mini-tag-danger">{{ cancelled_visit_count }} cancelled</span>
+      </div>
+      {% if recent_history %}
+        <div class="invite-stack">
+          {% for appointment in recent_history %}
+            <div class="mini-card">
+              <div class="agenda-item-head">
+                <div>
+                  <strong>{{ appointment["type_label"] }}</strong>
+                  <small>{{ appointment["starts_label"] }}</small>
+                </div>
+                <span class="status-dot {{ appointment['status_tone'] }}">{{ appointment["status_label"] }}</span>
+              </div>
+              {% if appointment["location_name"] %}
+                <small>{{ appointment["location_name"] }}</small>
+              {% endif %}
+              {% if appointment["patient_details"] %}
+                <small>{{ appointment["patient_details"] }}</small>
+              {% elif appointment["note"] %}
+                <small>{{ appointment["note"] }}</small>
+              {% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p>Your completed and cancelled visits will appear here after the first appointment cycle.</p>
       {% endif %}
     </article>
   </section>

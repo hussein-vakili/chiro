@@ -34,5 +34,9 @@
       <span>Already have an account?</span>
       <a href="{{ url_for('main.login') }}">Sign in</a>
     </div>
+    <div class="auth-footer">
+      <span>Prefer to request your first visit first?</span>
+      <a href="{{ url_for('main.new_patient_request') }}">Request a consultation</a>
+    </div>
   </section>
 {% endblock %}

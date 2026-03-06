@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 import json
 import os
+import re
 import tempfile
 import unittest
 
@@ -35,6 +36,32 @@ class PortalFlowTestCase(unittest.TestCase):
                 VALUES (?, ?, ?, ?, 'clinician', ?)
                 """,
                 ("Dr", "Stone", "staff@example.com", generate_password_hash("staffpass123", method="pbkdf2:sha256"), iso_now()),
+            )
+            db.commit()
+            return cursor.lastrowid
+
+    def create_client_user(
+        self,
+        *,
+        first_name: str = "Patient",
+        last_name: str = "One",
+        email: str = "patient.one@example.com",
+        password: str = "patientpass123",
+    ) -> int:
+        with self.app.app_context():
+            db = get_db()
+            cursor = db.execute(
+                """
+                INSERT INTO users (first_name, last_name, email, password_hash, role, created_at)
+                VALUES (?, ?, ?, ?, 'client', ?)
+                """,
+                (
+                    first_name,
+                    last_name,
+                    email,
+                    generate_password_hash(password, method="pbkdf2:sha256"),
+                    iso_now(),
+                ),
             )
             db.commit()
             return cursor.lastrowid
@@ -747,6 +774,296 @@ class PortalFlowTestCase(unittest.TestCase):
         self.assertIn("Your dashboard is the home screen", response.get_data(as_text=True))
         self.assertIn("Open calendar", response.get_data(as_text=True))
 
+    def test_public_consultation_request_creates_lead_and_invite_flow(self) -> None:
+        staff_id = self.create_staff_user()
+        with self.app.app_context():
+            db = get_db()
+            main_location_id = db.execute(
+                "SELECT id FROM locations WHERE slug = 'main-clinic'"
+            ).fetchone()["id"]
+
+        preferred_start, _ = self.appointment_slot(days_from_now=5, hour=9, minute=15, duration_minutes=30)
+        response = self.client.get(
+            f"/api/public-availability?date={preferred_start[:10]}&clinician_user_id={staff_id}&location_id={main_location_id}"
+        )
+        self.assertEqual(response.status_code, 200)
+        availability_payload = response.get_json()
+        self.assertTrue(availability_payload["ok"])
+        slot_value = availability_payload["availability"]["available_slots"][0]["value"]
+
+        response = self.client.post(
+            "/new-patient",
+            data={
+                "first_name": "Mia",
+                "last_name": "Jordan",
+                "email": "mia@example.com",
+                "phone": "555-0200",
+                "reason": "Neck pain and headaches after long desk work.",
+                "source": "google",
+                "location_id": str(main_location_id),
+                "clinician_user_id": str(staff_id),
+                "appointment_date": slot_value[:10],
+                "slot_start": slot_value,
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        invite_html = response.get_data(as_text=True)
+        self.assertIn("reserved for 30 minutes", invite_html)
+        self.assertIn("Finish setting up your account", invite_html)
+
+        with self.app.app_context():
+            db = get_db()
+            lead = db.execute(
+                "SELECT * FROM leads WHERE email = ? ORDER BY id DESC LIMIT 1",
+                ("mia@example.com",),
+            ).fetchone()
+            invitation = db.execute(
+                "SELECT * FROM invitations WHERE id = ?",
+                (lead["invitation_id"],),
+            ).fetchone()
+            slot_hold = db.execute(
+                "SELECT * FROM appointment_slot_holds WHERE invitation_id = ?",
+                (lead["invitation_id"],),
+            ).fetchone()
+        self.assertIsNotNone(lead)
+        self.assertEqual(lead["status"], "invited")
+        self.assertEqual(lead["requested_starts_at"], slot_value)
+        self.assertIsNotNone(invitation)
+        self.assertIsNotNone(slot_hold)
+        self.assertEqual(slot_hold["starts_at"], slot_value)
+        self.assertEqual(slot_hold["status"], "active")
+
+        response = self.client.get(
+            f"/api/public-availability?date={preferred_start[:10]}&clinician_user_id={staff_id}&location_id={main_location_id}"
+        )
+        self.assertEqual(response.status_code, 200)
+        availability_payload = response.get_json()
+        self.assertFalse(any(item["value"] == slot_value for item in availability_payload["availability"]["available_slots"]))
+
+        self.login_staff()
+        response = self.client.get("/staff/dashboard")
+        self.assertEqual(response.status_code, 200)
+        staff_html = response.get_data(as_text=True)
+        self.assertIn("New patient requests", staff_html)
+        self.assertIn("Mia Jordan", staff_html)
+        self.assertIn("Open invite", staff_html)
+
+        self.client.post("/logout", follow_redirects=True)
+        response = self.client.post(
+            f"/invite/{invitation['token']}",
+            data={"password": "patientpass123", "confirm_password": "patientpass123"},
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Invitation accepted", response.get_data(as_text=True))
+
+        with self.app.app_context():
+            db = get_db()
+            converted_lead = db.execute(
+                "SELECT * FROM leads WHERE id = ?",
+                (lead["id"],),
+            ).fetchone()
+            appointment = db.execute(
+                "SELECT * FROM appointments WHERE source_invitation_id = ?",
+                (invitation["id"],),
+            ).fetchone()
+            consumed_hold = db.execute(
+                "SELECT * FROM appointment_slot_holds WHERE invitation_id = ?",
+                (invitation["id"],),
+            ).fetchone()
+        self.assertEqual(converted_lead["status"], "converted")
+        self.assertIsNotNone(converted_lead["converted_user_id"])
+        self.assertIsNotNone(appointment)
+        self.assertEqual(appointment["starts_at"], slot_value)
+        self.assertEqual(consumed_hold["status"], "consumed")
+        self.assertEqual(consumed_hold["consumed_appointment_id"], appointment["id"])
+
+    def test_expired_public_slot_hold_releases_availability(self) -> None:
+        staff_id = self.create_staff_user()
+        with self.app.app_context():
+            db = get_db()
+            main_location_id = db.execute(
+                "SELECT id FROM locations WHERE slug = 'main-clinic'"
+            ).fetchone()["id"]
+
+        preferred_start, _ = self.appointment_slot(days_from_now=6, hour=9, minute=30, duration_minutes=30)
+        response = self.client.get(
+            f"/api/public-availability?date={preferred_start[:10]}&clinician_user_id={staff_id}&location_id={main_location_id}"
+        )
+        self.assertEqual(response.status_code, 200)
+        slot_value = response.get_json()["availability"]["available_slots"][0]["value"]
+
+        response = self.client.post(
+            "/new-patient",
+            data={
+                "first_name": "Ava",
+                "last_name": "Reed",
+                "email": "ava@example.com",
+                "phone": "555-0222",
+                "reason": "Low back pain after a gym strain.",
+                "source": "website",
+                "location_id": str(main_location_id),
+                "clinician_user_id": str(staff_id),
+                "appointment_date": slot_value[:10],
+                "slot_start": slot_value,
+            },
+            follow_redirects=False,
+        )
+        self.assertEqual(response.status_code, 302)
+
+        with self.app.app_context():
+            db = get_db()
+            invitation = db.execute(
+                "SELECT * FROM invitations WHERE email = ? ORDER BY id DESC LIMIT 1",
+                ("ava@example.com",),
+            ).fetchone()
+            db.execute(
+                """
+                UPDATE appointment_slot_holds
+                SET expires_at = ?, updated_at = ?
+                WHERE invitation_id = ?
+                """,
+                ("2000-01-01T00:00:00Z", iso_now(), invitation["id"]),
+            )
+            db.commit()
+
+        response = self.client.get(
+            f"/api/public-availability?date={preferred_start[:10]}&clinician_user_id={staff_id}&location_id={main_location_id}"
+        )
+        self.assertEqual(response.status_code, 200)
+        availability_payload = response.get_json()
+        self.assertTrue(any(item["value"] == slot_value for item in availability_payload["availability"]["available_slots"]))
+
+        response = self.client.get(f"/invite/{invitation['token']}", follow_redirects=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Invitation unavailable", response.get_data(as_text=True))
+
+    def test_client_dashboard_portal_summary(self) -> None:
+        staff_id = self.create_staff_user()
+        patient_id = self.create_client_user()
+        report_visit_start, report_visit_end = self.appointment_slot(days_from_now=4, hour=11, minute=0, duration_minutes=30)
+
+        with self.app.app_context():
+            db = get_db()
+            main_location_id = db.execute(
+                "SELECT id FROM locations WHERE slug = 'main-clinic'"
+            ).fetchone()["id"]
+            now = iso_now()
+            db.execute(
+                """
+                INSERT INTO intake_submissions (user_id, status, payload_json, created_at, updated_at)
+                VALUES (?, 'submitted', ?, ?, ?)
+                """,
+                (
+                    patient_id,
+                    json.dumps({"patient": {"firstName": "Patient", "lastName": "One"}}),
+                    now,
+                    now,
+                ),
+            )
+            db.execute(
+                """
+                INSERT INTO visit_reports (
+                    patient_user_id,
+                    clinician_user_id,
+                    visit_kind,
+                    report_status,
+                    visit_date,
+                    patient_summary,
+                    care_plan,
+                    patient_recommendations,
+                    created_at,
+                    updated_at
+                )
+                VALUES (?, ?, 'initial_consult', 'published', ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    patient_id,
+                    staff_id,
+                    report_visit_start[:10],
+                    "Your neck and upper thoracic findings support a mechanical treatment plan.",
+                    "Twice weekly care for three weeks, then reassess.",
+                    "Keep walking daily and continue the posture reset drills.",
+                    now,
+                    now,
+                ),
+            )
+            db.execute(
+                """
+                INSERT INTO appointments (
+                    patient_user_id,
+                    clinician_user_id,
+                    location_id,
+                    appointment_type,
+                    status,
+                    starts_at,
+                    ends_at,
+                    note,
+                    patient_details,
+                    booking_channel,
+                    service_label_snapshot,
+                    booking_source,
+                    created_at,
+                    updated_at
+                )
+                VALUES (?, ?, ?, 'report_of_findings', 'scheduled', ?, ?, ?, ?, 'staff', 'Report of Findings', 'staff_portal', ?, ?)
+                """,
+                (
+                    patient_id,
+                    staff_id,
+                    main_location_id,
+                    report_visit_start,
+                    report_visit_end,
+                    "Review findings and confirm the next stage of care.",
+                    "Bring any questions about the plan so the clinic can answer them in person.",
+                    now,
+                    now,
+                ),
+            )
+            db.execute(
+                """
+                INSERT INTO patient_messages (
+                    patient_user_id,
+                    sender_user_id,
+                    sender_role,
+                    topic,
+                    body,
+                    read_by_staff_at,
+                    read_by_patient_at,
+                    created_at
+                )
+                VALUES (?, ?, 'clinician', 'treatment', ?, ?, NULL, ?)
+                """,
+                (
+                    patient_id,
+                    staff_id,
+                    "Please confirm you are comfortable with the updated care plan.",
+                    now,
+                    now,
+                ),
+            )
+            db.commit()
+
+        response = self.client.post(
+            "/login",
+            data={"email": "patient.one@example.com", "password": "patientpass123"},
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        response = self.client.get("/dashboard")
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("Portal snapshot", html)
+        self.assertIn("Care journey", html)
+        self.assertIn("Read your 1 new message", html)
+        self.assertIn("Recent messages", html)
+        self.assertIn("Please confirm you are comfortable with the updated care plan.", html)
+        self.assertIn("Published findings", html)
+        self.assertIn("Upcoming visits", html)
+        self.assertIn("Report of Findings", html)
+
     def test_staff_care_plan_calendar_sync(self) -> None:
         staff_id = self.create_staff_user()
         self.login_staff()
@@ -888,6 +1205,130 @@ class PortalFlowTestCase(unittest.TestCase):
                 (next_visit["id"],),
             ).fetchone()
         self.assertEqual(synced_visit["status"], "completed")
+
+        overdue_visit = visits[2]
+        overdue_date = (date.today() - timedelta(days=2)).isoformat()
+        with self.app.app_context():
+            db = get_db()
+            db.execute(
+                """
+                UPDATE care_plan_visits
+                SET suggested_date = ?,
+                    suggested_starts_at = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    overdue_date,
+                    f"{overdue_date}T09:00",
+                    iso_now(),
+                    overdue_visit["id"],
+                ),
+            )
+            db.commit()
+
+        self.client.post("/logout", follow_redirects=True)
+        response = self.client.post(
+            "/login",
+            data={"email": "mark@example.com", "password": "patientpass123"},
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        dashboard_html = response.get_data(as_text=True)
+        self.assertIn("Client dashboard", dashboard_html)
+        self.assertIn("You&#39;re due for your next visit", dashboard_html)
+        self.assertIn("Book next visit", dashboard_html)
+
+        response = self.client.get(f"/appointments?care_plan_visit_id={overdue_visit['id']}")
+        self.assertEqual(response.status_code, 200)
+        appointments_html = response.get_data(as_text=True)
+        self.assertIn("Your next recommended care-plan visit is already loaded below.", appointments_html)
+        self.assertIn("Visit 3 - Progress Check", appointments_html)
+        booking_date_match = re.search(r'id="patientBookingDate" value="([^"]+)"', appointments_html)
+        self.assertIsNotNone(booking_date_match)
+        booking_date = booking_date_match.group(1)
+        self.assertNotEqual(booking_date, overdue_date)
+        self.assertGreaterEqual(booking_date, date.today().isoformat())
+
+        response = self.client.get(
+            f"/api/availability?date={booking_date}&clinician_user_id={staff_id}&location_id={main_location_id}&service_id={care_plan_service_id}&appointment_type=care_plan&duration_minutes=15"
+        )
+        self.assertEqual(response.status_code, 200)
+        availability_payload = response.get_json()
+        self.assertTrue(availability_payload["ok"])
+        self.assertTrue(availability_payload["availability"]["available_slots"])
+        selected_slot = availability_payload["availability"]["available_slots"][0]["value"]
+
+        response = self.client.post(
+            "/appointments/self-book",
+            data={
+                "service_id": str(care_plan_service_id),
+                "appointment_type": "care_plan",
+                "clinician_user_id": str(staff_id),
+                "location_id": str(main_location_id),
+                "appointment_date": booking_date,
+                "duration_minutes": "15",
+                "slot_start": selected_slot,
+                "patient_details": "Booked from the portal as the next care-plan step.",
+                "care_plan_visit_id": str(overdue_visit["id"]),
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        booked_html = response.get_data(as_text=True)
+        self.assertIn("Your next recommended care-plan visit is booked.", booked_html)
+
+        with self.app.app_context():
+            db = get_db()
+            rebooked_visit = db.execute(
+                "SELECT status, booked, appointment_id FROM care_plan_visits WHERE id = ?",
+                (overdue_visit["id"],),
+            ).fetchone()
+            rebooked_appointment = db.execute(
+                "SELECT * FROM appointments WHERE id = ?",
+                (rebooked_visit["appointment_id"],),
+            ).fetchone()
+            first_plan_visit = db.execute(
+                "SELECT status, booked, appointment_id FROM care_plan_visits WHERE id = ?",
+                (visits[0]["id"],),
+            ).fetchone()
+            first_plan_appointment = db.execute(
+                "SELECT * FROM appointments WHERE id = ?",
+                (first_plan_visit["appointment_id"],),
+            ).fetchone()
+        self.assertEqual(rebooked_visit["status"], "scheduled")
+        self.assertEqual(rebooked_visit["booked"], 1)
+        self.assertIsNotNone(rebooked_appointment)
+        self.assertEqual(first_plan_visit["status"], "scheduled")
+        self.assertEqual(first_plan_visit["booked"], 1)
+        self.assertIsNotNone(first_plan_appointment)
+
+        response = self.client.post(
+            f"/appointments/{first_plan_appointment['id']}/cancel",
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        cancelled_html = response.get_data(as_text=True)
+        self.assertIn("Appointment cancelled. Choose a new time to stay on track with your care plan.", cancelled_html)
+        self.assertIn(f'name="care_plan_visit_id" value="{visits[0]["id"]}"', cancelled_html)
+        self.assertIn("Your next recommended care-plan visit is already loaded below.", cancelled_html)
+
+        with self.app.app_context():
+            reopened_visit = get_db().execute(
+                "SELECT status, booked, appointment_id FROM care_plan_visits WHERE id = ?",
+                (visits[0]["id"],),
+            ).fetchone()
+        self.assertEqual(reopened_visit["status"], "unbooked")
+        self.assertEqual(reopened_visit["booked"], 0)
+        self.assertIsNone(reopened_visit["appointment_id"])
+
+        self.client.post("/logout", follow_redirects=True)
+        self.login_staff()
+        response = self.client.get("/staff/dashboard")
+        self.assertEqual(response.status_code, 200)
+        staff_dashboard_html = response.get_data(as_text=True)
+        self.assertIn("Care-plan follow-up", staff_dashboard_html)
+        self.assertIn("Mark Hughes", staff_dashboard_html)
 
     def test_staff_learning_portal_progress(self) -> None:
         staff_user_id = self.create_staff_user()

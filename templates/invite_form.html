@@ -12,7 +12,7 @@
     <div class="status-card">
       <span>Invite policy</span>
       <strong>14-day expiry</strong>
-      <small>Local MVP link generation</small>
+      <small>Appointment slots are held when a time is attached</small>
     </div>
   </section>
 
@@ -20,34 +20,35 @@
     <article class="panel">
       <div class="panel-label">New invite</div>
       <form method="post" class="auth-form">
+        <input type="hidden" name="lead_id" value="{{ invite_prefill['lead_id'] if invite_prefill is defined else '' }}">
         <div class="split">
           <label>
             <span>First name</span>
-            <input type="text" name="first_name" required>
+            <input type="text" name="first_name" value="{{ invite_prefill['first_name'] if invite_prefill is defined else '' }}" required>
           </label>
           <label>
             <span>Last name</span>
-            <input type="text" name="last_name" required>
+            <input type="text" name="last_name" value="{{ invite_prefill['last_name'] if invite_prefill is defined else '' }}" required>
           </label>
         </div>
         <label>
           <span>Email</span>
-          <input type="email" name="email" required>
+          <input type="email" name="email" value="{{ invite_prefill['email'] if invite_prefill is defined else '' }}" required>
         </label>
         <label>
           <span>Appointment date and time</span>
-          <input type="datetime-local" name="appointment_at">
+          <input type="datetime-local" name="appointment_at" value="{{ invite_prefill['appointment_at'] if invite_prefill is defined else '' }}">
         </label>
         <label>
           <span>Internal note for the patient</span>
-          <textarea name="note" rows="4" placeholder="Arrival instructions, paperwork reminders, clinic-specific prep..."></textarea>
+          <textarea name="note" rows="4" placeholder="Arrival instructions, paperwork reminders, clinic-specific prep...">{{ invite_prefill['note'] if invite_prefill is defined else '' }}</textarea>
         </label>
         <button type="submit" class="primary-button">Create invitation</button>
       </form>
     </article>
 
     <article class="panel">
-      <div class="panel-label">Latest invite</div>
+      <div class="panel-label">{{ "Latest invite" if created_invitation else ("Lead request" if linked_lead else "Latest invite") }}</div>
       {% if created_invitation %}
         <h2>{{ created_invitation["first_name"] }} {{ created_invitation["last_name"] }}</h2>
         <p>Copy this link into your email or SMS workflow.</p>
@@ -59,7 +60,22 @@
           <li>Email: {{ created_invitation["email"] }}</li>
           <li>Appointment: {{ created_invitation["appointment_at"].replace("T", " ") if created_invitation["appointment_at"] else "Not set" }}</li>
           <li>Expires: {{ created_invitation["expires_at"][:10] }}</li>
+          {% if created_slot_hold %}
+            <li>Held until: {{ created_slot_hold["expires_label"] }}</li>
+          {% endif %}
         </ul>
+      {% elif linked_lead %}
+        <h2>{{ linked_lead["full_name"] }}</h2>
+        <p>This invite is linked to a live lead request from the public consultation page.</p>
+        <ul class="check-list">
+          <li>Email: {{ linked_lead["email"] }}</li>
+          <li>Phone: {{ linked_lead["phone"] or "Not provided" }}</li>
+          <li>Requested slot: {{ linked_lead["requested_label"] }}</li>
+          <li>Source: {{ linked_lead["source_label"] }}</li>
+        </ul>
+        {% if linked_lead["reason"] %}
+          <div class="info-box">{{ linked_lead["reason"] }}</div>
+        {% endif %}
       {% else %}
         <h2>No invite created yet</h2>
         <p>Once you submit the form, the generated onboarding link will appear here.</p>
