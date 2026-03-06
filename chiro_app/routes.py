@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import calendar as month_calendar
+import os
 import json
 import re
 import secrets
+import urllib.error
+import urllib.request
 from datetime import date, datetime, time, timedelta
 from functools import wraps
 from pathlib import Path
@@ -115,6 +118,14 @@ APPOINTMENT_DURATION_DEFAULTS = {
     "care_plan": 15,
 }
 
+MESSAGE_TOPIC_META = {
+    "appointment": {"label": "Appointment", "tone": "sky"},
+    "treatment": {"label": "Treatment Query", "tone": "life"},
+    "exercise": {"label": "Home Exercise", "tone": "warm"},
+    "symptoms": {"label": "Symptom Update", "tone": "rose"},
+    "billing": {"label": "Billing / Insurance", "tone": "sky"},
+}
+
 BOOKING_ROUTING_MODE_META = {
     "specific_clinician": {"label": "Specific chiropractor"},
     "team_round_robin": {"label": "Any available chiropractor"},
@@ -138,6 +149,73 @@ SPINE_SEGMENT_ORDER = [
     *[f"S{i}" for i in range(1, 6)],
 ]
 SPINE_SEGMENT_INDEX = {segment: index for index, segment in enumerate(SPINE_SEGMENT_ORDER)}
+
+LEARNING_PATH_TOPICS = [
+    {
+        "slug": "anatomy-spine-joints",
+        "category": "Anatomy",
+        "title": "Spinal Anatomy Foundations",
+        "description": "Learn vertebral landmarks, disc mechanics, and segmental function before advanced adjustments.",
+        "outcome": "Describe core anatomical structures and common dysfunction mechanisms.",
+        "duration": "10 min",
+    },
+    {
+        "slug": "chiropractic-adjustments-principles",
+        "category": "Adjustments",
+        "title": "Adjustment Biomechanics",
+        "description": "Understand setup, vector, force application, and safety checks for each thrust technique.",
+        "outcome": "Plan and perform safer, more consistent adjustment setup.",
+        "duration": "12 min",
+    },
+    {
+        "slug": "segmental-dysfunction-detection",
+        "category": "Assessment",
+        "title": "Segmental Dysfunction Detection",
+        "description": "Sharpen palpation and movement analysis to identify objective segment findings.",
+        "outcome": "Create a repeatable dysfunction hypothesis and test it clinically.",
+        "duration": "15 min",
+    },
+    {
+        "slug": "patient-intake-clinical-history",
+        "category": "Clinical Workflow",
+        "title": "Clinical Intake & History",
+        "description": "Improve questioning around pain behavior, red flags, and meaningful functional limits.",
+        "outcome": "Capture cleaner consult notes that drive better outcomes planning.",
+        "duration": "8 min",
+    },
+    {
+        "slug": "rehab-exercise-prescriptions",
+        "category": "Exercise",
+        "title": "Prescribing Rehab Exercises",
+        "description": "Match exercise selection to complaint, stage, and tolerance level.",
+        "outcome": "Deliver practical home programs with better adherence.",
+        "duration": "9 min",
+    },
+    {
+        "slug": "communication-case-management",
+        "category": "Practice Growth",
+        "title": "Patient Communication",
+        "description": "Translate findings into clear, empathetic language for treatment planning.",
+        "outcome": "Build stronger patient trust and adherence through communication.",
+        "duration": "7 min",
+    },
+    {
+        "slug": "chiropractic-ethics-safety",
+        "category": "Professional Standards",
+        "title": "Ethics & Safety in Chiropractic Care",
+        "description": "Review consent, documentation, escalation criteria, and safe referral pathways.",
+        "outcome": "Operate with higher consistency and confidence in risk management.",
+        "duration": "11 min",
+    },
+    {
+        "slug": "evidence-based-updates",
+        "category": "Professional Standards",
+        "title": "Evidence and Best-Practice Updates",
+        "description": "Read and apply practical updates from modern chiropractic literature.",
+        "outcome": "Bring current evidence into routine care decisions.",
+        "duration": "10 min",
+    },
+]
 
 
 def is_staff(user) -> bool:
@@ -530,6 +608,363 @@ def get_notes_for_patient(patient_user_id: int):
         "SELECT * FROM clinician_notes WHERE patient_user_id = ?",
         (patient_user_id,),
     ).fetchone()
+
+
+def _message_summary_item(row) -> dict:
+    if row is None:
+        return {}
+    patient_name = " ".join(part for part in [row["patient_first_name"], row["patient_last_name"]] if part).strip() or "Unknown patient"
+    topic = row["last_topic"] or "appointment"
+    topic_meta = message_topic_meta(topic)
+    return {
+        "patient_user_id": row["patient_user_id"],
+        "patient_name": patient_name,
+        "patient_email": row["patient_email"],
+        "last_body": row["last_body"] or "",
+        "last_created_at": row["last_created_at"],
+        "last_created_label": format_schedule(row["last_created_at"]) if row["last_created_at"] else "No messages yet",
+        "last_topic": topic,
+        "last_topic_label": topic_meta["label"],
+        "last_topic_tone": topic_meta["tone"],
+        "unread_for_staff": int(row["unread_for_staff"] or 0),
+    }
+
+
+def get_staff_message_threads(search_query: str | None = None) -> list[dict]:
+    search_query = (search_query or "").strip().lower()
+    rows = get_db().execute(
+        """
+        SELECT
+            u.id AS patient_user_id,
+            u.first_name AS patient_first_name,
+            u.last_name AS patient_last_name,
+            u.email AS patient_email,
+            (
+                SELECT pm.topic
+                FROM patient_messages pm
+                WHERE pm.patient_user_id = u.id
+                ORDER BY pm.created_at DESC, pm.id DESC
+                LIMIT 1
+            ) AS last_topic,
+            (
+                SELECT pm.body
+                FROM patient_messages pm
+                WHERE pm.patient_user_id = u.id
+                ORDER BY pm.created_at DESC, pm.id DESC
+                LIMIT 1
+            ) AS last_body,
+            (
+                SELECT pm.created_at
+                FROM patient_messages pm
+                WHERE pm.patient_user_id = u.id
+                ORDER BY pm.created_at DESC, pm.id DESC
+                LIMIT 1
+            ) AS last_created_at,
+            (
+                SELECT COUNT(*)
+                FROM patient_messages pm
+                WHERE pm.patient_user_id = u.id
+                  AND pm.sender_role = 'client'
+                  AND pm.read_by_staff_at IS NULL
+            ) AS unread_for_staff
+        FROM users u
+        WHERE u.role = 'client'
+        ORDER BY
+            unread_for_staff DESC,
+            COALESCE(last_created_at, u.created_at) DESC,
+            u.last_name ASC,
+            u.first_name ASC,
+            u.id ASC
+        """
+    ).fetchall()
+
+    items = [_message_summary_item(row) for row in rows]
+    if not search_query:
+        return items
+    filtered = []
+    for item in items:
+        haystack = " ".join(
+            [
+                item["patient_name"].lower(),
+                (item["patient_email"] or "").lower(),
+                (item["last_body"] or "").lower(),
+            ]
+        )
+        if search_query in haystack:
+            filtered.append(item)
+    return filtered
+
+
+def get_patient_message_thread(patient_user_id: int) -> list[dict]:
+    rows = get_db().execute(
+        """
+        SELECT
+            pm.*,
+            sender.first_name AS sender_first_name,
+            sender.last_name AS sender_last_name
+        FROM patient_messages pm
+        LEFT JOIN users sender ON sender.id = pm.sender_user_id
+        WHERE pm.patient_user_id = ?
+        ORDER BY pm.created_at ASC, pm.id ASC
+        """,
+        (patient_user_id,),
+    ).fetchall()
+
+    messages = []
+    for row in rows:
+        sender_name = " ".join(part for part in [row["sender_first_name"], row["sender_last_name"]] if part).strip()
+        if not sender_name:
+            sender_name = "Chiropractor" if row["sender_role"] in {"admin", "clinician"} else "Patient"
+        topic_meta = message_topic_meta(row["topic"] or "appointment")
+        messages.append(
+            {
+                "id": row["id"],
+                "sender_user_id": row["sender_user_id"],
+                "sender_role": row["sender_role"],
+                "sender_name": sender_name,
+                "topic": row["topic"] or "appointment",
+                "topic_label": topic_meta["label"],
+                "topic_tone": topic_meta["tone"],
+                "body": row["body"] or "",
+                "created_at": row["created_at"],
+                "created_label": format_schedule(row["created_at"]) or row["created_at"],
+            }
+        )
+    return messages
+
+
+def mark_patient_messages_read_for_staff(patient_user_id: int) -> None:
+    now = iso_now()
+    get_db().execute(
+        """
+        UPDATE patient_messages
+        SET read_by_staff_at = ?
+        WHERE patient_user_id = ?
+          AND sender_role = 'client'
+          AND read_by_staff_at IS NULL
+        """,
+        (now, patient_user_id),
+    )
+
+
+def mark_patient_messages_read_for_patient(patient_user_id: int) -> None:
+    now = iso_now()
+    get_db().execute(
+        """
+        UPDATE patient_messages
+        SET read_by_patient_at = ?
+        WHERE patient_user_id = ?
+          AND sender_role IN ('admin', 'clinician')
+          AND read_by_patient_at IS NULL
+        """,
+        (now, patient_user_id),
+    )
+
+
+def insert_patient_message(patient_user_id: int, sender_user_id: int, sender_role: str, topic: str, body: str) -> None:
+    now = iso_now()
+    read_by_staff_at = now if sender_role in {"admin", "clinician"} else None
+    read_by_patient_at = now if sender_role == "client" else None
+    get_db().execute(
+        """
+        INSERT INTO patient_messages (
+            patient_user_id,
+            sender_user_id,
+            sender_role,
+            topic,
+            body,
+            read_by_staff_at,
+            read_by_patient_at,
+            created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            patient_user_id,
+            sender_user_id,
+            sender_role,
+            topic,
+            body,
+            read_by_staff_at,
+            read_by_patient_at,
+            now,
+        ),
+    )
+
+
+def get_practitioner_journal_entries(clinician_user_id: int):
+    return get_db().execute(
+        """
+        SELECT *
+        FROM practitioner_journal_entries
+        WHERE clinician_user_id = ?
+        ORDER BY entry_date DESC, created_at DESC, id DESC
+        """,
+        (clinician_user_id,),
+    ).fetchall()
+
+
+def _journal_entry_block(entry: dict) -> str:
+    title = (entry["title"] or "").strip()
+    reflection = (entry["reflection"] or "").strip()
+    lesson = (entry["lesson_learned"] or "").strip()
+    next_step = (entry["next_step"] or "").strip()
+
+    heading = entry["entry_date"]
+    if title:
+        heading = f"{heading} · {title}"
+
+    parts: list[str] = []
+    if reflection:
+        parts.append(f"Reflection: {reflection}")
+    if lesson:
+        parts.append(f"Learned: {lesson}")
+    if next_step:
+        parts.append(f"Next action: {next_step}")
+
+    return f"{heading}\n" + "\n".join(parts)
+
+
+def _selected_journal_entries_for_user(clinician_user_id: int, entry_ids: list[int] | None = None, *, default_limit: int = 5):
+    entries = [dict(entry) for entry in get_practitioner_journal_entries(clinician_user_id)]
+    if not entries:
+        return []
+
+    if not entry_ids:
+        return entries[:default_limit]
+
+    by_id = {entry["id"]: entry for entry in entries}
+    selected = [by_id[entry_id] for entry_id in entry_ids if entry_id in by_id]
+    return selected
+
+
+def _build_journal_context_prompt(clinician_name: str, selected_entries: list[dict], user_prompt: str) -> str:
+    lines = [
+        f"Clinician: {clinician_name}",
+        "Use the journal snippets below to tailor a practical, safety-focused, professional chiropractic coaching response.",
+        "Answer in a concise tone with 3–5 actionable points and clear next steps.",
+    ]
+
+    if selected_entries:
+        lines.append("Journal entries:")
+        for index, entry in enumerate(selected_entries, start=1):
+            lines.append(f"{index}. { _journal_entry_block(entry) }")
+    else:
+        lines.append("No journal entries selected for this request.")
+
+    lines.append("User request:")
+    lines.append(user_prompt or "Provide a useful improvement-oriented coaching response.")
+    return "\n".join(lines)
+
+
+def _fallback_claude_reply(user_prompt: str, selected_entries: list[dict]) -> str:
+    prompt = (user_prompt or "").strip().lower()
+    if not selected_entries and not prompt:
+        return "I can help you review progress, but I need either a prompt or some journal entries to analyse."
+
+    reflection_notes = []
+    action_notes = []
+    learning_notes = []
+    for entry in selected_entries:
+        if entry.get("reflection"):
+            reflection_notes.append(entry["reflection"])
+        if entry.get("lesson_learned"):
+            learning_notes.append(entry["lesson_learned"])
+        if entry.get("next_step"):
+            action_notes.append(entry["next_step"])
+
+    top_reflections = (reflection_notes[:2] or ["No recent reflections were provided."])
+    top_learning = (learning_notes[:2] or ["No learning notes were provided."])
+    top_actions = (action_notes[:2] or ["No explicit next actions were set."])
+
+    if any(term in prompt for term in ("reflect", "review", "summary", "pattern")):
+        return (
+            "Reflection summary from selected entries:\n"
+            f"- Core observations: {'; '.join(top_reflections)}\n"
+            f"- Learning themes: {'; '.join(top_learning)}\n"
+            "Actionable guidance:\n"
+            "1) State one clinical principle to test at your next treatment.\n"
+            "2) Keep the same note structure for all cases (observation, hypothesis, intervention, outcome).\n"
+            "3) Add one measurable outcome target to each treatment plan.\n"
+            "4) End with one coaching check-in question for yourself before clinic ends."
+        )
+    if any(term in prompt for term in ("plan", "next", "step", "action", "improve")):
+        return (
+            "Based on your selected entries, a practical plan:\n"
+            f"- Reinforce: {top_learning[0]}\n"
+            f"- Immediate tweak: {top_actions[0]}\n"
+            "- Keep the patient-facing explanation short and outcome-focused.\n"
+            "- Revisit your top two hypotheses in the next 24 hours before reassessing.\n"
+            f"- Record your next action for tomorrow: {top_actions[1] if len(top_actions) > 1 else 'set one concrete treatment check this week.'}\n"
+        )
+    return (
+        "Here is a focused coach-style response:\n"
+        f"- Key reflection signal: {top_reflections[0]}\n"
+        f"- Learning signal: {top_learning[0]}\n"
+        "- Suggested priorities: safety review, assessment calibration, and communication clarity.\n"
+        "- If one recurring issue appears in your log, run a targeted 30-minute case review before the next clinic day.\n"
+        "- Translate one journal learning into an explicit objective goal for your next appointment."
+    )
+
+
+def _call_claude_api(prompt: str) -> str | None:
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    if not api_key:
+        return None
+
+    request_payload = {
+        "model": "claude-3-haiku-20240307",
+        "max_tokens": 700,
+        "system": (
+            "You are a confidential coaching assistant for chiropractors. "
+            "Use the provided journal context to offer safe, practical, evidence-aware reflections. "
+            "Do not provide diagnosis or emergency medical advice and avoid definitive claims."
+        ),
+        "messages": [
+            {"role": "user", "content": prompt},
+        ],
+    }
+
+    request_body = json.dumps(request_payload).encode("utf-8")
+    http_request = urllib.request.Request(
+        "https://api.anthropic.com/v1/messages",
+        method="POST",
+        data=request_body,
+        headers={
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+        },
+    )
+
+    try:
+        with urllib.request.urlopen(http_request, timeout=20) as response:
+            raw = json.loads(response.read().decode("utf-8"))
+    except (urllib.error.URLError, urllib.error.HTTPError, ValueError, TimeoutError) as exc:
+        raise RuntimeError(f"Claude request failed: {exc}") from exc
+
+    content = raw.get("content")
+    if not content:
+        raise RuntimeError("Invalid Claude response payload.")
+    text_chunks: list[str] = []
+    for chunk in content:
+        if isinstance(chunk, dict) and chunk.get("type") == "text":
+            text = chunk.get("text", "")
+            if isinstance(text, str) and text.strip():
+                text_chunks.append(text)
+    return "\n".join(text_chunks).strip() if text_chunks else None
+
+
+def get_learning_progress_for_clinician(clinician_user_id: int):
+    rows = get_db().execute(
+        """
+        SELECT *
+        FROM practitioner_learning_progress
+        WHERE clinician_user_id = ?
+        """,
+        (clinician_user_id,),
+    ).fetchall()
+    return {row["topic_slug"]: row for row in rows}
 
 
 def get_visit_report_for_patient(patient_user_id: int, visit_kind: str = "initial_consult"):
@@ -1165,6 +1600,20 @@ def billing_status_options() -> list[dict]:
 
 def appointment_duration_options() -> list[dict]:
     return APPOINTMENT_DURATION_OPTIONS
+
+
+def message_topic_options() -> list[dict]:
+    return [{"value": value, **meta} for value, meta in MESSAGE_TOPIC_META.items()]
+
+
+def message_topic_meta(topic: str) -> dict:
+    return MESSAGE_TOPIC_META.get(
+        topic,
+        {
+            "label": topic.replace("_", " ").title(),
+            "tone": "sky",
+        },
+    )
 
 
 def default_duration_for_type(appointment_type: str) -> int:
@@ -2647,6 +3096,7 @@ def staff_patient_context(user_id: int):
     if not isinstance(selected_duration, int) or not duration_is_supported(selected_duration):
         selected_duration = selected_service["duration_minutes"] if selected_service else default_duration_for_type(selected_appointment_type)
     booking_policy = resolve_booking_policy(selected_service, selected_appointment_type, selected_duration)
+    selected_slot_increment = selected_slot_increment_minutes(request.args.get("slot_increment_minutes"))
 
     raw_clinician_value = request.args.get("clinician_user_id")
     selected_clinician_id = requested_clinician_user_id(
@@ -2666,6 +3116,7 @@ def staff_patient_context(user_id: int):
         selected_location,
         booking_policy["duration_minutes"],
         booking_policy=booking_policy,
+        slot_increment_minutes=selected_slot_increment,
     )
 
     submission = get_submission_for_user(patient["id"])
@@ -2715,6 +3166,8 @@ def staff_patient_context(user_id: int):
         "service_options": service_options,
         "selected_service_id": selected_service["id"] if selected_service else None,
         "booking_policy": booking_policy,
+        "slot_increment_options": slot_increment_options(),
+        "selected_slot_increment_minutes": selected_slot_increment,
         "allow_any_clinician": booking_policy["routing_mode"] == "team_round_robin",
         "booking_date": booking_date,
         "booking_availability": booking_availability,
@@ -3027,6 +3480,318 @@ def staff_dashboard():
     return render_template("staff_dashboard.html", **context)
 
 
+@bp.route("/staff/journal")
+@staff_required
+def staff_journal():
+    entries = [dict(entry) for entry in get_practitioner_journal_entries(g.user["id"])]
+    return render_template("staff_journal.html", entries=entries, today=date.today().isoformat())
+
+
+@bp.post("/staff/journal")
+@staff_required
+def create_staff_journal_entry():
+    entry_date = request.form.get("entry_date", "").strip() or date.today().isoformat()
+    title = request.form.get("title", "").strip()
+    reflection = request.form.get("reflection", "").strip()
+    lesson_learned = request.form.get("lesson_learned", "").strip()
+    next_step = request.form.get("next_step", "").strip()
+
+    error = None
+    if not (title or reflection or lesson_learned or next_step):
+        error = "Write at least one section before saving your journal."
+    elif parse_iso(entry_date) is None:
+        error = "Choose a valid entry date."
+
+    if error is None:
+        now = iso_now()
+        get_db().execute(
+            """
+            INSERT INTO practitioner_journal_entries (
+                clinician_user_id,
+                entry_date,
+                title,
+                reflection,
+                lesson_learned,
+                next_step,
+                created_at,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                g.user["id"],
+                entry_date,
+                title,
+                reflection,
+                lesson_learned,
+                next_step,
+                now,
+                now,
+            ),
+        )
+        get_db().commit()
+        flash("Journal entry saved.", "success")
+    else:
+        flash(error, "error")
+
+    return redirect(url_for("main.staff_journal"))
+
+
+@bp.post("/staff/journal/claude-chat")
+@staff_required
+def staff_journal_claude_chat():
+    payload = request.get_json(silent=True) or {}
+    message = str(payload.get("message", "")).strip()
+    selected_ids = payload.get("entry_ids")
+    if selected_ids is None:
+        selected_ids = []
+    if not isinstance(selected_ids, list):
+        return jsonify({"ok": False, "error": "entry_ids must be a list."}), 400
+
+    normalized_ids: list[int] = []
+    for raw_id in selected_ids:
+        try:
+            value = int(raw_id)
+        except (TypeError, ValueError):
+            continue
+        normalized_ids.append(value)
+
+    selected_entries = _selected_journal_entries_for_user(
+        g.user["id"],
+        normalized_ids or None,
+    )
+
+    prompt = _build_journal_context_prompt(
+        f"{g.user['first_name']} {g.user['last_name']}".strip(),
+        selected_entries,
+        message,
+    )
+
+    claude_text = None
+    used_local = False
+    if message:
+        try:
+            claude_text = _call_claude_api(prompt)
+        except Exception:
+            claude_text = None
+
+    if not claude_text:
+        claude_text = _fallback_claude_reply(message, selected_entries)
+        used_local = True
+
+    return jsonify(
+        {
+            "ok": True,
+            "reply": claude_text,
+            "used_local_model": used_local,
+            "entry_count": len(selected_entries),
+            "entries": [
+                {"id": entry["id"], "entry_date": entry["entry_date"], "title": entry["title"]}
+                for entry in selected_entries
+            ],
+        }
+    )
+
+
+@bp.get("/staff/messaging")
+@staff_required
+def staff_messaging():
+    search = request.args.get("q", "").strip()
+    threads = get_staff_message_threads(search)
+
+    selected_patient_id = int_or_none(request.args.get("patient_id"))
+    if not isinstance(selected_patient_id, int):
+        selected_patient_id = threads[0]["patient_user_id"] if threads else None
+
+    selected_patient = get_client_user(selected_patient_id) if selected_patient_id is not None else None
+    if selected_patient is None and threads:
+        selected_patient_id = threads[0]["patient_user_id"]
+        selected_patient = get_client_user(selected_patient_id)
+
+    messages = []
+    if selected_patient is not None:
+        mark_patient_messages_read_for_staff(selected_patient["id"])
+        get_db().commit()
+        messages = get_patient_message_thread(selected_patient["id"])
+
+    return render_template(
+        "staff_messaging.html",
+        threads=threads,
+        selected_patient=selected_patient,
+        selected_patient_id=selected_patient["id"] if selected_patient is not None else None,
+        messages=messages,
+        message_topics=message_topic_options(),
+        search_query=search,
+    )
+
+
+@bp.post("/staff/messaging/<int:patient_user_id>")
+@staff_required
+def send_staff_message(patient_user_id: int):
+    patient = get_client_user(patient_user_id)
+    if patient is None:
+        abort(404)
+
+    topic = request.form.get("topic", "").strip()
+    body = request.form.get("body", "").strip()
+
+    if topic not in MESSAGE_TOPIC_META:
+        flash("Choose a valid message topic.", "error")
+    elif not body:
+        flash("Write a message before sending.", "error")
+    else:
+        insert_patient_message(patient_user_id, g.user["id"], g.user["role"], topic, body)
+        get_db().commit()
+        flash("Message sent to patient.", "success")
+    return redirect(url_for("main.staff_messaging", patient_id=patient_user_id))
+
+
+@bp.get("/messages")
+@client_required
+def patient_messages():
+    unread_count = get_db().execute(
+        """
+        SELECT COUNT(*) AS count
+        FROM patient_messages
+        WHERE patient_user_id = ?
+          AND sender_role IN ('admin', 'clinician')
+          AND read_by_patient_at IS NULL
+        """,
+        (g.user["id"],),
+    ).fetchone()["count"]
+    mark_patient_messages_read_for_patient(g.user["id"])
+    get_db().commit()
+    messages = get_patient_message_thread(g.user["id"])
+
+    return render_template(
+        "patient_messages.html",
+        messages=messages,
+        message_topics=message_topic_options(),
+        unread_count=unread_count,
+    )
+
+
+@bp.post("/messages")
+@client_required
+def send_patient_message():
+    topic = request.form.get("topic", "").strip()
+    body = request.form.get("body", "").strip()
+
+    if topic not in MESSAGE_TOPIC_META:
+        flash("Choose a valid message topic.", "error")
+    elif not body:
+        flash("Write a message before sending.", "error")
+    else:
+        insert_patient_message(g.user["id"], g.user["id"], "client", topic, body)
+        get_db().commit()
+        flash("Message sent to your chiropractic team.", "success")
+    return redirect(url_for("main.patient_messages"))
+
+
+@bp.get("/staff/learning")
+@staff_required
+def staff_learning():
+    progress_by_topic = get_learning_progress_for_clinician(g.user["id"])
+    topics_by_category: dict[str, list[dict]] = {}
+
+    completed_topics = 0
+    for topic in LEARNING_PATH_TOPICS:
+        saved = progress_by_topic.get(topic["slug"])
+        is_completed = bool(saved and int(saved["is_completed"]) == 1)
+        if is_completed:
+            completed_topics += 1
+
+        topic_progress = {
+            **topic,
+            "is_completed": is_completed,
+            "completed_at": saved["completed_at"] if saved else None,
+            "reflection": (saved["reflection"] if saved else ""),
+        }
+
+        categories_set = topics_by_category.setdefault(topic["category"], [])
+        categories_set.append(topic_progress)
+
+    total_topics = len(LEARNING_PATH_TOPICS)
+    return render_template(
+        "staff_learning_portal.html",
+        topics_by_category=topics_by_category,
+        completed_topics=completed_topics,
+        total_topics=total_topics,
+        progress_pct=round((completed_topics / total_topics) * 100) if total_topics else 0,
+    )
+
+
+@bp.post("/staff/learning/progress")
+@staff_required
+def update_staff_learning_progress():
+    topic_slug = request.form.get("topic_slug", "").strip()
+    is_completed = request.form.get("is_completed") == "1"
+    reflection = request.form.get("reflection", "").strip()
+
+    topic_slugs = {topic["slug"] for topic in LEARNING_PATH_TOPICS}
+    if topic_slug not in topic_slugs:
+        flash("Invalid learning topic selected.", "error")
+        return redirect(url_for("main.staff_learning"))
+
+    now = iso_now()
+    db = get_db()
+    existing = db.execute(
+        """
+        SELECT id
+        FROM practitioner_learning_progress
+        WHERE clinician_user_id = ? AND topic_slug = ?
+        """,
+        (g.user["id"], topic_slug),
+    ).fetchone()
+
+    if existing is None:
+        db.execute(
+            """
+            INSERT INTO practitioner_learning_progress (
+                clinician_user_id,
+                topic_slug,
+                is_completed,
+                completed_at,
+                reflection,
+                created_at,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                g.user["id"],
+                topic_slug,
+                1 if is_completed else 0,
+                now if is_completed else None,
+                reflection,
+                now,
+                now,
+            ),
+        )
+    else:
+        db.execute(
+            """
+            UPDATE practitioner_learning_progress
+            SET is_completed = ?,
+                completed_at = ?,
+                reflection = ?,
+                updated_at = ?
+            WHERE clinician_user_id = ? AND topic_slug = ?
+            """,
+            (
+                1 if is_completed else 0,
+                now if is_completed else None,
+                reflection,
+                now,
+                g.user["id"],
+                topic_slug,
+            ),
+        )
+    db.commit()
+    flash("Learning progress saved.", "success")
+    return redirect(url_for("main.staff_learning"))
+
+
 @bp.route("/staff/invitations/new", methods=("GET", "POST"))
 @staff_required
 def staff_new_invitation():
@@ -3114,6 +3879,7 @@ def staff_schedule_availability():
         location_id,
         booking_policy["duration_minutes"],
         booking_policy=booking_policy,
+        slot_increment_minutes=selected_slot_increment_minutes(request.args.get("slot_increment_minutes")),
     )
     return jsonify(serialize_schedule_availability(availability))
 

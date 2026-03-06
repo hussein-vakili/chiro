@@ -96,6 +96,55 @@ CREATE TABLE IF NOT EXISTS clinician_notes (
     FOREIGN KEY (clinician_user_id) REFERENCES users(id) ON DELETE SET NULL
 );
 
+CREATE TABLE IF NOT EXISTS practitioner_journal_entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    clinician_user_id INTEGER NOT NULL,
+    entry_date TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    reflection TEXT NOT NULL DEFAULT '',
+    lesson_learned TEXT NOT NULL DEFAULT '',
+    next_step TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (clinician_user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_practitioner_journal_entries_clinician ON practitioner_journal_entries(clinician_user_id);
+
+CREATE TABLE IF NOT EXISTS practitioner_learning_progress (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    clinician_user_id INTEGER NOT NULL,
+    topic_slug TEXT NOT NULL,
+    is_completed INTEGER NOT NULL DEFAULT 0,
+    completed_at TEXT,
+    reflection TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (clinician_user_id, topic_slug),
+    FOREIGN KEY (clinician_user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_practitioner_learning_progress_clinician ON practitioner_learning_progress(clinician_user_id);
+CREATE INDEX IF NOT EXISTS idx_practitioner_learning_progress_slug ON practitioner_learning_progress(topic_slug);
+
+CREATE TABLE IF NOT EXISTS patient_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    patient_user_id INTEGER NOT NULL,
+    sender_user_id INTEGER NOT NULL,
+    sender_role TEXT NOT NULL,
+    topic TEXT NOT NULL DEFAULT 'appointment',
+    body TEXT NOT NULL DEFAULT '',
+    read_by_staff_at TEXT,
+    read_by_patient_at TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (patient_user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (sender_user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_patient_messages_patient ON patient_messages(patient_user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_patient_messages_unread_staff ON patient_messages(patient_user_id, read_by_staff_at);
+CREATE INDEX IF NOT EXISTS idx_patient_messages_unread_patient ON patient_messages(patient_user_id, read_by_patient_at);
+
 CREATE TABLE IF NOT EXISTS locations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,

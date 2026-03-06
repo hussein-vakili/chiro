@@ -1,0 +1,234 @@
+{% extends "base.html" %}
+
+{% block title %}Practitioner Journal · Life Chiropractic{% endblock %}
+
+{% block head %}
+  <style>
+    .journal-entry-select-wrap{display:flex;align-items:flex-start;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:12px;background:#faf8f4}
+    .journal-entry-select-wrap input{margin-top:2px}
+    .journal-entry-select-wrap .muted-copy{margin-top:2px}
+    .claude-chat-wrap{display:grid;gap:12px}
+    .claude-chat-toolbar{display:flex;flex-wrap:wrap;gap:10px}
+    .claude-chat-output{min-height:180px;padding:12px;border-radius:16px;border:1px solid var(--border);background:#fff;display:grid;gap:12px}
+    .chat-row{display:grid;gap:8px}
+    .chat-row strong{font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--ink4)}
+    .chat-bubble{padding:12px;border-radius:12px;white-space:pre-wrap;line-height:1.55;border:1px solid var(--border)}
+    .chat-bubble.user{background:#f0fdf4;border-color:#dcfce7}
+    .chat-bubble.assistant{background:#f8f6f2;border-color:#e7e5e4}
+    .chat-subtle{font-size:12px;color:var(--ink4)}
+  </style>
+{% endblock %}
+
+{% block content %}
+  <section class="hero-panel">
+    <div>
+      <div class="auth-eyebrow">Clinician growth</div>
+      <h1>Chiropractor journal</h1>
+      <p>Capture reflections from each treatment day, what you learned, and the next actions that will improve your practice and outcomes.</p>
+    </div>
+    <div class="status-card">
+      <span>Your journey</span>
+      <strong>{{ entries|length }} entries logged</strong>
+      <small>Write one note after every treatment block to track progress.</small>
+      <small>Keep your private reflections in this clinician workspace.</small>
+    </div>
+  </section>
+
+  <section class="dashboard-grid">
+    <article class="panel">
+      <div class="panel-label">Write a new entry</div>
+      <form method="post" action="{{ url_for('main.create_staff_journal_entry') }}" class="auth-form">
+        <div class="split">
+          <label>
+            <span>Entry date</span>
+            <input type="date" name="entry_date" value="{{ request.form.get('entry_date') or today }}">
+          </label>
+          <label>
+            <span>Title</span>
+            <input type="text" name="title" value="{{ request.form.get('title','') }}" placeholder="What matters most today">
+          </label>
+        </div>
+        <label>
+          <span>Clinical reflection</span>
+          <textarea name="reflection" rows="5" placeholder="What happened in patient work today? What felt strong, what felt off?">{{ request.form.get('reflection','') }}</textarea>
+        </label>
+        <label>
+          <span>What I learned</span>
+          <textarea name="lesson_learned" rows="4" placeholder="New technique, communication cue, adjustment insight...">{{ request.form.get('lesson_learned','') }}</textarea>
+        </label>
+        <label>
+          <span>Next action</span>
+          <textarea name="next_step" rows="4" placeholder="One concrete step to improve your skills next week.">{{ request.form.get('next_step','') }}</textarea>
+        </label>
+        <button type="submit" class="primary-button">Save journal entry</button>
+      </form>
+    </article>
+
+    <article class="panel">
+      <div class="panel-label">Journal timeline</div>
+      {% if entries %}
+        <div class="chat-subtle" id="journal-chat-selection-summary" style="margin-top:12px">Select entries below to include in your Claude session.</div>
+        <div class="invite-stack" style="margin-top:16px">
+          {% for entry in entries %}
+            <article class="mini-card">
+              <label class="journal-entry-select-wrap">
+                <input
+                  class="journal-entry-select"
+                  type="checkbox"
+                  value="{{ entry['id'] }}"
+                  data-title="{{ entry['title']|default('', true) }}"
+                  aria-label="Include entry for chat context"
+                >
+                <div>
+                  <strong>{{ entry["entry_date"] }}{% if entry["title"] %} · {{ entry["title"] }}{% endif %}</strong>
+                  <small class="muted-copy">Select to send this entry into Claude chat.</small>
+                </div>
+              </label>
+              {% if entry["reflection"] %}
+                <p>{{ entry["reflection"] }}</p>
+              {% endif %}
+              {% if entry["lesson_learned"] %}
+                <small><strong>Learning:</strong> {{ entry["lesson_learned"] }}</small>
+              {% endif %}
+              {% if entry["next_step"] %}
+                <small><strong>Next action:</strong> {{ entry["next_step"] }}</small>
+              {% endif %}
+              <small class="muted-copy">Recorded {{ entry["created_at"] }}</small>
+            </article>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p style="margin-top:16px">No entries yet. Start your first reflection above.</p>
+      {% endif %}
+    </article>
+  </section>
+
+  <section class="panel" style="margin-top:18px">
+    <div class="panel-label">Claude Journal Chat</div>
+    <p class="chat-subtle">Use your stored journal notes and ask for pattern checks, coaching, study prompts, or practical treatment workflow ideas.</p>
+    <div class="claude-chat-toolbar" style="margin-top:8px">
+      <button id="journal-chat-select-all" type="button" class="tiny-button life">Select all visible entries</button>
+      <button id="journal-chat-select-none" type="button" class="tiny-button warm">Clear selection</button>
+    </div>
+    <div class="claude-chat-wrap" style="margin-top:12px">
+      <div id="journal-chat-output" class="claude-chat-output" aria-live="polite">
+        <div class="chat-row">
+          <strong>Assistant</strong>
+          <div class="chat-bubble assistant">Welcome. Pick journal entries above and send a question for context-aware coaching.</div>
+        </div>
+      </div>
+      <form id="journal-chat-form" class="auth-form" style="margin-top:4px">
+        <label>
+          <span>Ask your journal coach</span>
+          <textarea id="journal-chat-message" rows="3" placeholder="Example: What pattern do you notice across this week and what should I focus on in treatment?" required></textarea>
+        </label>
+        <button type="submit" class="primary-button">Send to Claude</button>
+      </form>
+      <div id="journal-chat-feedback" class="chat-subtle"></div>
+    </div>
+  </section>
+{% endblock %}
+
+{% block scripts %}
+  <script>
+    (function () {
+      const output = document.getElementById("journal-chat-output");
+      const form = document.getElementById("journal-chat-form");
+      const textarea = document.getElementById("journal-chat-message");
+      const feedback = document.getElementById("journal-chat-feedback");
+      const selectAll = document.getElementById("journal-chat-select-all");
+      const selectNone = document.getElementById("journal-chat-select-none");
+      const summary = document.getElementById("journal-chat-selection-summary");
+      const entryNodes = () => Array.from(document.querySelectorAll(".journal-entry-select"));
+
+      function selectedEntries() {
+        return entryNodes().filter((node) => node.checked).map((node) => parseInt(node.value, 10)).filter((value) => Number.isFinite(value));
+      }
+
+      function updateSummary() {
+        const count = selectedEntries().length;
+        if (summary) {
+          summary.textContent = count === 0
+            ? "No entries selected. Claude will use your latest 5 entries."
+            : `Claude will use ${count} selected entr${count === 1 ? "y" : "ies"}.`;
+        }
+      }
+
+      function addMessage(role, text) {
+        const row = document.createElement("div");
+        row.className = "chat-row";
+
+        const heading = document.createElement("strong");
+        heading.textContent = role === "user" ? "You" : "Assistant";
+        row.appendChild(heading);
+
+        const bubble = document.createElement("div");
+        bubble.className = `chat-bubble ${role}`;
+        bubble.textContent = text;
+        row.appendChild(bubble);
+
+        output.appendChild(row);
+        output.scrollTop = output.scrollHeight;
+      }
+
+      function setSending(state) {
+        const button = form.querySelector("button");
+        button.disabled = state;
+        button.textContent = state ? "Thinking..." : "Send to Claude";
+        feedback.textContent = "";
+      }
+
+      selectAll.addEventListener("click", () => {
+        entryNodes().forEach((node) => {
+          node.checked = true;
+        });
+        updateSummary();
+      });
+
+      selectNone.addEventListener("click", () => {
+        entryNodes().forEach((node) => {
+          node.checked = false;
+        });
+        updateSummary();
+      });
+
+      entryNodes().forEach((node) => {
+        node.addEventListener("change", updateSummary);
+      });
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const message = textarea.value.trim();
+        if (!message) return;
+
+        const selectedEntryIds = selectedEntries();
+        addMessage("user", message);
+        textarea.value = "";
+        setSending(true);
+
+        try {
+          const response = await fetch("{{ url_for('main.staff_journal_claude_chat') }}", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message: message, entry_ids: selectedEntryIds }),
+          });
+          const data = await response.json();
+          if (!response.ok || !data.ok) {
+            throw new Error(data.error || "Request failed.");
+          }
+          let reply = data.reply || "No response returned.";
+          if (data.used_local_model) {
+            reply += "\n\nNote: Claude API is not configured, so this was generated from a local coaching fallback.";
+          }
+          addMessage("assistant", reply);
+        } catch (error) {
+          feedback.textContent = error.message || "Failed to reach the chat endpoint.";
+        } finally {
+          setSending(false);
+        }
+      });
+
+      updateSummary();
+    })();
+  </script>
+{% endblock %}

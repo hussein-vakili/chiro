@@ -437,6 +437,15 @@
                 </select>
               </label>
               <label>
+                <span>Time block size</span>
+                <select id="bookingSlotIncrement">
+                  {% for option in slot_increment_options %}
+                    <option value="{{ option['value'] }}" {% if option['value'] == selected_slot_increment_minutes %}selected{% endif %}>{{ option["label"] }}</option>
+                  {% endfor %}
+                </select>
+                <small class="field-hint">Adjust diary granularity (5 to 60 minutes).</small>
+              </label>
+              <label>
                 <span>Available time slot</span>
                 <select name="slot_start" id="bookingSlot" required {% if not clinician_options %}disabled{% endif %}>
                   {% for slot in booking_availability["available_slots"] %}
@@ -468,6 +477,55 @@
                 <textarea name="note" rows="3" placeholder="Private admin note, preparation checklist, or handoff details."></textarea>
               </label>
             </div>
+
+            <section class="booking-diary-shell" aria-label="Daily booking diary">
+              <aside class="booking-diary-sidebar">
+                <div class="booking-mini-month">
+                  <div class="booking-mini-month-head">
+                    <button type="button" class="tiny-button" id="bookingMiniMonthPrev">Prev</button>
+                    <strong id="bookingMiniMonthLabel">Month</strong>
+                    <button type="button" class="tiny-button" id="bookingMiniMonthNext">Next</button>
+                  </div>
+                  <div class="booking-mini-weekdays">
+                    <span>Mo</span>
+                    <span>Tu</span>
+                    <span>We</span>
+                    <span>Th</span>
+                    <span>Fr</span>
+                    <span>Sa</span>
+                    <span>Su</span>
+                  </div>
+                  <div class="booking-mini-grid" id="bookingMiniCalendarGrid"></div>
+                </div>
+
+                <div class="booking-diary-filter">
+                  <strong>Display layers</strong>
+                  <label class="booking-filter-option"><input type="checkbox" id="bookingShowAvailable" checked> Available slots</label>
+                  <label class="booking-filter-option"><input type="checkbox" id="bookingShowBooked" checked> Booked visits</label>
+                  <label class="booking-filter-option"><input type="checkbox" id="bookingShowShift" checked> Shift blocks</label>
+                  <label class="booking-filter-option"><input type="checkbox" id="bookingShowDowntime" checked> Downtime blocks</label>
+                </div>
+              </aside>
+
+              <div class="booking-diary-main">
+                <div class="booking-diary-toolbar">
+                  <div class="booking-diary-nav">
+                    <button type="button" class="tiny-button" id="bookingPrevDay">Previous day</button>
+                    <button type="button" class="tiny-button sky" id="bookingToday">Today</button>
+                    <button type="button" class="tiny-button" id="bookingNextDay">Next day</button>
+                  </div>
+                  <strong id="bookingDiaryDateLabel">{{ booking_availability["date_label"] }}</strong>
+                  <div class="booking-diary-view">
+                    <button type="button" class="active" aria-pressed="true">Day</button>
+                    <button type="button" disabled aria-disabled="true">Work Week</button>
+                    <button type="button" disabled aria-disabled="true">Full Week</button>
+                  </div>
+                </div>
+                <div class="booking-diary-help">Click an available slot in the diary to auto-fill the booking time.</div>
+                <div class="booking-diary-timeline" id="bookingDiaryTimeline"></div>
+              </div>
+            </section>
+
             <div class="availability-board" id="bookingAvailabilityBoard">
               <div class="availability-group">
                 <strong>Shift windows</strong>
@@ -587,15 +645,148 @@
       const dateInput = document.getElementById("bookingDate");
       const durationInput = document.getElementById("bookingDuration");
       const typeInput = document.getElementById("bookingAppointmentType");
+      const slotIncrementInput = document.getElementById("bookingSlotIncrement");
       const slotInput = document.getElementById("bookingSlot");
       const slotHint = document.getElementById("bookingSlotHint");
       const shiftWrap = document.getElementById("bookingShiftWindows");
       const downtimeWrap = document.getElementById("bookingDowntimeWindows");
       const bookedWrap = document.getElementById("bookingBookedWindows");
+      const diaryTimeline = document.getElementById("bookingDiaryTimeline");
+      const diaryDateLabel = document.getElementById("bookingDiaryDateLabel");
+      const prevDayButton = document.getElementById("bookingPrevDay");
+      const nextDayButton = document.getElementById("bookingNextDay");
+      const todayButton = document.getElementById("bookingToday");
+      const miniMonthPrev = document.getElementById("bookingMiniMonthPrev");
+      const miniMonthNext = document.getElementById("bookingMiniMonthNext");
+      const miniMonthLabel = document.getElementById("bookingMiniMonthLabel");
+      const miniCalendarGrid = document.getElementById("bookingMiniCalendarGrid");
+      const showAvailableInput = document.getElementById("bookingShowAvailable");
+      const showBookedInput = document.getElementById("bookingShowBooked");
+      const showShiftInput = document.getElementById("bookingShowShift");
+      const showDowntimeInput = document.getElementById("bookingShowDowntime");
       const availabilityUrl = "{{ url_for('main.staff_schedule_availability') }}";
+      const monthFormatter = new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric" });
+      const weekDayFormatter = new Intl.DateTimeFormat("en-GB", { weekday: "short" });
 
-      if (!clinicianInput || !locationInput || !dateInput || !durationInput || !typeInput || !slotInput) {
+      if (!clinicianInput || !locationInput || !dateInput || !durationInput || !typeInput || !slotInput || !slotIncrementInput) {
         return;
+      }
+
+      let latestAvailability = null;
+      let miniMonthAnchor = null;
+
+      function pad2(value) {
+        return String(value).padStart(2, "0");
+      }
+
+      function parseDateValue(value) {
+        if (!value) return null;
+        const parts = value.split("-");
+        if (parts.length !== 3) return null;
+        const year = Number(parts[0]);
+        const month = Number(parts[1]);
+        const day = Number(parts[2]);
+        if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) {
+          return null;
+        }
+        return new Date(year, month - 1, day);
+      }
+
+      function formatDateValue(date) {
+        return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+      }
+
+      function shiftDate(days) {
+        const base = parseDateValue(dateInput.value) || new Date();
+        base.setDate(base.getDate() + days);
+        dateInput.value = formatDateValue(base);
+        loadAvailability();
+      }
+
+      function minutesFromClock(value) {
+        if (!value || typeof value !== "string") return null;
+        const match = value.trim().match(/^(\d{1,2}):(\d{2})$/);
+        if (!match) return null;
+        const hours = Number(match[1]);
+        const minutes = Number(match[2]);
+        if (Number.isNaN(hours) || Number.isNaN(minutes)) return null;
+        if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+        return (hours * 60) + minutes;
+      }
+
+      function parseRange(label) {
+        if (!label || typeof label !== "string") return null;
+        const parts = label.split("-");
+        if (parts.length !== 2) return null;
+        const start = minutesFromClock(parts[0].trim());
+        const end = minutesFromClock(parts[1].trim());
+        if (start === null || end === null || end <= start) return null;
+        return { start, end };
+      }
+
+      function formatClock(totalMinutes) {
+        const safe = Math.max(0, Math.min((24 * 60) - 1, totalMinutes));
+        return `${pad2(Math.floor(safe / 60))}:${pad2(safe % 60)}`;
+      }
+
+      function escapeHtml(value) {
+        return String(value ?? "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#039;");
+      }
+
+      function toRangeItems(items) {
+        return items
+          .map((item) => {
+            const parsed = parseRange(item.time_label);
+            if (!parsed) return null;
+            return {
+              ...item,
+              start: parsed.start,
+              end: parsed.end,
+            };
+          })
+          .filter(Boolean);
+      }
+
+      function renderMiniCalendar() {
+        if (!miniMonthLabel || !miniCalendarGrid) return;
+
+        const selectedDate = parseDateValue(dateInput.value) || new Date();
+        if (!miniMonthAnchor) {
+          miniMonthAnchor = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
+        }
+        miniMonthLabel.textContent = monthFormatter.format(miniMonthAnchor);
+
+        const monthStart = new Date(miniMonthAnchor.getFullYear(), miniMonthAnchor.getMonth(), 1);
+        const gridStart = new Date(monthStart);
+        const firstWeekday = (monthStart.getDay() + 6) % 7;
+        gridStart.setDate(monthStart.getDate() - firstWeekday);
+
+        const today = new Date();
+        const todayKey = formatDateValue(today);
+        const selectedKey = formatDateValue(selectedDate);
+
+        const cells = [];
+        for (let index = 0; index < 42; index += 1) {
+          const current = new Date(gridStart);
+          current.setDate(gridStart.getDate() + index);
+          const iso = formatDateValue(current);
+          const outside = current.getMonth() !== miniMonthAnchor.getMonth();
+          const classes = [
+            "booking-mini-day",
+            outside ? "outside" : "",
+            iso === selectedKey ? "selected" : "",
+            iso === todayKey ? "today" : "",
+          ].filter(Boolean).join(" ");
+          cells.push(
+            `<button type="button" class="${classes}" data-date="${iso}" aria-label="${weekDayFormatter.format(current)} ${iso}">${current.getDate()}</button>`
+          );
+        }
+        miniCalendarGrid.innerHTML = cells.join("");
       }
 
       function renderChips(container, items, emptyMessage, toneClass = "") {
@@ -611,6 +802,111 @@
             return `<span class="availability-chip ${tone}">${item.label} · ${item.time_label}${clinician}</span>`;
           })
           .join("");
+      }
+
+      function renderDiary(availability) {
+        if (!diaryTimeline) return;
+        if (!availability) {
+          diaryTimeline.innerHTML = `<div class="booking-diary-empty">Select date, clinician, and service options to load the diary.</div>`;
+          return;
+        }
+
+        const slotIncrement = Number(slotIncrementInput.value || availability.slot_increment_minutes || 15);
+        const showAvailable = !showAvailableInput || showAvailableInput.checked;
+        const showBooked = !showBookedInput || showBookedInput.checked;
+        const showShift = !showShiftInput || showShiftInput.checked;
+        const showDowntime = !showDowntimeInput || showDowntimeInput.checked;
+
+        const availableByMinute = new Map();
+        for (const item of availability.available_slots || []) {
+          const minute = minutesFromClock(item.start_label);
+          if (minute === null) continue;
+          availableByMinute.set(minute, item);
+        }
+
+        const shiftItems = toRangeItems(availability.shift_windows || []);
+        const downtimeItems = toRangeItems(availability.downtime_windows || []);
+        const bookedItems = toRangeItems(availability.booked_windows || []);
+        const shiftStartMap = new Map();
+        const downtimeStartMap = new Map();
+        const bookedStartMap = new Map();
+
+        for (const item of shiftItems) {
+          const existing = shiftStartMap.get(item.start) || [];
+          existing.push(item);
+          shiftStartMap.set(item.start, existing);
+        }
+        for (const item of downtimeItems) {
+          const existing = downtimeStartMap.get(item.start) || [];
+          existing.push(item);
+          downtimeStartMap.set(item.start, existing);
+        }
+        for (const item of bookedItems) {
+          const existing = bookedStartMap.get(item.start) || [];
+          existing.push(item);
+          bookedStartMap.set(item.start, existing);
+        }
+
+        const rows = [];
+        for (let minute = 0; minute < (24 * 60); minute += slotIncrement) {
+          const hourMarker = minute % 60 === 0;
+          const inShift = shiftItems.some((item) => minute >= item.start && minute < item.end);
+          const inDowntime = downtimeItems.some((item) => minute >= item.start && minute < item.end);
+          const rowClasses = [
+            "booking-diary-row",
+            hourMarker ? "hour-row" : "",
+            inShift ? "inside-shift" : "",
+            inDowntime ? "inside-downtime" : "",
+          ].filter(Boolean).join(" ");
+          const content = [];
+
+          if (showShift && shiftStartMap.has(minute)) {
+            for (const item of shiftStartMap.get(minute)) {
+              content.push(`<span class="booking-diary-tag shift">${escapeHtml(item.label)} · ${escapeHtml(item.time_label)}</span>`);
+            }
+          }
+
+          if (showDowntime && downtimeStartMap.has(minute)) {
+            for (const item of downtimeStartMap.get(minute)) {
+              content.push(`<span class="booking-diary-tag downtime">${escapeHtml(item.label)} · ${escapeHtml(item.time_label)}</span>`);
+            }
+          }
+
+          if (showBooked && bookedStartMap.has(minute)) {
+            for (const item of bookedStartMap.get(minute)) {
+              content.push(`<span class="booking-diary-tag booked">${escapeHtml(item.label)} · ${escapeHtml(item.time_label)}</span>`);
+            }
+          }
+
+          const availableSlot = availableByMinute.get(minute);
+          if (showAvailable && availableSlot) {
+            const isSelected = availableSlot.value === slotInput.value;
+            content.push(
+              `<button type="button" class="booking-slot-chip ${isSelected ? "selected" : ""}" data-slot-value="${escapeHtml(availableSlot.value)}" data-slot-label="${escapeHtml(availableSlot.label)}">${escapeHtml(availableSlot.start_label)} - ${escapeHtml(availableSlot.end_label)}</button>`
+            );
+          }
+
+          rows.push(
+            `<div class="${rowClasses}">
+              <div class="booking-diary-time">${hourMarker ? formatClock(minute) : ""}</div>
+              <div class="booking-diary-cell">${content.join("")}</div>
+            </div>`
+          );
+        }
+
+        diaryTimeline.innerHTML = rows.join("");
+      }
+
+      function selectSlot(value, label) {
+        if (!value) return;
+        let option = Array.from(slotInput.options).find((item) => item.value === value);
+        if (!option) {
+          option = document.createElement("option");
+          option.value = value;
+          option.textContent = label || value;
+          slotInput.appendChild(option);
+        }
+        slotInput.value = value;
       }
 
       function syncServiceSelection() {
@@ -639,6 +935,7 @@
 
       async function loadAvailability() {
         syncServiceSelection();
+        const previousSlot = slotInput.value;
         const params = new URLSearchParams({
           service_id: serviceInput ? serviceInput.value : "",
           appointment_type: typeInput.value,
@@ -646,14 +943,27 @@
           location_id: locationInput.value,
           date: dateInput.value,
           duration_minutes: durationInput.value,
+          slot_increment_minutes: slotIncrementInput.value,
         });
-        const response = await fetch(`${availabilityUrl}?${params.toString()}`, {
-          headers: { "X-Requested-With": "fetch" },
-        });
+        let response;
+        try {
+          response = await fetch(`${availabilityUrl}?${params.toString()}`, {
+            headers: { "X-Requested-With": "fetch" },
+          });
+        } catch (_) {
+          slotInput.innerHTML = "";
+          slotInput.disabled = true;
+          slotHint.textContent = "Could not load slots for this date.";
+          latestAvailability = null;
+          renderDiary(null);
+          return;
+        }
         if (!response.ok) {
           slotInput.innerHTML = "";
           slotInput.disabled = true;
           slotHint.textContent = "Could not load slots for this date.";
+          latestAvailability = null;
+          renderDiary(null);
           return;
         }
 
@@ -666,13 +976,27 @@
           slotInput.appendChild(option);
         }
         slotInput.disabled = payload.available_slots.length === 0;
+        if (previousSlot && payload.available_slots.some((item) => item.value === previousSlot)) {
+          slotInput.value = previousSlot;
+        }
         slotHint.textContent = payload.available_slots.length
           ? `${payload.available_slots.length} slots available for ${payload.date_label}.`
           : "No slots are available for the selected day.";
+        if (diaryDateLabel) {
+          diaryDateLabel.textContent = payload.date_label || dateInput.value;
+        }
 
         renderChips(shiftWrap, payload.shift_windows, "No shift is configured for this day.");
         renderChips(downtimeWrap, payload.downtime_windows, "No downtime blocks are set for this day.");
         renderChips(bookedWrap, payload.booked_windows, "No scheduled visits are blocking this date yet.", "sky");
+
+        latestAvailability = payload;
+        const currentDate = parseDateValue(dateInput.value);
+        if (currentDate) {
+          miniMonthAnchor = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+        }
+        renderMiniCalendar();
+        renderDiary(payload);
       }
 
       typeInput.addEventListener("change", () => {
@@ -689,7 +1013,65 @@
       locationInput.addEventListener("change", loadAvailability);
       dateInput.addEventListener("change", loadAvailability);
       durationInput.addEventListener("change", loadAvailability);
+      slotIncrementInput.addEventListener("change", loadAvailability);
+      slotInput.addEventListener("change", () => renderDiary(latestAvailability));
+
+      if (prevDayButton) {
+        prevDayButton.addEventListener("click", () => shiftDate(-1));
+      }
+      if (nextDayButton) {
+        nextDayButton.addEventListener("click", () => shiftDate(1));
+      }
+      if (todayButton) {
+        todayButton.addEventListener("click", () => {
+          dateInput.value = formatDateValue(new Date());
+          loadAvailability();
+        });
+      }
+      if (miniMonthPrev) {
+        miniMonthPrev.addEventListener("click", () => {
+          if (!miniMonthAnchor) {
+            miniMonthAnchor = new Date();
+          }
+          miniMonthAnchor = new Date(miniMonthAnchor.getFullYear(), miniMonthAnchor.getMonth() - 1, 1);
+          renderMiniCalendar();
+        });
+      }
+      if (miniMonthNext) {
+        miniMonthNext.addEventListener("click", () => {
+          if (!miniMonthAnchor) {
+            miniMonthAnchor = new Date();
+          }
+          miniMonthAnchor = new Date(miniMonthAnchor.getFullYear(), miniMonthAnchor.getMonth() + 1, 1);
+          renderMiniCalendar();
+        });
+      }
+      if (miniCalendarGrid) {
+        miniCalendarGrid.addEventListener("click", (event) => {
+          const button = event.target.closest("button[data-date]");
+          if (!button) return;
+          const selectedDate = button.dataset.date;
+          if (!selectedDate) return;
+          dateInput.value = selectedDate;
+          loadAvailability();
+        });
+      }
+      if (diaryTimeline) {
+        diaryTimeline.addEventListener("click", (event) => {
+          const button = event.target.closest("button[data-slot-value]");
+          if (!button) return;
+          selectSlot(button.dataset.slotValue, button.dataset.slotLabel || "");
+          renderDiary(latestAvailability);
+        });
+      }
+
+      [showAvailableInput, showBookedInput, showShiftInput, showDowntimeInput]
+        .filter(Boolean)
+        .forEach((input) => input.addEventListener("change", () => renderDiary(latestAvailability)));
+
       syncServiceSelection();
+      renderMiniCalendar();
+      loadAvailability();
     })();
   </script>
 {% endblock %}

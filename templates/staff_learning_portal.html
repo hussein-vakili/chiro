@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block title %}Learning Portal · Life Chiropractic{% endblock %}
+
+{% block content %}
+  <section class="hero-panel">
+    <div>
+      <div class="auth-eyebrow">Practitioner development</div>
+      <h1>Learning portal</h1>
+      <p>Build your chiropractic knowledge in focused modules. Track anatomy, assessment, adjustments, and practice growth topics in one place.</p>
+    </div>
+    <div class="status-card">
+      <span>Progress</span>
+      <strong>{{ completed_topics }} / {{ total_topics }} topics complete</strong>
+      <small>{{ progress_pct }}% complete across your custom learning path.</small>
+      <small>Your private progress notes are stored against your clinician account.</small>
+    </div>
+  </section>
+
+  <section class="dashboard-grid">
+    <article class="panel" style="grid-column:1 / -1">
+      <div class="panel-label">Learning path</div>
+      <div style="margin-top:8px;color:var(--ink3);font-size:14px;line-height:1.6">
+        Work through the topics in order or choose what suits your current treatment plan focus.
+      </div>
+      {% if topics_by_category %}
+        {% for category, topics in topics_by_category.items() %}
+          <div style="margin-top:20px">
+            <div style="font-weight:600;color:var(--ink);font-size:16px">{{ category }}</div>
+            <div style="margin-top:12px;display:grid;gap:12px">
+              {% for topic in topics %}
+                <article class="mini-card">
+                  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+                    <div>
+                      <strong>{{ topic.title }}</strong>
+                      <p style="margin-top:6px">{{ topic.description }}</p>
+                      <small class="muted-copy">Expected outcome: {{ topic.outcome }}</small>
+                    </div>
+                    <div style="text-align:right;min-width:120px">
+                      <span style="font-size:12px;color:var(--ink4)">Duration</span>
+                      <div style="font-weight:600;color:var(--ink3)">{{ topic.duration }}</div>
+                    </div>
+                  </div>
+                  <div style="margin-top:10px;display:flex;justify-content:space-between;gap:10px;align-items:center">
+                    <small style="font-size:12px;color:var(--ink4)">Status: <strong style="color:{{ 'var(--life)' if topic.is_completed else 'var(--ink3)' }}">{{ "Completed" if topic.is_completed else "Not started" }}</strong></small>
+                    {% if topic.completed_at %}
+                      <small style="font-size:12px;color:var(--ink4)">Completed {{ topic.completed_at }}</small>
+                    {% endif %}
+                  </div>
+                  <form method="post" action="{{ url_for('main.update_staff_learning_progress') }}" class="auth-form" style="margin-top:10px">
+                    <input type="hidden" name="topic_slug" value="{{ topic.slug }}">
+                    <label>
+                      <span>Reflection notes</span>
+                      <textarea
+                        name="reflection"
+                        rows="3"
+                        placeholder="What did you take away from this topic?"
+                      >{{ topic.reflection }}</textarea>
+                    </label>
+                    <div class="panel-actions">
+                      <label for="topic-{{ topic.slug }}" style="display:flex;align-items:center;gap:8px;margin:0">
+                        <input id="topic-{{ topic.slug }}" type="checkbox" name="is_completed" value="1" {% if topic.is_completed %}checked{% endif %}>
+                        <span>Mark as completed</span>
+                      </label>
+                      <button type="submit" class="secondary-button">Save topic progress</button>
+                    </div>
+                  </form>
+                </article>
+              {% endfor %}
+            </div>
+          </div>
+        {% endfor %}
+      {% else %}
+        <p style="margin-top:18px;">No topics are available yet. Add topics to LEARNING_PATH_TOPICS in the server route.</p>
+      {% endif %}
+    </article>
+  </section>
+{% endblock %}

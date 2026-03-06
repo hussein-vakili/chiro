@@ -747,6 +747,160 @@ class PortalFlowTestCase(unittest.TestCase):
         self.assertIn("Your dashboard is the home screen", response.get_data(as_text=True))
         self.assertIn("Open calendar", response.get_data(as_text=True))
 
+    def test_staff_learning_portal_progress(self) -> None:
+        staff_user_id = self.create_staff_user()
+        self.login_staff()
+
+        response = self.client.get("/staff/learning")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Learning portal", response.get_data(as_text=True))
+
+        response = self.client.post(
+            "/staff/learning/progress",
+            data={
+                "topic_slug": "anatomy-spine-joints",
+                "is_completed": "1",
+                "reflection": "Reviewed spinal landmarks and segmental motion.",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Learning progress saved", response.get_data(as_text=True))
+
+        response = self.client.post(
+            "/staff/learning/progress",
+            data={
+                "topic_slug": "anatomy-spine-joints",
+                "reflection": "Need to revisit adjustment dosage guidance.",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Learning progress saved", response.get_data(as_text=True))
+
+        with self.app.app_context():
+            row = get_db().execute(
+                "SELECT is_completed, reflection FROM practitioner_learning_progress WHERE clinician_user_id = ? AND topic_slug = ?",
+                (staff_user_id, "anatomy-spine-joints"),
+            ).fetchone()
+        self.assertIsNotNone(row)
+        self.assertEqual(row["is_completed"], 0)
+        self.assertEqual(row["reflection"], "Need to revisit adjustment dosage guidance.")
+
+    def test_staff_journal_claude_chat_fallback(self) -> None:
+        staff_user_id = self.create_staff_user()
+        self.login_staff()
+
+        with self.app.app_context():
+            db = get_db()
+            cursor = db.execute(
+                """
+                INSERT INTO practitioner_journal_entries (
+                    clinician_user_id,
+                    entry_date,
+                    title,
+                    reflection,
+                    lesson_learned,
+                    next_step,
+                    created_at,
+                    updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    staff_user_id,
+                    "2026-03-01",
+                    "Technique review",
+                    "Need better pelvic balancing on case load.",
+                    "Learned that a longer setup changed response.",
+                    "Revisit setup setup checklist before first thrust.",
+                    iso_now(),
+                    iso_now(),
+                ),
+            )
+            entry_id = cursor.lastrowid
+            db.commit()
+
+        response = self.client.post(
+            "/staff/journal/claude-chat",
+            json={"message": "Find the pattern", "entry_ids": [entry_id]},
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertTrue(data["ok"])
+        self.assertEqual(data["entry_count"], 1)
+        self.assertIn("entries", data)
+        self.assertIn("id", data["entries"][0])
+        self.assertIn("Reflection summary", data["reply"])
+
+    def test_staff_messaging_workspace(self) -> None:
+        self.create_staff_user()
+        with self.app.app_context():
+            db = get_db()
+            db.execute(
+                """
+                INSERT INTO users (first_name, last_name, email, password_hash, role, created_at)
+                VALUES (?, ?, ?, ?, 'client', ?)
+                """,
+                ("Patient", "One", "patient.one@example.com", generate_password_hash("patientpass123", method="pbkdf2:sha256"), iso_now()),
+            )
+            patient_user_id = db.execute(
+                "SELECT id FROM users WHERE email = ?",
+                ("patient.one@example.com",),
+            ).fetchone()["id"]
+            db.commit()
+
+        self.login_staff()
+
+        response = self.client.get("/staff/messaging")
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("Chiropractor conversations", html)
+        self.assertIn("Patient One", html)
+
+        response = self.client.post(
+            f"/staff/messaging/{patient_user_id}",
+            data={
+                "topic": "appointment",
+                "body": "Please confirm your availability for Thursday.",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Message sent to patient", response.get_data(as_text=True))
+
+        self.client.post("/logout", follow_redirects=True)
+        response = self.client.post(
+            "/login",
+            data={"email": "patient.one@example.com", "password": "patientpass123"},
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        response = self.client.get("/messages")
+        self.assertEqual(response.status_code, 200)
+        patient_html = response.get_data(as_text=True)
+        self.assertIn("Your chiropractic thread", patient_html)
+        self.assertIn("Please confirm your availability for Thursday.", patient_html)
+
+        response = self.client.post(
+            "/messages",
+            data={
+                "topic": "symptoms",
+                "body": "Pain reduced after stretches, but still stiff in mornings.",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Message sent to your chiropractic team", response.get_data(as_text=True))
+
+        self.client.post("/logout", follow_redirects=True)
+        self.login_staff()
+        response = self.client.get(f"/staff/messaging?patient_id={patient_user_id}")
+        self.assertEqual(response.status_code, 200)
+        refreshed_html = response.get_data(as_text=True)
+        self.assertIn("Pain reduced after stretches, but still stiff in mornings.", refreshed_html)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% block title %}Messages · Life Chiropractic{% endblock %}
+
+{% block head %}
+  <style>
+    .patient-message-shell{display:grid;gap:14px;margin-top:18px}
+    .patient-message-stream{max-height:56vh;overflow:auto;display:grid;gap:10px;padding:12px;border-radius:16px;border:1px solid var(--border);background:#fff}
+    .patient-message-row{display:flex}
+    .patient-message-row.staff{justify-content:flex-start}
+    .patient-message-row.client{justify-content:flex-end}
+    .patient-message-bubble{max-width:78%;display:grid;gap:6px;padding:10px 12px;border-radius:12px;border:1px solid var(--border);background:#f8f6f2}
+    .patient-message-row.client .patient-message-bubble{background:#dbeafe;border-color:rgba(37,99,235,.25)}
+    .patient-message-bubble p{margin:0;color:var(--ink2);line-height:1.55;font-size:14px}
+    .patient-message-bubble small{font-size:11px;color:var(--ink4)}
+    .patient-message-empty{padding:14px;border-radius:14px;border:1px dashed var(--border);background:#fff;color:var(--ink4);font-size:14px}
+  </style>
+{% endblock %}
+
+{% block content %}
+  <section class="hero-panel">
+    <div>
+      <div class="auth-eyebrow">Messages</div>
+      <h1>Your chiropractic thread</h1>
+      <p>This message area is individualized to your account. Only your care team and you can see this conversation.</p>
+    </div>
+    <div class="status-card">
+      <span>Unread</span>
+      <strong>{{ unread_count }}</strong>
+      <small>Unread staff messages are marked read when you open this page.</small>
+      <small>Use topic tags so your care team can triage quickly.</small>
+    </div>
+  </section>
+
+  <section class="patient-message-shell">
+    <article class="panel">
+      <div class="panel-label">Conversation</div>
+      <div class="patient-message-stream">
+        {% for item in messages %}
+          <div class="patient-message-row {% if item['sender_role'] == 'client' %}client{% else %}staff{% endif %}">
+            <div class="patient-message-bubble">
+              <div class="message-thread-meta">
+                <span class="status-dot {{ item['topic_tone'] }}">{{ item["topic_label"] }}</span>
+                <span>{{ item["sender_name"] }}</span>
+              </div>
+              <p>{{ item["body"] }}</p>
+              <small>{{ item["created_label"] }}</small>
+            </div>
+          </div>
+        {% else %}
+          <div class="patient-message-empty">No messages yet. Send your first message to contact your chiropractic team.</div>
+        {% endfor %}
+      </div>
+    </article>
+
+    <article class="panel">
+      <div class="panel-label">Send message</div>
+      <form method="post" action="{{ url_for('main.send_patient_message') }}" class="auth-form">
+        <label>
+          <span>Topic</span>
+          <select name="topic" required>
+            {% for option in message_topics %}
+              <option value="{{ option['value'] }}">{{ option["label"] }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          <span>Message</span>
+          <textarea name="body" rows="4" placeholder="Write your question or update for your chiropractor..." required></textarea>
+        </label>
+        <button type="submit" class="primary-button">Send message</button>
+      </form>
+    </article>
+  </section>
+{% endblock %}

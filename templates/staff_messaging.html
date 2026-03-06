@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+
+{% block title %}Staff Messaging · Life Chiropractic{% endblock %}
+
+{% block head %}
+  <style>
+    .message-layout{display:grid;grid-template-columns:320px minmax(0,1fr);gap:16px;margin-top:18px}
+    .message-sidebar{display:grid;gap:12px;max-height:78vh}
+    .message-list{overflow:auto;display:grid;gap:8px;padding-right:4px}
+    .message-thread-link{display:grid;gap:6px;padding:12px;border-radius:14px;border:1px solid var(--border);background:#fff;text-decoration:none;color:inherit}
+    .message-thread-link.active{border-color:rgba(37,99,235,.35);box-shadow:0 0 0 3px rgba(37,99,235,.08)}
+    .message-thread-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+    .message-thread-head strong{font-size:14px}
+    .message-thread-meta{display:flex;gap:8px;align-items:center;font-size:11px;color:var(--ink4)}
+    .message-unread{display:inline-flex;align-items:center;justify-content:center;min-width:20px;padding:2px 7px;border-radius:999px;background:var(--rose-l);color:var(--rose);font-size:11px;font-weight:700}
+    .message-chat{display:grid;gap:12px}
+    .message-stream{max-height:56vh;overflow:auto;display:grid;gap:10px;padding:10px;border-radius:16px;border:1px solid var(--border);background:#fff}
+    .message-row{display:flex}
+    .message-row.staff{justify-content:flex-end}
+    .message-row.patient{justify-content:flex-start}
+    .message-bubble{max-width:78%;display:grid;gap:6px;padding:10px 12px;border-radius:12px;border:1px solid var(--border);background:#f8f6f2}
+    .message-row.staff .message-bubble{background:#e8f5e9;border-color:rgba(59,122,87,.25)}
+    .message-bubble p{margin:0;color:var(--ink2);line-height:1.55;font-size:14px}
+    .message-bubble small{font-size:11px;color:var(--ink4)}
+    .message-compose{display:grid;gap:10px}
+    .message-empty{padding:14px;border-radius:14px;border:1px dashed var(--border);background:#fff;color:var(--ink4);font-size:14px}
+    @media (max-width: 980px){.message-layout{grid-template-columns:1fr}.message-sidebar{max-height:none}.message-stream{max-height:48vh}}
+  </style>
+{% endblock %}
+
+{% block content %}
+  <section class="hero-panel">
+    <div>
+      <div class="auth-eyebrow">Staff messaging</div>
+      <h1>Chiropractor conversations</h1>
+      <p>Each patient has an individual message thread. Staff can only message through patient-specific conversations.</p>
+    </div>
+    <div class="status-card">
+      <span>Thread visibility</span>
+      <strong>Individualized by patient</strong>
+      <small>Patients only see their own thread.</small>
+      <small>Staff can switch across patient threads from the left panel.</small>
+    </div>
+  </section>
+
+  <section class="message-layout">
+    <aside class="panel message-sidebar">
+      <div class="panel-label">Patients</div>
+      <form method="get" action="{{ url_for('main.staff_messaging') }}" class="auth-form" style="margin-top:0">
+        <label>
+          <span>Search</span>
+          <input type="text" name="q" value="{{ search_query }}" placeholder="Name, email, message text">
+        </label>
+        {% if selected_patient_id %}
+          <input type="hidden" name="patient_id" value="{{ selected_patient_id }}">
+        {% endif %}
+        <button type="submit" class="secondary-button">Filter</button>
+      </form>
+      <div class="message-list">
+        {% for thread in threads %}
+          <a
+            href="{{ url_for('main.staff_messaging', patient_id=thread['patient_user_id'], q=search_query) }}"
+            class="message-thread-link {% if selected_patient_id == thread['patient_user_id'] %}active{% endif %}"
+          >
+            <div class="message-thread-head">
+              <strong>{{ thread["patient_name"] }}</strong>
+              {% if thread["unread_for_staff"] %}
+                <span class="message-unread">{{ thread["unread_for_staff"] }}</span>
+              {% endif %}
+            </div>
+            <div class="message-thread-meta">
+              <span class="status-dot {{ thread['last_topic_tone'] }}">{{ thread["last_topic_label"] }}</span>
+              <span>{{ thread["last_created_label"] }}</span>
+            </div>
+            <small class="muted-copy">{{ thread["last_body"] or "No messages yet." }}</small>
+          </a>
+        {% else %}
+          <div class="message-empty">No patient threads matched your search.</div>
+        {% endfor %}
+      </div>
+    </aside>
+
+    <article class="panel message-chat">
+      <div class="panel-label">Conversation</div>
+      {% if selected_patient %}
+        <h2>{{ selected_patient["first_name"] }} {{ selected_patient["last_name"] }}</h2>
+        <small class="muted-copy">{{ selected_patient["email"] }}</small>
+
+        <div class="message-stream">
+          {% for item in messages %}
+            <div class="message-row {% if item['sender_role'] in ['admin','clinician'] %}staff{% else %}patient{% endif %}">
+              <div class="message-bubble">
+                <div class="message-thread-meta">
+                  <span class="status-dot {{ item['topic_tone'] }}">{{ item["topic_label"] }}</span>
+                  <span>{{ item["sender_name"] }}</span>
+                </div>
+                <p>{{ item["body"] }}</p>
+                <small>{{ item["created_label"] }}</small>
+              </div>
+            </div>
+          {% else %}
+            <div class="message-empty">No messages yet. Send the first message to start this individual patient thread.</div>
+          {% endfor %}
+        </div>
+
+        <form method="post" action="{{ url_for('main.send_staff_message', patient_user_id=selected_patient['id']) }}" class="auth-form message-compose">
+          <label>
+            <span>Topic</span>
+            <select name="topic" required>
+              {% for option in message_topics %}
+                <option value="{{ option['value'] }}">{{ option["label"] }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>
+            <span>Message</span>
+            <textarea name="body" rows="4" placeholder="Write a patient-specific message..." required></textarea>
+          </label>
+          <button type="submit" class="primary-button">Send message</button>
+        </form>
+      {% else %}
+        <div class="message-empty">Select a patient thread from the left panel.</div>
+      {% endif %}
+    </article>
+  </section>
+{% endblock %}

@@ -36,16 +36,23 @@
             <a class="sidebar-link {% if endpoint == 'main.intake' %}active{% endif %}" href="{{ url_for('main.intake') }}">Intake</a>
             <a class="sidebar-link {% if endpoint == 'main.appointments' %}active{% endif %}" href="{{ url_for('main.appointments') }}">Appointments</a>
             <a class="sidebar-link {% if endpoint == 'main.results' %}active{% endif %}" href="{{ url_for('main.results') }}">Results</a>
+            <a class="sidebar-link {% if endpoint == 'main.patient_messages' %}active{% endif %}" href="{{ url_for('main.patient_messages') }}">Messages</a>
           {% elif g.user["role"] == "clinician" %}
             <a class="sidebar-link {% if endpoint == 'main.dashboard' %}active{% endif %}" href="{{ url_for('main.dashboard') }}">Dashboard</a>
             <a class="sidebar-link {% if endpoint == 'main.staff_dashboard' %}active{% endif %}" href="{{ url_for('main.staff_dashboard') }}">Clinic Ops</a>
             <a class="sidebar-link {% if endpoint == 'main.staff_calendar' %}active{% endif %}" href="{{ url_for('main.staff_calendar') }}">Calendar</a>
             <a class="sidebar-link {% if endpoint == 'main.staff_reminders' %}active{% endif %}" href="{{ url_for('main.staff_reminders') }}">Reminders</a>
+            <a class="sidebar-link {% if endpoint == 'main.staff_journal' %}active{% endif %}" href="{{ url_for('main.staff_journal') }}">Journal</a>
+            <a class="sidebar-link {% if endpoint == 'main.staff_learning' %}active{% endif %}" href="{{ url_for('main.staff_learning') }}">Learning</a>
+            <a class="sidebar-link {% if endpoint == 'main.staff_messaging' %}active{% endif %}" href="{{ url_for('main.staff_messaging') }}">Messaging</a>
             <a class="sidebar-link {% if endpoint == 'main.staff_new_invitation' %}active{% endif %}" href="{{ url_for('main.staff_new_invitation') }}">New Invite</a>
           {% else %}
             <a class="sidebar-link {% if endpoint == 'main.staff_dashboard' or endpoint == 'main.dashboard' %}active{% endif %}" href="{{ url_for('main.staff_dashboard') }}">Dashboard</a>
             <a class="sidebar-link {% if endpoint == 'main.staff_calendar' %}active{% endif %}" href="{{ url_for('main.staff_calendar') }}">Calendar</a>
             <a class="sidebar-link {% if endpoint == 'main.staff_reminders' %}active{% endif %}" href="{{ url_for('main.staff_reminders') }}">Reminders</a>
+            <a class="sidebar-link {% if endpoint == 'main.staff_journal' %}active{% endif %}" href="{{ url_for('main.staff_journal') }}">Journal</a>
+            <a class="sidebar-link {% if endpoint == 'main.staff_learning' %}active{% endif %}" href="{{ url_for('main.staff_learning') }}">Learning</a>
+            <a class="sidebar-link {% if endpoint == 'main.staff_messaging' %}active{% endif %}" href="{{ url_for('main.staff_messaging') }}">Messaging</a>
             <a class="sidebar-link {% if endpoint == 'main.staff_new_invitation' %}active{% endif %}" href="{{ url_for('main.staff_new_invitation') }}">New Invite</a>
           {% endif %}
         </nav>
