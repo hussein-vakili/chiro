@@ -1,0 +1,976 @@
+{% extends "base.html" %}
+
+{% block title %}Settings · {{ ui_branding["clinic_name"] }}{% endblock %}
+
+{% block content %}
+  <section class="hero-panel">
+    <div>
+      <div class="auth-eyebrow">Settings workspace</div>
+      <h1>Configure the clinic like the Claude settings blueprint, but with live controls.</h1>
+      <p>Use the section navigator to manage practice profile, clinic configuration, scheduling, notifications, clinical defaults, billing, security, data, appearance, integrations, and subscription details from one place.</p>
+    </div>
+    <div class="status-card">
+      <span>Live system</span>
+      <strong>{{ ui_branding["clinic_name"] }}</strong>
+      <small>{{ active_chiropractor_count }}/{{ max_active_chiropractors }} chiropractors active</small>
+      <small>{{ app_settings["calendar_slot_increment_minutes"] }} minute slot increments</small>
+      <small>{{ database_summary["size_label"] }} SQLite database</small>
+    </div>
+  </section>
+
+  <section class="settings-shell">
+    <aside class="panel settings-nav-panel">
+      <div class="panel-label">Settings areas</div>
+      <div class="settings-search-wrap">
+        <input id="settingsSearchInput" class="settings-search" type="search" placeholder="Search settings sections...">
+      </div>
+      <div class="settings-section-list" id="settingsSectionList">
+        <button type="button" class="settings-section-link" data-target="profile" data-search="profile practice clinic identity professional branding">
+          <strong>Profile &amp; Practice</strong>
+          <small>Professional identity and clinic details</small>
+        </button>
+        <button type="button" class="settings-section-link" data-target="clinic" data-search="clinic configuration hours rooms locations availability days">
+          <strong>Clinic Configuration</strong>
+          <small>Opening hours, locations, rooms, and availability</small>
+        </button>
+        <button type="button" class="settings-section-link" data-target="scheduling" data-search="scheduling calendar booking slots cancellation online">
+          <strong>Scheduling</strong>
+          <small>Calendar defaults, booking rules, and service inventory</small>
+        </button>
+        <button type="button" class="settings-section-link" data-target="notifications" data-search="notifications reminders sms email recall messaging">
+          <strong>Notifications</strong>
+          <small>Reminder and messaging preferences</small>
+        </button>
+        <button type="button" class="settings-section-link" data-target="clinical" data-search="clinical defaults outcome measures intake consent">
+          <strong>Clinical Defaults</strong>
+          <small>Outcome measures, re-exams, and intake defaults</small>
+        </button>
+        <button type="button" class="settings-section-link" data-target="billing" data-search="billing payments fees invoice receipts">
+          <strong>Billing &amp; Payments</strong>
+          <small>Fees, payment methods, and invoicing preferences</small>
+        </button>
+        <button type="button" class="settings-section-link" data-target="security" data-search="security access chiropractors users roles session">
+          <strong>Security &amp; Access</strong>
+          <small>Sessions, active chiropractors, and account access</small>
+        </button>
+        <button type="button" class="settings-section-link" data-target="data" data-search="data compliance gdpr retention backups database">
+          <strong>Data &amp; Compliance</strong>
+          <small>Retention, backups, database export, and compliance</small>
+        </button>
+        <button type="button" class="settings-section-link" data-target="appearance" data-search="appearance branding theme colour font">
+          <strong>Appearance</strong>
+          <small>Brand colour, theme, and portal presentation</small>
+        </button>
+        <button type="button" class="settings-section-link" data-target="integrations" data-search="integrations booking link webhooks calendar sync email sms">
+          <strong>Integrations</strong>
+          <small>Booking link, webhook activity, and provider setup</small>
+        </button>
+        <button type="button" class="settings-section-link" data-target="subscription" data-search="subscription plan usage">
+          <strong>Subscription</strong>
+          <small>Current usage snapshot</small>
+        </button>
+      </div>
+      <p id="settingsSearchEmpty" class="muted-copy settings-search-empty" hidden>No sections match that search.</p>
+    </aside>
+
+    <div class="settings-content">
+      <section class="panel settings-panel" data-settings-panel="profile">
+        <div class="panel-label">Profile &amp; Practice</div>
+        <h2>Professional identity</h2>
+        <p>These values are persisted in the app settings store and drive the clinic name and branding shown across the portal.</p>
+        <form method="post" action="{{ url_for('main.update_staff_settings_section', section_key='profile') }}" class="auth-form">
+          <div class="appointment-form-grid">
+            <label>
+              <span>Practitioner name</span>
+              <input type="text" name="practice_practitioner_name" value="{{ app_settings['practice_practitioner_name'] }}" placeholder="Dr. Hussein Vakili">
+            </label>
+            <label>
+              <span>Registration number</span>
+              <input type="text" name="practice_registration_number" value="{{ app_settings['practice_registration_number'] }}" placeholder="GCC / licence reference">
+            </label>
+            <label>
+              <span>Qualifications</span>
+              <input type="text" name="practice_qualifications" value="{{ app_settings['practice_qualifications'] }}" placeholder="DC, MSc Chiropractic">
+            </label>
+            <label>
+              <span>Clinic name</span>
+              <input type="text" name="practice_clinic_name" value="{{ app_settings['practice_clinic_name'] }}" required>
+            </label>
+            <label>
+              <span>Clinic email</span>
+              <input type="email" name="practice_email" value="{{ app_settings['practice_email'] }}" placeholder="clinic@example.com">
+            </label>
+            <label>
+              <span>Clinic phone</span>
+              <input type="text" name="practice_phone" value="{{ app_settings['practice_phone'] }}" placeholder="+44 7700 000000">
+            </label>
+            <label class="full">
+              <span>Clinic address</span>
+              <textarea name="practice_address" rows="3" placeholder="123 High Street, London">{{ app_settings['practice_address'] }}</textarea>
+            </label>
+            <label class="full">
+              <span>Practice bio</span>
+              <textarea name="practice_bio" rows="4" placeholder="Short bio for patient-facing surfaces.">{{ app_settings['practice_bio'] }}</textarea>
+            </label>
+          </div>
+          <button type="submit" class="primary-button">Save profile settings</button>
+        </form>
+      </section>
+
+      <section class="panel settings-panel" data-settings-panel="clinic">
+        <div class="panel-label">Clinic Configuration</div>
+        <h2>Hours, rooms, locations, and availability</h2>
+        <p>This section merges the Claude clinic configuration layout with the live availability and location tools already used by the booking system.</p>
+
+        <form method="post" action="{{ url_for('main.update_staff_settings_section', section_key='clinic') }}" class="auth-form">
+          <div class="appointment-form-grid">
+            <label class="full">
+              <span>Operating days</span>
+              <div class="tag-cloud">
+                {% for day in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] %}
+                  <label class="mini-tag" style="cursor:pointer">
+                    <input type="checkbox" name="clinic_open_days" value="{{ day }}" {% if day in settings_lists["clinic_open_days"] %}checked{% endif %} style="margin-right:8px">
+                    {{ day }}
+                  </label>
+                {% endfor %}
+              </div>
+            </label>
+            <label>
+              <span>Opening time</span>
+              <input type="time" name="clinic_open_time" value="{{ app_settings['clinic_open_time'] }}">
+            </label>
+            <label>
+              <span>Closing time</span>
+              <input type="time" name="clinic_close_time" value="{{ app_settings['clinic_close_time'] }}">
+            </label>
+            <label>
+              <span>Lunch break start</span>
+              <input type="time" name="clinic_lunch_start" value="{{ app_settings['clinic_lunch_start'] }}">
+            </label>
+            <label>
+              <span>Lunch break end</span>
+              <input type="time" name="clinic_lunch_end" value="{{ app_settings['clinic_lunch_end'] }}">
+            </label>
+            <label>
+              <span>Treatment rooms</span>
+              <input type="number" min="1" max="50" name="clinic_rooms" value="{{ app_settings['clinic_rooms'] }}">
+            </label>
+            <label>
+              <span>Multi-practitioner mode</span>
+              <input type="checkbox" name="clinic_multi_practitioner_mode" {% if app_settings['clinic_multi_practitioner_mode'] == '1' %}checked{% endif %}>
+            </label>
+          </div>
+          <button type="submit" class="primary-button">Save clinic configuration</button>
+        </form>
+
+        <div class="dashboard-grid" style="margin-top:18px">
+          <article class="mini-card" style="padding:20px">
+            <strong>Clinic locations</strong>
+            {% if locations %}
+              <div class="invite-stack">
+                {% for location in locations %}
+                  <div class="mini-card">
+                    <strong>{{ location["name"] }}</strong>
+                    {% if location["address"] %}<small>{{ location["address"] }}</small>{% endif %}
+                    {% if location["phone"] %}<small>{{ location["phone"] }}</small>{% endif %}
+                    <small>{{ location["timezone"] }}</small>
+                  </div>
+                {% endfor %}
+              </div>
+            {% else %}
+              <p style="margin-top:12px">No locations configured yet.</p>
+            {% endif %}
+            <form method="post" action="{{ url_for('main.create_staff_location') }}" class="auth-form">
+              <input type="hidden" name="return_to" value="settings">
+              <input type="hidden" name="section" value="clinic">
+              <div class="appointment-form-grid">
+                <label>
+                  <span>Name</span>
+                  <input type="text" name="name" placeholder="Main Clinic" required>
+                </label>
+                <label>
+                  <span>Slug</span>
+                  <input type="text" name="slug" placeholder="main-clinic" required>
+                </label>
+                <label>
+                  <span>Phone</span>
+                  <input type="text" name="phone" placeholder="555-0101">
+                </label>
+                <label>
+                  <span>Timezone</span>
+                  <input type="text" name="timezone" value="Europe/London">
+                </label>
+                <label class="full">
+                  <span>Address</span>
+                  <textarea name="address" rows="3" placeholder="123 Wellness Way"></textarea>
+                </label>
+              </div>
+              <button type="submit" class="primary-button">Add location</button>
+            </form>
+          </article>
+
+          <article class="mini-card" style="padding:20px">
+            <strong>Weekly availability templates</strong>
+            <div class="schedule-template-grid">
+              {% for day in schedule_templates %}
+                <div class="schedule-day-card">
+                  <strong>{{ day["label"] }}</strong>
+                  {% if day["windows"] %}
+                    <div class="schedule-window-list">
+                      {% for window in day["windows"] %}
+                        <div class="schedule-window-row">
+                          <span class="availability-chip {{ window['window_tone'] }}">{{ window["window_type_label"] }}</span>
+                          <div class="schedule-window-copy">
+                            <span>{{ window["label"] }}</span>
+                            <small>{{ window["time_label"] }}{% if window["location_name"] %} · {{ window["location_name"] }}{% endif %}{% if window["clinician_name"] %} · {{ window["clinician_name"] }}{% else %} · Clinic-wide{% endif %}</small>
+                          </div>
+                          <form method="post" action="{{ url_for('main.delete_staff_schedule_window', window_id=window['id']) }}">
+                            <input type="hidden" name="return_to" value="settings">
+                            <input type="hidden" name="section" value="clinic">
+                            <button type="submit" class="tiny-button rose">Remove</button>
+                          </form>
+                        </div>
+                      {% endfor %}
+                    </div>
+                  {% else %}
+                    <p class="muted-copy">No schedule template configured.</p>
+                  {% endif %}
+                </div>
+              {% endfor %}
+            </div>
+            <form method="post" action="{{ url_for('main.create_staff_schedule_window') }}" class="auth-form">
+              <input type="hidden" name="return_to" value="settings">
+              <input type="hidden" name="section" value="clinic">
+              <div class="appointment-form-grid">
+                <label>
+                  <span>Chiropractor</span>
+                  <select name="clinician_user_id">
+                    <option value="">Clinic-wide</option>
+                    {% for option in clinician_options %}
+                      <option value="{{ option['value'] }}">{{ option["label"] }}</option>
+                    {% endfor %}
+                  </select>
+                </label>
+                <label>
+                  <span>Location</span>
+                  <select name="location_id" required>
+                    {% for option in location_options %}
+                      <option value="{{ option['value'] }}">{{ option["label"] }}</option>
+                    {% endfor %}
+                  </select>
+                </label>
+                <label>
+                  <span>Type</span>
+                  <select name="window_type" required>
+                    {% for option in schedule_window_type_options %}
+                      <option value="{{ option['value'] }}">{{ option["label"] }}</option>
+                    {% endfor %}
+                  </select>
+                </label>
+                <label>
+                  <span>Weekday</span>
+                  <select name="weekday" required>
+                    {% for option in weekday_options %}
+                      <option value="{{ option['value'] }}">{{ option["label"] }}</option>
+                    {% endfor %}
+                  </select>
+                </label>
+                <label>
+                  <span>Label</span>
+                  <input type="text" name="label" placeholder="Morning shift, lunch downtime, training block...">
+                </label>
+                <label>
+                  <span>Start time</span>
+                  <input type="time" name="starts_time" required>
+                </label>
+                <label>
+                  <span>End time</span>
+                  <input type="time" name="ends_time" required>
+                </label>
+              </div>
+              <button type="submit" class="primary-button">Add availability block</button>
+            </form>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel settings-panel" data-settings-panel="scheduling">
+        <div class="panel-label">Scheduling</div>
+        <h2>Calendar defaults and booking rules</h2>
+        <p>These settings directly control slot generation, online booking availability, cancellation windows, and the bookable service inventory.</p>
+
+        <form method="post" action="{{ url_for('main.update_staff_settings') }}" class="auth-form">
+          <div class="appointment-form-grid">
+            <label>
+              <span>Time format</span>
+              <select name="calendar_time_format" required>
+                {% for option in time_format_options %}
+                  <option value="{{ option['value'] }}" {% if option['value'] == app_settings["calendar_time_format"] %}selected{% endif %}>{{ option["label"] }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label>
+              <span>Slot increment</span>
+              <select name="calendar_slot_increment_minutes" required>
+                {% for option in slot_increment_options %}
+                  <option value="{{ option['value'] }}" {% if option['value']|string == app_settings["calendar_slot_increment_minutes"] %}selected{% endif %}>{{ option["label"] }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label>
+              <span>Max advance booking window (days)</span>
+              <input type="number" min="1" max="120" name="booking_search_window_days" value="{{ booking_search_window_days }}" required>
+            </label>
+            <label>
+              <span>Cancellation window (hours)</span>
+              <input type="number" min="0" max="336" name="booking_cancellation_hours" value="{{ app_settings['booking_cancellation_hours'] }}" required>
+            </label>
+            <label>
+              <span>Online booking</span>
+              <input type="checkbox" name="booking_enable_online" {% if app_settings['booking_enable_online'] == '1' %}checked{% endif %}>
+            </label>
+            <label>
+              <span>Allow same-day bookings</span>
+              <input type="checkbox" name="booking_allow_same_day" {% if app_settings['booking_allow_same_day'] == '1' %}checked{% endif %}>
+            </label>
+            <label>
+              <span>No-show fee</span>
+              <input type="text" name="booking_no_show_fee" value="{{ app_settings['booking_no_show_fee'] }}" placeholder="Optional">
+            </label>
+            <label>
+              <span>Max active chiropractors</span>
+              <input type="number" min="1" max="100" name="max_active_chiropractors" value="{{ max_active_chiropractors }}" required>
+            </label>
+          </div>
+          <button type="submit" class="primary-button">Save scheduling settings</button>
+        </form>
+
+        <div class="section-block">
+          <h3>Booking inventory</h3>
+          <div class="invite-stack">
+            {% for service in service_inventory %}
+              <details class="appointment-edit">
+                <summary>{{ service["label"] }} · {{ service["duration_minutes"] }} min · {{ service["routing_mode_label"] }}</summary>
+                <form method="post" action="{{ url_for('main.create_or_update_staff_booking_service') }}" class="auth-form">
+                  <input type="hidden" name="return_to" value="settings">
+                  <input type="hidden" name="section" value="scheduling">
+                  <input type="hidden" name="service_id" value="{{ service['id'] }}">
+                  <div class="appointment-form-grid">
+                    <label>
+                      <span>Label</span>
+                      <input type="text" name="label" value="{{ service['label'] }}" required>
+                    </label>
+                    <label>
+                      <span>Service key</span>
+                      <input type="text" name="service_key" value="{{ service['service_key'] }}" required>
+                    </label>
+                    <label>
+                      <span>Appointment type</span>
+                      <select name="appointment_type" required>
+                        {% for option in appointment_type_options %}
+                          <option value="{{ option['value'] }}" {% if option['value'] == service['appointment_type'] %}selected{% endif %}>{{ option["label"] }}</option>
+                        {% endfor %}
+                      </select>
+                    </label>
+                    <label>
+                      <span>Duration</span>
+                      <select name="duration_minutes" required>
+                        {% for option in duration_options %}
+                          <option value="{{ option['value'] }}" {% if option['value'] == service['duration_minutes'] %}selected{% endif %}>{{ option["label"] }}</option>
+                        {% endfor %}
+                      </select>
+                    </label>
+                    <label>
+                      <span>Buffer before (min)</span>
+                      <input type="number" min="0" max="120" name="buffer_before_minutes" value="{{ service['buffer_before_minutes'] }}">
+                    </label>
+                    <label>
+                      <span>Buffer after (min)</span>
+                      <input type="number" min="0" max="120" name="buffer_after_minutes" value="{{ service['buffer_after_minutes'] }}">
+                    </label>
+                    <label>
+                      <span>Minimum notice (min)</span>
+                      <input type="number" min="0" max="20160" name="min_notice_minutes" value="{{ service['min_notice_minutes'] }}">
+                    </label>
+                    <label>
+                      <span>Max bookings/day</span>
+                      <input type="number" min="1" max="60" name="max_bookings_per_day" value="{{ service['max_bookings_per_day'] if service['max_bookings_per_day'] is not none else '' }}">
+                    </label>
+                    <label>
+                      <span>Routing mode</span>
+                      <select name="routing_mode" required>
+                        {% for option in booking_routing_mode_options %}
+                          <option value="{{ option['value'] }}" {% if option['value'] == service['routing_mode'] %}selected{% endif %}>{{ option["label"] }}</option>
+                        {% endfor %}
+                      </select>
+                    </label>
+                    <label>
+                      <span>Currency</span>
+                      <input type="text" name="currency" maxlength="3" value="{{ service['currency'] }}" required>
+                    </label>
+                    <label>
+                      <span>Price amount</span>
+                      <input type="number" step="0.01" min="0" name="price_amount" value="{{ service['price_amount'] if service['price_amount'] is not none else '' }}">
+                    </label>
+                    <label>
+                      <span>Display order</span>
+                      <input type="number" min="0" max="1000" name="display_order" value="{{ service['display_order'] }}">
+                    </label>
+                    <label>
+                      <span>Status</span>
+                      <select name="active">
+                        <option value="1" {% if service['active'] %}selected{% endif %}>Active</option>
+                        <option value="0" {% if not service['active'] %}selected{% endif %}>Inactive</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>Accept payment at booking</span>
+                      <input type="checkbox" name="requires_payment" {% if service['requires_payment'] %}checked{% endif %}>
+                    </label>
+                    <label class="full">
+                      <span>Description</span>
+                      <textarea name="description" rows="2">{{ service["description"] }}</textarea>
+                    </label>
+                  </div>
+                  <button type="submit" class="primary-button">Update service</button>
+                </form>
+              </details>
+            {% endfor %}
+          </div>
+
+          <form method="post" action="{{ url_for('main.create_or_update_staff_booking_service') }}" class="auth-form">
+            <input type="hidden" name="return_to" value="settings">
+            <input type="hidden" name="section" value="scheduling">
+            <div class="appointment-form-grid">
+              <label>
+                <span>Label</span>
+                <input type="text" name="label" placeholder="New Patient 30 min" required>
+              </label>
+              <label>
+                <span>Service key</span>
+                <input type="text" name="service_key" placeholder="new_patient_30">
+              </label>
+              <label>
+                <span>Appointment type</span>
+                <select name="appointment_type" required>
+                  {% for option in appointment_type_options %}
+                    <option value="{{ option['value'] }}">{{ option["label"] }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <label>
+                <span>Duration</span>
+                <select name="duration_minutes" required>
+                  {% for option in duration_options %}
+                    <option value="{{ option['value'] }}">{{ option["label"] }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <label>
+                <span>Buffer before (min)</span>
+                <input type="number" min="0" max="120" name="buffer_before_minutes" value="0">
+              </label>
+              <label>
+                <span>Buffer after (min)</span>
+                <input type="number" min="0" max="120" name="buffer_after_minutes" value="0">
+              </label>
+              <label>
+                <span>Minimum notice (min)</span>
+                <input type="number" min="0" max="20160" name="min_notice_minutes" value="60">
+              </label>
+              <label>
+                <span>Max bookings/day</span>
+                <input type="number" min="1" max="60" name="max_bookings_per_day" placeholder="Optional">
+              </label>
+              <label>
+                <span>Routing mode</span>
+                <select name="routing_mode" required>
+                  {% for option in booking_routing_mode_options %}
+                    <option value="{{ option['value'] }}">{{ option["label"] }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <label>
+                <span>Currency</span>
+                <input type="text" name="currency" maxlength="3" value="GBP" required>
+              </label>
+              <label>
+                <span>Price amount</span>
+                <input type="number" step="0.01" min="0" name="price_amount" placeholder="Optional">
+              </label>
+              <label>
+                <span>Display order</span>
+                <input type="number" min="0" max="1000" name="display_order" value="100">
+              </label>
+              <label>
+                <span>Active</span>
+                <select name="active">
+                  <option value="1" selected>Active</option>
+                  <option value="0">Inactive</option>
+                </select>
+              </label>
+              <label>
+                <span>Accept payment at booking</span>
+                <input type="checkbox" name="requires_payment">
+              </label>
+              <label class="full">
+                <span>Description</span>
+                <textarea name="description" rows="3" placeholder="Short service description shown in booking flows."></textarea>
+              </label>
+            </div>
+            <button type="submit" class="primary-button">Add booking service</button>
+          </form>
+        </div>
+      </section>
+
+      <section class="panel settings-panel" data-settings-panel="notifications">
+        <div class="panel-label">Notifications</div>
+        <h2>Reminder and messaging preferences</h2>
+        <p>These settings persist clinic-wide communication preferences. Email and SMS channel toggles directly gate reminder sending from the reminders centre.</p>
+        <form method="post" action="{{ url_for('main.update_staff_settings_section', section_key='notifications') }}" class="auth-form">
+          <div class="appointment-form-grid">
+            <label>
+              <span>Appointment confirmation email</span>
+              <input type="checkbox" name="notifications_confirmation_email" {% if app_settings['notifications_confirmation_email'] == '1' %}checked{% endif %}>
+            </label>
+            <label>
+              <span>Appointment confirmation SMS</span>
+              <input type="checkbox" name="notifications_confirmation_sms" {% if app_settings['notifications_confirmation_sms'] == '1' %}checked{% endif %}>
+            </label>
+            <label>
+              <span>24-hour reminder</span>
+              <input type="checkbox" name="notifications_reminder_24h" {% if app_settings['notifications_reminder_24h'] == '1' %}checked{% endif %}>
+            </label>
+            <label>
+              <span>1-hour reminder</span>
+              <input type="checkbox" name="notifications_reminder_1h" {% if app_settings['notifications_reminder_1h'] == '1' %}checked{% endif %}>
+            </label>
+            <label>
+              <span>Post-visit summary email</span>
+              <input type="checkbox" name="notifications_post_visit_email" {% if app_settings['notifications_post_visit_email'] == '1' %}checked{% endif %}>
+            </label>
+            <label>
+              <span>Recall reminders for lapsed patients</span>
+              <input type="checkbox" name="notifications_recall_enabled" {% if app_settings['notifications_recall_enabled'] == '1' %}checked{% endif %}>
+            </label>
+            <label>
+              <span>Recall after inactivity (days)</span>
+              <input type="number" min="7" max="365" name="notifications_recall_days" value="{{ app_settings['notifications_recall_days'] }}">
+            </label>
+          </div>
+          <button type="submit" class="primary-button">Save notification settings</button>
+        </form>
+      </section>
+
+      <section class="panel settings-panel" data-settings-panel="clinical">
+        <div class="panel-label">Clinical Defaults</div>
+        <h2>Outcome measures and intake defaults</h2>
+        <p>Store the measures and intake behavior you want the clinic to default to when building clinical workflows.</p>
+        <form method="post" action="{{ url_for('main.update_staff_settings_section', section_key='clinical') }}" class="auth-form">
+          <div class="appointment-form-grid">
+            <label class="full">
+              <span>Default outcome measures</span>
+              <div class="tag-cloud">
+                {% for measure in ["NDI", "ODI", "QuickDASH", "HIT-6", "SF-36", "PSFS", "VAS Pain"] %}
+                  <label class="mini-tag" style="cursor:pointer">
+                    <input type="checkbox" name="clinical_outcome_measures" value="{{ measure }}" {% if measure in settings_lists["clinical_outcome_measures"] %}checked{% endif %} style="margin-right:8px">
+                    {{ measure }}
+                  </label>
+                {% endfor %}
+              </div>
+            </label>
+            <label>
+              <span>Re-examination interval (visits)</span>
+              <input type="number" min="1" max="52" name="clinical_reexam_interval" value="{{ app_settings['clinical_reexam_interval'] }}">
+            </label>
+            <label>
+              <span>Use MCID thresholds</span>
+              <input type="checkbox" name="clinical_use_mcid" {% if app_settings['clinical_use_mcid'] == '1' %}checked{% endif %}>
+            </label>
+            <label>
+              <span>Auto-assign intake to new patients</span>
+              <input type="checkbox" name="clinical_auto_assign_intake" {% if app_settings['clinical_auto_assign_intake'] == '1' %}checked{% endif %}>
+            </label>
+            <label>
+              <span>Include consent form in intake</span>
+              <input type="checkbox" name="clinical_include_consent" {% if app_settings['clinical_include_consent'] == '1' %}checked{% endif %}>
+            </label>
+          </div>
+          <button type="submit" class="primary-button">Save clinical defaults</button>
+        </form>
+      </section>
+
+      <section class="panel settings-panel" data-settings-panel="billing">
+        <div class="panel-label">Billing &amp; Payments</div>
+        <h2>Fees and payment preferences</h2>
+        <p>The live appointment service prices still control real booking charges. These settings capture the clinic’s default billing preferences and accepted payment methods.</p>
+        <form method="post" action="{{ url_for('main.update_staff_settings_section', section_key='billing') }}" class="auth-form">
+          <div class="appointment-form-grid">
+            <label>
+              <span>Initial consultation fee</span>
+              <input type="text" name="billing_initial_fee" value="{{ app_settings['billing_initial_fee'] }}" placeholder="65">
+            </label>
+            <label>
+              <span>Follow-up fee</span>
+              <input type="text" name="billing_followup_fee" value="{{ app_settings['billing_followup_fee'] }}" placeholder="42">
+            </label>
+            <label class="full">
+              <span>Accepted payment methods</span>
+              <div class="tag-cloud">
+                {% for method in ["Card", "Cash", "Bank Transfer", "Apple Pay", "Google Pay"] %}
+                  <label class="mini-tag" style="cursor:pointer">
+                    <input type="checkbox" name="billing_payment_methods" value="{{ method }}" {% if method in settings_lists["billing_payment_methods"] %}checked{% endif %} style="margin-right:8px">
+                    {{ method }}
+                  </label>
+                {% endfor %}
+              </div>
+            </label>
+            <label>
+              <span>Auto-generate invoice after visit</span>
+              <input type="checkbox" name="billing_auto_invoice" {% if app_settings['billing_auto_invoice'] == '1' %}checked{% endif %}>
+            </label>
+            <label>
+              <span>Email receipts automatically</span>
+              <input type="checkbox" name="billing_email_receipts" {% if app_settings['billing_email_receipts'] == '1' %}checked{% endif %}>
+            </label>
+          </div>
+          <button type="submit" class="primary-button">Save billing settings</button>
+        </form>
+      </section>
+
+      <section class="panel settings-panel" data-settings-panel="security">
+        <div class="panel-label">Security &amp; Access</div>
+        <h2>Chiropractor access and session controls</h2>
+        <p>Manage live chiropractor capacity and access here. Activating or deactivating a chiropractor immediately affects booking availability and login access.</p>
+
+        <form method="post" action="{{ url_for('main.update_staff_settings_section', section_key='security') }}" class="auth-form">
+          <div class="appointment-form-grid">
+            <label>
+              <span>Max active chiropractors</span>
+              <input type="number" min="1" max="100" name="max_active_chiropractors" value="{{ max_active_chiropractors }}">
+            </label>
+            <label>
+              <span>Session timeout</span>
+              <select name="security_session_timeout">
+                {% for option in [15, 30, 60, 120] %}
+                  <option value="{{ option }}" {% if app_settings['security_session_timeout'] == option|string %}selected{% endif %}>{{ option }} minutes</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label>
+              <span>Two-factor authentication required</span>
+              <input type="checkbox" name="security_two_factor" {% if app_settings['security_two_factor'] == '1' %}checked{% endif %}>
+            </label>
+          </div>
+          <button type="submit" class="primary-button">Save security settings</button>
+        </form>
+
+        <div class="dashboard-grid" style="margin-top:18px">
+          <article class="mini-card" style="padding:20px">
+            <strong>Chiropractor roster</strong>
+            <small>Capacity remaining: {{ remaining_chiropractor_capacity }} active seat{% if remaining_chiropractor_capacity != 1 %}s{% endif %}.</small>
+            {% if chiropractors %}
+              <div class="invite-stack">
+                {% for chiropractor in chiropractors %}
+                  <div class="mini-card">
+                    <strong>{{ chiropractor["full_name"] }}</strong>
+                    <small>{{ chiropractor["email"] }}</small>
+                    <small>{{ chiropractor["upcoming_appointment_count"] }} upcoming appointments · {{ chiropractor["availability_template_count"] }} availability templates</small>
+                    <small>Created {{ chiropractor["created_label"] }}</small>
+                    <div class="tiny-actions">
+                      <span class="status-dot {{ 'life' if chiropractor['is_active'] else 'rose' }}">{{ chiropractor["status_label"] }}</span>
+                      <form method="post" action="{{ url_for('main.update_staff_chiropractor_status', user_id=chiropractor['id']) }}">
+                        <input type="hidden" name="is_active" value="{{ 0 if chiropractor['is_active'] else 1 }}">
+                        <button type="submit" class="tiny-button {{ 'rose' if chiropractor['is_active'] else 'sky' }}" {% if chiropractor['id'] == g.user['id'] and chiropractor['is_active'] %}disabled{% endif %}>
+                          {{ "Deactivate" if chiropractor["is_active"] else "Activate" }}
+                        </button>
+                      </form>
+                    </div>
+                  </div>
+                {% endfor %}
+              </div>
+            {% else %}
+              <p style="margin-top:12px">No chiropractor accounts exist yet.</p>
+            {% endif %}
+          </article>
+
+          <article class="mini-card" style="padding:20px">
+            <strong>Add chiropractor</strong>
+            <small>New chiropractor accounts are created as active booking users immediately.</small>
+            <form method="post" action="{{ url_for('main.create_staff_chiropractor') }}" class="auth-form">
+              <div class="appointment-form-grid">
+                <label>
+                  <span>First name</span>
+                  <input type="text" name="first_name" required>
+                </label>
+                <label>
+                  <span>Last name</span>
+                  <input type="text" name="last_name" required>
+                </label>
+                <label>
+                  <span>Email</span>
+                  <input type="email" name="email" required>
+                </label>
+                <label>
+                  <span>Temporary password</span>
+                  <input type="password" name="password" minlength="8" required>
+                </label>
+              </div>
+              <button type="submit" class="primary-button">Create chiropractor</button>
+            </form>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel settings-panel" data-settings-panel="data">
+        <div class="panel-label">Data &amp; Compliance</div>
+        <h2>Retention, backups, and live database access</h2>
+        <p>This section combines Claude’s data/compliance categories with the working SQLite backup and database inspection tools.</p>
+
+        <form method="post" action="{{ url_for('main.update_staff_settings_section', section_key='data') }}" class="auth-form">
+          <div class="appointment-form-grid">
+            <label>
+              <span>ICO registration reference</span>
+              <input type="text" name="data_ico_reference" value="{{ app_settings['data_ico_reference'] }}" placeholder="ZA000000">
+            </label>
+            <label>
+              <span>Retention period</span>
+              <select name="data_retention_period">
+                <option value="3y" {% if app_settings['data_retention_period'] == '3y' %}selected{% endif %}>3 years</option>
+                <option value="7y" {% if app_settings['data_retention_period'] == '7y' %}selected{% endif %}>7 years</option>
+                <option value="10y" {% if app_settings['data_retention_period'] == '10y' %}selected{% endif %}>10 years</option>
+              </select>
+            </label>
+            <label>
+              <span>Auto-anonymise after retention window</span>
+              <input type="checkbox" name="data_auto_anonymize" {% if app_settings['data_auto_anonymize'] == '1' %}checked{% endif %}>
+            </label>
+            <label>
+              <span>Automatic daily backups</span>
+              <input type="checkbox" name="data_daily_backups" {% if app_settings['data_daily_backups'] == '1' %}checked{% endif %}>
+            </label>
+          </div>
+          <button type="submit" class="primary-button">Save data settings</button>
+        </form>
+
+        <div class="dashboard-grid" style="margin-top:18px">
+          <article class="mini-card" style="padding:20px">
+            <strong>Database summary</strong>
+            <small>{{ database_summary["engine"] }} · {{ database_summary["table_count"] }} tables · {{ database_summary["size_label"] }}</small>
+            <div class="invite-stack">
+              <div class="mini-card">
+                <strong>{{ database_summary["counts"]["users"] }} users</strong>
+                <small>{{ database_summary["counts"]["appointments"] }} appointments</small>
+                <small>{{ database_summary["counts"]["messages"] }} messages</small>
+              </div>
+              <div class="mini-card">
+                <strong>{{ database_summary["counts"]["locations"] }} locations</strong>
+                <small>{{ database_summary["counts"]["services"] }} booking services</small>
+                <small>{{ database_summary["counts"]["journal_entries"] }} journal entries</small>
+              </div>
+            </div>
+            <div class="auth-form">
+              <label>
+                <span>Database file</span>
+                <input type="text" value="{{ database_summary['path'] }}" readonly>
+              </label>
+              <label>
+                <span>Tables</span>
+                <textarea rows="4" readonly>{{ database_summary["tables"]|join(", ") }}</textarea>
+              </label>
+            </div>
+            <div class="tiny-actions">
+              <a class="primary-button" href="{{ url_for('main.download_staff_database_backup') }}">Download SQLite backup</a>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel settings-panel" data-settings-panel="appearance">
+        <div class="panel-label">Appearance</div>
+        <h2>Branding and theme</h2>
+        <p>The clinic name and brand colour update the shared portal chrome immediately after saving.</p>
+        <form method="post" action="{{ url_for('main.update_staff_settings_section', section_key='appearance') }}" class="auth-form">
+          <div class="appointment-form-grid">
+            <label>
+              <span>Theme</span>
+              <select name="appearance_theme">
+                <option value="light" {% if app_settings['appearance_theme'] == 'light' %}selected{% endif %}>Light</option>
+                <option value="dark" {% if app_settings['appearance_theme'] == 'dark' %}selected{% endif %}>Dark</option>
+                <option value="auto" {% if app_settings['appearance_theme'] == 'auto' %}selected{% endif %}>System</option>
+              </select>
+            </label>
+            <label>
+              <span>Brand colour</span>
+              <input type="text" name="appearance_brand_color" value="{{ app_settings['appearance_brand_color'] }}" placeholder="#3b7a57">
+            </label>
+            <label>
+              <span>Font style</span>
+              <select name="appearance_font_style">
+                <option value="modern" {% if app_settings['appearance_font_style'] == 'modern' %}selected{% endif %}>Modern</option>
+                <option value="classic" {% if app_settings['appearance_font_style'] == 'classic' %}selected{% endif %}>Classic</option>
+                <option value="clean" {% if app_settings['appearance_font_style'] == 'clean' %}selected{% endif %}>Clean</option>
+              </select>
+            </label>
+            <label>
+              <span>Show clinic branding in portal</span>
+              <input type="checkbox" name="appearance_show_portal_branding" {% if app_settings['appearance_show_portal_branding'] == '1' %}checked{% endif %}>
+            </label>
+          </div>
+          <button type="submit" class="primary-button">Save appearance settings</button>
+        </form>
+      </section>
+
+      <section class="panel settings-panel" data-settings-panel="integrations">
+        <div class="panel-label">Integrations</div>
+        <h2>Providers, booking link, and webhook activity</h2>
+        <p>This section preserves the Claude integration layout while surfacing the live booking link and recent booking event pipeline already generated by the app.</p>
+        <form method="post" action="{{ url_for('main.update_staff_settings_section', section_key='integrations') }}" class="auth-form">
+          <div class="appointment-form-grid">
+            <label>
+              <span>Payment provider</span>
+              <select name="integration_payment_provider">
+                <option value="" {% if not app_settings['integration_payment_provider'] %}selected{% endif %}>Not connected</option>
+                <option value="Stripe" {% if app_settings['integration_payment_provider'] == 'Stripe' %}selected{% endif %}>Stripe</option>
+                <option value="Square" {% if app_settings['integration_payment_provider'] == 'Square' %}selected{% endif %}>Square</option>
+                <option value="SumUp" {% if app_settings['integration_payment_provider'] == 'SumUp' %}selected{% endif %}>SumUp</option>
+              </select>
+            </label>
+            <label>
+              <span>Calendar sync</span>
+              <select name="integration_calendar_sync">
+                <option value="" {% if not app_settings['integration_calendar_sync'] %}selected{% endif %}>Not connected</option>
+                <option value="Google Calendar" {% if app_settings['integration_calendar_sync'] == 'Google Calendar' %}selected{% endif %}>Google Calendar</option>
+                <option value="Outlook" {% if app_settings['integration_calendar_sync'] == 'Outlook' %}selected{% endif %}>Outlook</option>
+              </select>
+            </label>
+            <label>
+              <span>Email provider</span>
+              <select name="integration_email_provider">
+                <option value="" {% if not app_settings['integration_email_provider'] %}selected{% endif %}>Default outbox</option>
+                <option value="Mailgun" {% if app_settings['integration_email_provider'] == 'Mailgun' %}selected{% endif %}>Mailgun</option>
+                <option value="SendGrid" {% if app_settings['integration_email_provider'] == 'SendGrid' %}selected{% endif %}>SendGrid</option>
+                <option value="Amazon SES" {% if app_settings['integration_email_provider'] == 'Amazon SES' %}selected{% endif %}>Amazon SES</option>
+              </select>
+            </label>
+            <label>
+              <span>SMS provider</span>
+              <select name="integration_sms_provider">
+                <option value="" {% if not app_settings['integration_sms_provider'] %}selected{% endif %}>Default outbox</option>
+                <option value="Twilio" {% if app_settings['integration_sms_provider'] == 'Twilio' %}selected{% endif %}>Twilio</option>
+                <option value="Vonage" {% if app_settings['integration_sms_provider'] == 'Vonage' %}selected{% endif %}>Vonage</option>
+              </select>
+            </label>
+          </div>
+          <button type="submit" class="primary-button">Save integration settings</button>
+        </form>
+
+        <div class="dashboard-grid" style="margin-top:18px">
+          <article class="mini-card" style="padding:20px">
+            <strong>Booking link</strong>
+            <small>Share this link or embed it on your site.</small>
+            <div class="auth-form">
+              <label>
+                <span>Booking page</span>
+                <input type="text" value="{{ booking_link }}" readonly>
+              </label>
+            </div>
+          </article>
+          <article class="mini-card" style="padding:20px">
+            <strong>Booking event pipeline</strong>
+            <small>{{ booking_event_counts["pending"] }} pending · {{ booking_event_counts["delivered"] }} delivered · {{ booking_event_counts["failed"] }} failed</small>
+            {% if booking_events %}
+              <div class="invite-stack">
+                {% for event in booking_events %}
+                  <div class="mini-card">
+                    <strong>{{ event["event_label"] }}</strong>
+                    <small>{{ event["patient_name"] }}{% if event["starts_label"] %} · {{ event["starts_label"] }}{% endif %}</small>
+                    <small>Status: {{ event["delivery_status"] }}</small>
+                  </div>
+                {% endfor %}
+              </div>
+            {% else %}
+              <p style="margin-top:12px">No booking events have been recorded yet.</p>
+            {% endif %}
+          </article>
+        </div>
+      </section>
+
+      <section class="panel settings-panel" data-settings-panel="subscription">
+        <div class="panel-label">Subscription</div>
+        <h2>Usage snapshot</h2>
+        <p>This app does not yet have a full billing engine for subscription plans, but the section is integrated with live usage counts so it is no longer a dead mock panel.</p>
+        <div class="dashboard-grid">
+          <article class="mini-card">
+            <strong>{{ active_chiropractor_count }} active chiropractors</strong>
+            <small>{{ database_summary["counts"]["users"] }} total user accounts</small>
+            <small>{{ database_summary["counts"]["appointments"] }} appointments on record</small>
+          </article>
+          <article class="mini-card">
+            <strong>{{ database_summary["counts"]["services"] }} booking services</strong>
+            <small>{{ database_summary["counts"]["locations"] }} locations configured</small>
+            <small>{{ database_summary["counts"]["messages"] }} patient messages stored</small>
+          </article>
+        </div>
+      </section>
+    </div>
+  </section>
+{% endblock %}
+
+{% block scripts %}
+  {{ super() }}
+  <script>
+    (() => {
+      const searchInput = document.getElementById("settingsSearchInput");
+      const emptyState = document.getElementById("settingsSearchEmpty");
+      const buttons = Array.from(document.querySelectorAll(".settings-section-link"));
+      const panels = Array.from(document.querySelectorAll("[data-settings-panel]"));
+      if (!buttons.length || !panels.length) return;
+
+      function activate(sectionId, updateUrl = true) {
+        let activeButton = null;
+        buttons.forEach((button) => {
+          const isActive = button.dataset.target === sectionId && !button.hidden;
+          button.classList.toggle("active", isActive);
+          if (isActive) activeButton = button;
+        });
+        panels.forEach((panel) => {
+          panel.classList.toggle("is-hidden", panel.dataset.settingsPanel !== sectionId);
+        });
+        if (updateUrl && activeButton) {
+          const url = new URL(window.location.href);
+          url.searchParams.set("section", sectionId);
+          window.history.replaceState({}, "", url.toString());
+        }
+      }
+
+      function filterSections() {
+        const query = (searchInput.value || "").trim().toLowerCase();
+        let visibleButtons = 0;
+        buttons.forEach((button) => {
+          const haystack = button.dataset.search || "";
+          const visible = !query || haystack.includes(query);
+          button.hidden = !visible;
+          if (visible) visibleButtons += 1;
+        });
+        emptyState.hidden = visibleButtons !== 0;
+        const current = buttons.find((button) => button.classList.contains("active") && !button.hidden);
+        if (!current) {
+          const firstVisible = buttons.find((button) => !button.hidden);
+          if (firstVisible) activate(firstVisible.dataset.target);
+        }
+      }
+
+      buttons.forEach((button) => {
+        button.addEventListener("click", () => activate(button.dataset.target));
+      });
+      searchInput.addEventListener("input", filterSections);
+
+      const params = new URLSearchParams(window.location.search);
+      const initial = params.get("section") || "profile";
+      const firstVisible = buttons.find((button) => button.dataset.target === initial) || buttons[0];
+      activate(firstVisible.dataset.target, false);
+      filterSections();
+    })();
+  </script>
+{% endblock %}

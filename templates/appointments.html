@@ -1,13 +1,15 @@
 {% extends "base.html" %}
+{% from "_branding.html" import life_logo_mark %}
 
-{% block title %}Appointments · Life Chiropractic{% endblock %}
+{% block title %}Appointments · {{ ui_branding["clinic_name"] }}{% endblock %}
 
 {% block content %}
+  {% set booking_brand_name = ui_branding["clinic_name"] if ui_branding["show_portal_branding"] else "Patient Portal" %}
   <section class="hero-panel">
     <div>
       <div class="auth-eyebrow">Appointments</div>
       <h1>Your visit calendar.</h1>
-      <p>Track your booked appointments and see exactly whether each visit is your initial consultation, your Report of Findings, or part of your care plan.</p>
+      <p>Track your booked appointments and move through a Claude-style booking flow that stays synced with live service rules, calendar availability, and your current care plan.</p>
     </div>
     <div class="status-card">
       <span>Next visit</span>
@@ -35,6 +37,312 @@
       <span class="legend-chip sky">{{ schedule["counts"]["report_of_findings"] }} Report of Findings</span>
       <span class="legend-chip warm">{{ schedule["counts"]["care_plan"] }} Care Plan Visit</span>
     </div>
+  </section>
+
+  <section class="panel booking-wizard-panel">
+    <div class="booking-wizard-head">
+      <div class="booking-wizard-brand">
+        <div class="booking-wizard-brand-mark">{{ life_logo_mark(size=40) }}</div>
+        <div class="booking-wizard-brand-copy">
+          <small>Self-service booking</small>
+          <strong>{{ booking_brand_name }}</strong>
+        </div>
+      </div>
+      <div class="booking-wizard-meta">
+        <strong>Book available appointments 24/7 from your portal.</strong>
+        <small>Choose a service, pick a live slot, and confirm your booking with policy-driven availability.</small>
+      </div>
+    </div>
+
+    {% if booking_disabled_reason %}
+      <div class="info-box">{{ booking_disabled_reason }}</div>
+    {% endif %}
+
+    <form method="post" action="{{ url_for('main.self_book_appointment') }}" class="auth-form" id="portalBookingForm">
+      <fieldset {% if booking_disabled_reason %}disabled{% endif %} style="border:none;padding:0;margin:0;display:grid;gap:22px">
+        <select name="service_id" id="patientBookingService" hidden>
+          {% for service in service_options %}
+            <option
+              value="{{ service['id'] }}"
+              data-appointment-type="{{ service['appointment_type'] }}"
+              data-duration="{{ service['duration_minutes'] }}"
+              data-routing-mode="{{ service['routing_mode'] }}"
+              data-requires-payment="{{ 1 if service['requires_payment'] else 0 }}"
+              data-price-amount="{{ service['price_amount'] if service['price_amount'] is not none else '' }}"
+              data-currency="{{ service['currency'] }}"
+              data-description="{{ service['description'] }}"
+              data-appointment-type-label="{{ service['appointment_type_label'] }}"
+              data-routing-mode-label="{{ service['routing_mode_label'] }}"
+              data-min-notice-minutes="{{ service['min_notice_minutes'] }}"
+              data-max-bookings-per-day="{{ service['max_bookings_per_day'] if service['max_bookings_per_day'] is not none else '' }}"
+              {% if service['id'] == selected_service_id %}selected{% endif %}
+            >
+              {{ service["label"] }}
+            </option>
+          {% endfor %}
+        </select>
+        <input type="hidden" name="appointment_type" id="patientBookingTypeHidden" value="{{ booking_policy['appointment_type'] }}">
+        <input type="hidden" name="duration_minutes" id="patientBookingDurationHidden" value="{{ booking_policy['duration_minutes'] }}">
+        <input type="hidden" name="appointment_date" id="patientBookingDate" value="{{ booking_date }}">
+        <input type="hidden" name="slot_start" id="patientBookingSlot" value="">
+
+        <div class="booking-stepper" aria-label="Booking progress">
+          <div class="booking-stepper-item active" data-stepper-item="0">
+            <div class="booking-stepper-dot">1</div>
+            <div class="booking-stepper-copy">
+              <strong>Appointment Type</strong>
+              <small>Choose a service</small>
+            </div>
+          </div>
+          <div class="booking-stepper-line"></div>
+          <div class="booking-stepper-item" data-stepper-item="1">
+            <div class="booking-stepper-dot">2</div>
+            <div class="booking-stepper-copy">
+              <strong>Date &amp; Time</strong>
+              <small>Live availability</small>
+            </div>
+          </div>
+          <div class="booking-stepper-line"></div>
+          <div class="booking-stepper-item" data-stepper-item="2">
+            <div class="booking-stepper-dot">3</div>
+            <div class="booking-stepper-copy">
+              <strong>Booking Details</strong>
+              <small>Account and notes</small>
+            </div>
+          </div>
+          <div class="booking-stepper-line"></div>
+          <div class="booking-stepper-item" data-stepper-item="3">
+            <div class="booking-stepper-dot">4</div>
+            <div class="booking-stepper-copy">
+              <strong>Confirm</strong>
+              <small>Review and submit</small>
+            </div>
+          </div>
+        </div>
+
+        <section class="booking-step-panel" data-booking-step="0">
+          <div class="booking-step-head">
+            <h2>What type of appointment do you need?</h2>
+            <p>Select a live service from the clinic inventory. Each option below is connected to the same durations, notice periods, payment flags, and routing rules used by the staff calendar.</p>
+          </div>
+          <div class="booking-service-grid" id="patientBookingServiceCards">
+            {% for service in service_options %}
+              {% set service_code = 'CP' %}
+              {% if service['appointment_type'] == 'initial_consult' %}
+                {% set service_code = 'IC' %}
+              {% elif service['appointment_type'] == 'report_of_findings' %}
+                {% set service_code = 'ROF' %}
+              {% elif 'urgent' in service['service_key']|lower or 'acute' in service['label']|lower %}
+                {% set service_code = 'URG' %}
+              {% endif %}
+              <button
+                type="button"
+                class="booking-service-card{% if service['id'] == selected_service_id %} active{% endif %}"
+                data-service-card="{{ service['id'] }}"
+                aria-pressed="{{ 'true' if service['id'] == selected_service_id else 'false' }}"
+              >
+                <div class="booking-service-card-top">
+                  <div class="booking-service-icon">{{ service_code }}</div>
+                  <div class="booking-service-pick">&#10003;</div>
+                </div>
+                <div>
+                  <h3>{{ service["label"] }}</h3>
+                  <p>{{ service["description"] or service["appointment_type_label"] ~ ' booking connected to the live clinic calendar.' }}</p>
+                </div>
+                <div class="booking-service-meta">
+                  <span>{{ service["duration_minutes"] }} min</span>
+                  <span>{{ service["routing_mode_label"] }}</span>
+                  <span class="booking-service-price">
+                    {% if service["price_amount"] is not none %}
+                      {{ '%.2f'|format(service["price_amount"]) }} {{ service["currency"] }}
+                    {% else %}
+                      No pre-payment
+                    {% endif %}
+                  </span>
+                </div>
+                <div class="booking-service-note">
+                  {{ service["appointment_type_label"] }}{% if service["min_notice_minutes"] %} · {{ service["min_notice_minutes"] }} minute notice{% endif %}{% if service["max_bookings_per_day"] %} · max {{ service["max_bookings_per_day"] }}/day{% endif %}
+                </div>
+              </button>
+            {% endfor %}
+          </div>
+        </section>
+
+        <section class="booking-step-panel is-hidden" data-booking-step="1">
+          <div class="booking-step-head">
+            <h2>Choose a date and time</h2>
+            <p>Slots load from the same availability engine used by the clinic calendar, including shift windows, downtime blocks, booking limits, and chiropractor routing rules.</p>
+          </div>
+
+          <div class="booking-choice-grid">
+            <div class="booking-choice-column">
+              <div class="booking-control-card">
+                <div class="booking-control-grid">
+                  <label>
+                    <span>Location</span>
+                    <select name="location_id" id="patientBookingLocation" required>
+                      {% for option in location_options %}
+                        <option value="{{ option['value'] }}" {% if option['value'] == selected_location_id %}selected{% endif %}>{{ option["label"] }}</option>
+                      {% endfor %}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Chiropractor</span>
+                    <select name="clinician_user_id" id="patientBookingClinician" required>
+                      <option value="any" {% if selected_clinician_choice == 'any' %}selected{% endif %} {% if not allow_any_clinician %}hidden{% endif %}>Any available</option>
+                      {% for option in clinician_options %}
+                        <option value="{{ option['value'] }}" {% if selected_clinician_id is not none and option['value'] == selected_clinician_id %}selected{% endif %}>{{ option["label"] }}</option>
+                      {% endfor %}
+                    </select>
+                  </label>
+                </div>
+                <div class="booking-summary-card">
+                  <small id="patientServiceSummary">{{ booking_policy["service_label"] }} · {{ booking_policy["duration_minutes"] }} min · {{ booking_policy["routing_mode_label"] }}</small>
+                  <strong id="patientSelectedDateLabel">{{ booking_availability['date_label'] }}</strong>
+                  <p id="patientBookingPolicyHint">{{ booking_policy["min_notice_minutes"] }} minute minimum notice{% if booking_policy["max_bookings_per_day"] %} · max {{ booking_policy["max_bookings_per_day"] }} bookings per chiropractor/day{% endif %}.</p>
+                  <small id="patientPaymentHint">{% if booking_policy['requires_payment'] and booking_policy['price_amount'] is not none %}Payment due: {{ '%.2f'|format(booking_policy['price_amount']) }} {{ booking_policy['currency'] }}{% else %}No payment required at booking{% endif %}</small>
+                </div>
+              </div>
+
+              <div class="pb-mini-shell">
+                <div class="pb-mini-head">
+                  <strong id="patientMiniCalendarLabel">{{ schedule['calendar']['month_label'] }}</strong>
+                  <div class="pb-mini-nav">
+                    <button type="button" class="tiny-button" id="patientMiniCalendarPrev">Prev</button>
+                    <button type="button" class="tiny-button sky" id="patientMiniCalendarToday">Today</button>
+                    <button type="button" class="tiny-button" id="patientMiniCalendarNext">Next</button>
+                  </div>
+                </div>
+                <div class="pb-mini-weekdays">
+                  {% for day in ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] %}
+                    <span>{{ day }}</span>
+                  {% endfor %}
+                </div>
+                <div class="pb-mini-grid" id="patientMiniCalendarGrid"></div>
+              </div>
+            </div>
+
+            <div class="booking-choice-column">
+              <div class="booking-slot-panel">
+                <div class="booking-step-head" style="gap:4px">
+                  <h2 style="font-size:28px">Available time slot</h2>
+                  <p id="patientBookingSlotHint">{% if booking_availability['available_slots'] %}{{ booking_availability['available_slots']|length }} slots available for {{ booking_availability['date_label'] }}.{% else %}No slots are available for the selected filters.{% endif %}</p>
+                </div>
+                <div id="patientBookingSlotGroups"></div>
+              </div>
+
+              <div class="availability-board">
+                <div class="availability-group">
+                  <strong>Shift windows</strong>
+                  <div class="availability-chip-list" id="patientShiftWindows">
+                    {% for item in booking_availability["shift_windows"] %}
+                      <span class="availability-chip {{ item['window_tone'] }}">{{ item["label"] }} · {{ item["time_label"] }}</span>
+                    {% else %}
+                      <span class="muted-copy">No shift is configured for this day.</span>
+                    {% endfor %}
+                  </div>
+                </div>
+                <div class="availability-group">
+                  <strong>Downtime</strong>
+                  <div class="availability-chip-list" id="patientDowntimeWindows">
+                    {% for item in booking_availability["downtime_windows"] %}
+                      <span class="availability-chip {{ item['window_tone'] }}">{{ item["label"] }} · {{ item["time_label"] }}</span>
+                    {% else %}
+                      <span class="muted-copy">No downtime blocks are set for this day.</span>
+                    {% endfor %}
+                  </div>
+                </div>
+                <div class="availability-group">
+                  <strong>Already booked</strong>
+                  <div class="availability-chip-list" id="patientBookedWindows">
+                    {% for item in booking_availability["booked_windows"] %}
+                      <span class="availability-chip sky">{{ item["label"] }} · {{ item["time_label"] }}</span>
+                    {% else %}
+                      <span class="muted-copy">No scheduled visits are blocking this date yet.</span>
+                    {% endfor %}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="booking-step-panel is-hidden" data-booking-step="2">
+          <div class="booking-step-head">
+            <h2>Confirm the account and add any notes</h2>
+            <p>Your booking stays attached to the portal account you are currently using. Add anything the clinic should see before confirming the appointment.</p>
+          </div>
+          <div class="booking-profile-grid">
+            <div class="booking-profile-card">
+              <span>Patient</span>
+              <strong>{{ g.user['first_name'] }} {{ g.user['last_name'] }}</strong>
+              <small>This appointment will be stored against your patient record and shown in the clinic calendar immediately.</small>
+            </div>
+            <div class="booking-profile-card">
+              <span>Portal account</span>
+              <strong>{{ g.user['email'] }}</strong>
+              <small>Confirmation and reminder flows use the communication settings configured by the clinic.</small>
+            </div>
+          </div>
+          <label>
+            <span>Appointment details</span>
+            <textarea name="patient_details" id="patientDetailsInput" rows="5" placeholder="Tell the clinic anything important for this booking, or what you want covered."></textarea>
+            <small class="field-hint">This note is stored with the appointment and shown in the live calendar record.</small>
+          </label>
+        </section>
+
+        <section class="booking-step-panel is-hidden" data-booking-step="3">
+          <div class="booking-step-head">
+            <h2>Review and confirm</h2>
+            <p>The summary below comes from the selected service, the current availability engine, and your portal account. Submitting this form creates the appointment in the same system the staff calendar uses.</p>
+          </div>
+          <div class="booking-review-grid">
+            <div class="booking-review-card">
+              <h3>Booking summary</h3>
+              <div class="booking-review-list">
+                <div class="booking-review-row">
+                  <span>Service</span>
+                  <strong id="patientReviewService">{{ booking_policy['service_label'] }}</strong>
+                </div>
+                <div class="booking-review-row">
+                  <span>Date</span>
+                  <strong id="patientReviewDate">{{ booking_availability['date_label'] }}</strong>
+                </div>
+                <div class="booking-review-row">
+                  <span>Time</span>
+                  <strong id="patientReviewTime">Select a live slot</strong>
+                </div>
+                <div class="booking-review-row">
+                  <span>Location</span>
+                  <strong id="patientReviewLocation">{% if location_options %}{{ location_options[0]['label'] if selected_location_id is none else (location_options | selectattr('value', 'equalto', selected_location_id) | map(attribute='label') | list | first) }}{% endif %}</strong>
+                </div>
+                <div class="booking-review-row">
+                  <span>Chiropractor</span>
+                  <strong id="patientReviewClinician">{% if selected_clinician_choice == 'any' %}Any available{% elif clinician_options %}{% if selected_clinician_id is none %}{{ clinician_options[0]['label'] }}{% else %}{{ (clinician_options | selectattr('value', 'equalto', selected_clinician_id) | map(attribute='label') | list | first) }}{% endif %}{% endif %}</strong>
+                </div>
+                <div class="booking-review-row">
+                  <span>Account</span>
+                  <strong>{{ g.user['email'] }}</strong>
+                </div>
+              </div>
+            </div>
+
+            <div class="booking-review-highlight">
+              <small>Live booking policy</small>
+              <strong id="patientReviewCharge">{% if booking_policy['requires_payment'] and booking_policy['price_amount'] is not none %}{{ '%.2f'|format(booking_policy['price_amount']) }} {{ booking_policy['currency'] }} due at booking{% else %}No payment required at booking{% endif %}</strong>
+              <p id="patientReviewPolicy">{{ booking_policy['min_notice_minutes'] }} minute minimum notice{% if booking_policy['max_bookings_per_day'] %} · max {{ booking_policy['max_bookings_per_day'] }} bookings per chiropractor/day{% endif %}.</p>
+              <small id="patientReviewNote">Your appointment details note will be attached to the booking record.</small>
+            </div>
+          </div>
+        </section>
+
+        <div class="booking-wizard-actions">
+          <button type="button" class="tiny-button" id="patientBookingBack" hidden>Back</button>
+          <div class="booking-inline-note" id="patientBookingActionHint">Select a service to continue.</div>
+          <button type="button" class="primary-button" id="patientBookingNext">Continue</button>
+        </div>
+      </fieldset>
+    </form>
   </section>
 
   <section class="dashboard-grid">
@@ -74,123 +382,6 @@
       </div>
     </article>
 
-    <article class="panel">
-      <div class="panel-label">Self-service booking</div>
-      <p style="margin-top:10px">Book available appointments 24/7 from your portal. Choose a service, pick an available time, and confirm your booking with policy-driven availability.</p>
-      <form method="post" action="{{ url_for('main.self_book_appointment') }}" class="auth-form">
-        <div class="appointment-form-grid">
-          <input type="hidden" name="appointment_type" id="patientBookingTypeHidden" value="{{ booking_policy['appointment_type'] }}">
-          <input type="hidden" name="duration_minutes" id="patientBookingDurationHidden" value="{{ booking_policy['duration_minutes'] }}">
-          <label>
-            <span>Service</span>
-            <select name="service_id" id="patientBookingService" required>
-              {% for service in service_options %}
-                <option
-                  value="{{ service['id'] }}"
-                  data-appointment-type="{{ service['appointment_type'] }}"
-                  data-duration="{{ service['duration_minutes'] }}"
-                  data-routing-mode="{{ service['routing_mode'] }}"
-                  data-requires-payment="{{ 1 if service['requires_payment'] else 0 }}"
-                  data-price-amount="{{ service['price_amount'] if service['price_amount'] is not none else '' }}"
-                  data-currency="{{ service['currency'] }}"
-                  {% if service['id'] == selected_service_id %}selected{% endif %}
-                >
-                  {{ service["label"] }} · {{ service["duration_minutes"] }} min
-                </option>
-              {% endfor %}
-            </select>
-            <small class="field-hint" id="patientServiceSummary">{{ booking_policy["service_label"] }} · {{ booking_policy["duration_minutes"] }} min · {{ booking_policy["routing_mode_label"] }}</small>
-          </label>
-          <label>
-            <span>Location</span>
-            <select name="location_id" id="patientBookingLocation" required>
-              {% for option in location_options %}
-                <option value="{{ option['value'] }}" {% if option['value'] == selected_location_id %}selected{% endif %}>{{ option["label"] }}</option>
-              {% endfor %}
-            </select>
-          </label>
-          <label>
-            <span>Chiropractor</span>
-            <select name="clinician_user_id" id="patientBookingClinician" required>
-              <option value="any" {% if selected_clinician_choice == 'any' %}selected{% endif %} {% if not allow_any_clinician %}hidden{% endif %}>Any available</option>
-              {% for option in clinician_options %}
-                <option value="{{ option['value'] }}" {% if selected_clinician_id is not none and option['value'] == selected_clinician_id %}selected{% endif %}>{{ option["label"] }}</option>
-              {% endfor %}
-            </select>
-          </label>
-          <label>
-            <span>Date</span>
-            <input type="date" name="appointment_date" id="patientBookingDate" value="{{ booking_date }}" required>
-          </label>
-          <label>
-            <span>Duration</span>
-            <input type="text" id="patientBookingDurationDisplay" value="{{ booking_policy['duration_minutes'] }} minutes" readonly>
-            <small class="field-hint" id="patientBookingPolicyHint">
-              {{ booking_policy["min_notice_minutes"] }} minute minimum notice{% if booking_policy["max_bookings_per_day"] %} · max {{ booking_policy["max_bookings_per_day"] }} bookings per chiropractor/day{% endif %}.
-            </small>
-          </label>
-          <label>
-            <span>Available time slot</span>
-            <select name="slot_start" id="patientBookingSlot" required>
-              {% for slot in booking_availability["available_slots"] %}
-                <option value="{{ slot['value'] }}">{{ slot["label"] }}</option>
-              {% endfor %}
-            </select>
-            <small class="field-hint" id="patientBookingSlotHint">
-              {% if booking_availability["available_slots"] %}
-                {{ booking_availability["available_slots"]|length }} slots available for {{ booking_availability["date_label"] }}.
-              {% else %}
-                No slots are available for the selected filters.
-              {% endif %}
-            </small>
-          </label>
-          <label class="full">
-            <span>Appointment details</span>
-            <textarea name="patient_details" rows="4" placeholder="Tell the clinic anything important for this booking, or what you want covered."></textarea>
-          </label>
-          <label class="full">
-            <span>Payment</span>
-            <input type="text" id="patientPaymentHint" value="{% if booking_policy['requires_payment'] and booking_policy['price_amount'] is not none %}Payment due: {{ '%.2f'|format(booking_policy['price_amount']) }} {{ booking_policy['currency'] }}{% else %}No payment required at booking{% endif %}" readonly>
-          </label>
-        </div>
-        <div class="availability-board">
-          <div class="availability-group">
-            <strong>Shift windows</strong>
-            <div class="availability-chip-list" id="patientShiftWindows">
-              {% for item in booking_availability["shift_windows"] %}
-                <span class="availability-chip {{ item['window_tone'] }}">{{ item["label"] }} · {{ item["time_label"] }}</span>
-              {% else %}
-                <span class="muted-copy">No shift is configured for this day.</span>
-              {% endfor %}
-            </div>
-          </div>
-          <div class="availability-group">
-            <strong>Downtime</strong>
-            <div class="availability-chip-list" id="patientDowntimeWindows">
-              {% for item in booking_availability["downtime_windows"] %}
-                <span class="availability-chip {{ item['window_tone'] }}">{{ item["label"] }} · {{ item["time_label"] }}</span>
-              {% else %}
-                <span class="muted-copy">No downtime blocks are set for this day.</span>
-              {% endfor %}
-            </div>
-          </div>
-          <div class="availability-group">
-            <strong>Already booked</strong>
-            <div class="availability-chip-list" id="patientBookedWindows">
-              {% for item in booking_availability["booked_windows"] %}
-                <span class="availability-chip sky">{{ item["label"] }} · {{ item["time_label"] }}</span>
-              {% else %}
-                <span class="muted-copy">No scheduled visits are blocking this date yet.</span>
-              {% endfor %}
-            </div>
-          </div>
-        </div>
-        <button type="submit" class="primary-button">Confirm booking</button>
-      </form>
-    </article>
-  </section>
-
-  <section class="dashboard-grid">
     <article class="panel">
       <div class="panel-label">Upcoming visits</div>
       {% if schedule["upcoming"] %}
@@ -287,30 +478,182 @@
 {% block scripts %}
   <script>
     (() => {
+      const form = document.getElementById("portalBookingForm");
       const serviceInput = document.getElementById("patientBookingService");
       const typeHiddenInput = document.getElementById("patientBookingTypeHidden");
       const durationHiddenInput = document.getElementById("patientBookingDurationHidden");
-      const durationDisplay = document.getElementById("patientBookingDurationDisplay");
-      const serviceSummary = document.getElementById("patientServiceSummary");
-      const policyHint = document.getElementById("patientBookingPolicyHint");
-      const paymentHint = document.getElementById("patientPaymentHint");
       const locationInput = document.getElementById("patientBookingLocation");
       const clinicianInput = document.getElementById("patientBookingClinician");
       const dateInput = document.getElementById("patientBookingDate");
       const slotInput = document.getElementById("patientBookingSlot");
+      const serviceCards = Array.from(document.querySelectorAll("[data-service-card]"));
+      const panels = Array.from(document.querySelectorAll("[data-booking-step]"));
+      const stepperItems = Array.from(document.querySelectorAll("[data-stepper-item]"));
+      const nextButton = document.getElementById("patientBookingNext");
+      const backButton = document.getElementById("patientBookingBack");
+      const actionHint = document.getElementById("patientBookingActionHint");
+      const serviceSummary = document.getElementById("patientServiceSummary");
+      const selectedDateLabel = document.getElementById("patientSelectedDateLabel");
       const slotHint = document.getElementById("patientBookingSlotHint");
+      const policyHint = document.getElementById("patientBookingPolicyHint");
+      const paymentHint = document.getElementById("patientPaymentHint");
       const shiftWrap = document.getElementById("patientShiftWindows");
       const downtimeWrap = document.getElementById("patientDowntimeWindows");
       const bookedWrap = document.getElementById("patientBookedWindows");
+      const miniCalendarLabel = document.getElementById("patientMiniCalendarLabel");
+      const miniCalendarGrid = document.getElementById("patientMiniCalendarGrid");
+      const miniCalendarPrev = document.getElementById("patientMiniCalendarPrev");
+      const miniCalendarNext = document.getElementById("patientMiniCalendarNext");
+      const miniCalendarToday = document.getElementById("patientMiniCalendarToday");
+      const slotGroups = document.getElementById("patientBookingSlotGroups");
+      const detailsInput = document.getElementById("patientDetailsInput");
+      const reviewService = document.getElementById("patientReviewService");
+      const reviewDate = document.getElementById("patientReviewDate");
+      const reviewTime = document.getElementById("patientReviewTime");
+      const reviewLocation = document.getElementById("patientReviewLocation");
+      const reviewClinician = document.getElementById("patientReviewClinician");
+      const reviewCharge = document.getElementById("patientReviewCharge");
+      const reviewPolicy = document.getElementById("patientReviewPolicy");
+      const reviewNote = document.getElementById("patientReviewNote");
       const availabilityUrl = "{{ url_for('main.api_availability') }}";
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
 
-      if (!serviceInput || !locationInput || !clinicianInput || !dateInput || !slotInput) {
+      if (!form || !serviceInput || !dateInput || !slotInput || !nextButton || !backButton) {
         return;
       }
 
-      function render(container, items, emptyMessage, fallbackTone = "") {
+      let currentStep = 0;
+      let latestAvailability = null;
+      let monthAnchor = parseDateValue(dateInput.value) || new Date();
+      monthAnchor = new Date(monthAnchor.getFullYear(), monthAnchor.getMonth(), 1);
+
+      function parseDateValue(value) {
+        if (!value) return null;
+        const parts = value.split("-").map(Number);
+        if (parts.length !== 3 || parts.some((item) => Number.isNaN(item))) {
+          return null;
+        }
+        return new Date(parts[0], parts[1] - 1, parts[2]);
+      }
+
+      function formatDateValue(value) {
+        const year = value.getFullYear();
+        const month = String(value.getMonth() + 1).padStart(2, "0");
+        const day = String(value.getDate()).padStart(2, "0");
+        return `${year}-${month}-${day}`;
+      }
+
+      function parseSlotValue(value) {
+        if (!value || typeof value !== "string") return null;
+        const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+        if (!match) return null;
+        return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), Number(match[4]), Number(match[5]));
+      }
+
+      function formatFriendlyDate(value) {
+        if (!(value instanceof Date) || Number.isNaN(value.getTime())) return "Select a date";
+        return value.toLocaleDateString("en-GB", {
+          weekday: "long",
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+        });
+      }
+
+      function selectedServiceOption() {
+        return serviceInput.options[serviceInput.selectedIndex] || null;
+      }
+
+      function selectedLocationLabel() {
+        const option = locationInput.options[locationInput.selectedIndex];
+        return option ? option.textContent : "Select a location";
+      }
+
+      function selectedClinicianLabel() {
+        const option = clinicianInput.options[clinicianInput.selectedIndex];
+        if (!option) return "Select a chiropractor";
+        return option.value === "any" ? "Any available chiropractor" : option.textContent;
+      }
+
+      function selectedSlotLabel() {
+        return slotInput.dataset.label || "Select a live slot";
+      }
+
+      function servicePolicyText(availability) {
+        const maxText = availability && availability.max_bookings_per_day
+          ? ` · max ${availability.max_bookings_per_day} bookings per chiropractor/day`
+          : "";
+        const option = selectedServiceOption();
+        const noticeMinutes = availability ? availability.min_notice_minutes : Number((option && option.dataset.minNoticeMinutes) || 0);
+        return `${noticeMinutes} minute minimum notice${maxText}.`;
+      }
+
+      function paymentText(availability) {
+        if (availability && availability.requires_payment && availability.price_amount !== null) {
+          return `Payment due: ${Number(availability.price_amount).toFixed(2)} ${availability.currency}`;
+        }
+        const option = selectedServiceOption();
+        if (!option) return "No payment required at booking";
+        if (option.dataset.requiresPayment === "1" && option.dataset.priceAmount) {
+          return `Payment due: ${Number(option.dataset.priceAmount).toFixed(2)} ${option.dataset.currency || "GBP"}`;
+        }
+        return "No payment required at booking";
+      }
+
+      function updateServiceCards() {
+        const selectedId = serviceInput.value;
+        serviceCards.forEach((card) => {
+          const isActive = card.dataset.serviceCard === selectedId;
+          card.classList.toggle("active", isActive);
+          card.setAttribute("aria-pressed", isActive ? "true" : "false");
+        });
+      }
+
+      function syncServiceFields() {
+        const option = selectedServiceOption();
+        if (!option) return;
+
+        const appointmentType = option.dataset.appointmentType || "care_plan";
+        const duration = option.dataset.duration || "30";
+        const routingMode = option.dataset.routingMode || "specific_clinician";
+        const description = option.dataset.description || `${option.textContent.trim()} linked to the live clinic calendar.`;
+        const routingLabel = option.dataset.routingModeLabel || (routingMode === "team_round_robin" ? "Any available chiropractor" : "Specific chiropractor");
+        const durationLabel = `${duration} min`;
+
+        typeHiddenInput.value = appointmentType;
+        durationHiddenInput.value = duration;
+        serviceSummary.textContent = `${option.textContent.trim()} · ${durationLabel} · ${routingLabel}`;
+        policyHint.textContent = servicePolicyText(latestAvailability);
+        paymentHint.textContent = paymentText(latestAvailability);
+        reviewService.textContent = option.textContent.trim();
+        const reviewChargeText = paymentText(latestAvailability);
+        reviewCharge.textContent = reviewChargeText.startsWith("Payment due: ")
+          ? `${reviewChargeText.replace("Payment due: ", "")} due at booking`
+          : reviewChargeText;
+        reviewPolicy.textContent = servicePolicyText(latestAvailability);
+        actionHint.textContent = description;
+
+        const anyOption = clinicianInput.querySelector('option[value="any"]');
+        const teamMode = routingMode === "team_round_robin";
+        if (anyOption) {
+          anyOption.hidden = !teamMode;
+          if (!teamMode && clinicianInput.value === "any") {
+            const firstClinician = clinicianInput.querySelector("option[value]:not([value='any'])");
+            if (firstClinician) clinicianInput.value = firstClinician.value;
+          }
+          if (teamMode && !clinicianInput.value) {
+            clinicianInput.value = "any";
+          }
+        }
+
+        updateServiceCards();
+        updateReview();
+      }
+
+      function renderChips(container, items, emptyMessage, fallbackTone = "") {
         if (!container) return;
-        if (!items.length) {
+        if (!items || !items.length) {
           container.innerHTML = `<span class="muted-copy">${emptyMessage}</span>`;
           return;
         }
@@ -321,101 +664,299 @@
         }).join("");
       }
 
-      function currentServiceOption() {
-        return serviceInput.options[serviceInput.selectedIndex] || null;
+      function slotGroupName(date) {
+        const hour = date.getHours();
+        if (hour < 12) return "Morning";
+        if (hour < 17) return "Afternoon";
+        return "Evening";
       }
 
-      function syncServiceFields() {
-        const option = currentServiceOption();
-        if (!option) return;
-
-        const appointmentType = option.dataset.appointmentType || "care_plan";
-        const duration = option.dataset.duration || "30";
-        const routingMode = option.dataset.routingMode || "specific_clinician";
-        const requiresPayment = option.dataset.requiresPayment === "1";
-        const priceAmount = option.dataset.priceAmount;
-        const currency = option.dataset.currency || "GBP";
-
-        if (typeHiddenInput) typeHiddenInput.value = appointmentType;
-        if (durationHiddenInput) durationHiddenInput.value = duration;
-        if (durationDisplay) durationDisplay.value = `${duration} minutes`;
-        if (serviceSummary) {
-          const routingLabel = routingMode === "team_round_robin" ? "Any available chiropractor" : "Specific chiropractor";
-          serviceSummary.textContent = `${option.textContent.trim()} · ${routingLabel}`;
+      function renderSlotGroups(availability) {
+        if (!slotGroups) return;
+        if (!availability) {
+          slotGroups.innerHTML = '<div class="booking-slot-message">Choose a service and date to load availability.</div>';
+          return;
         }
-        if (paymentHint) {
-          paymentHint.value = requiresPayment && priceAmount
-            ? `Payment due: ${Number(priceAmount).toFixed(2)} ${currency}`
-            : "No payment required at booking";
+        if (availability.error) {
+          slotGroups.innerHTML = `<div class="booking-slot-message">${availability.error}</div>`;
+          return;
+        }
+        if (!availability.available_slots.length) {
+          slotGroups.innerHTML = '<div class="booking-slot-empty">No slots are available for the current filters. Try another service, date, or chiropractor.</div>';
+          return;
         }
 
-        const anyOption = clinicianInput.querySelector('option[value="any"]');
-        const teamMode = routingMode === "team_round_robin";
-        if (anyOption) {
-          anyOption.hidden = !teamMode;
-          if (!teamMode && clinicianInput.value === "any") {
-            const firstClinician = clinicianInput.querySelector("option[value]:not([value='any'])");
-            if (firstClinician) clinicianInput.value = firstClinician.value;
+        const grouped = { Morning: [], Afternoon: [], Evening: [] };
+        availability.available_slots.forEach((slot) => {
+          const parsed = parseSlotValue(slot.value);
+          const group = parsed ? slotGroupName(parsed) : "Afternoon";
+          grouped[group].push(slot);
+        });
+
+        slotGroups.innerHTML = Object.entries(grouped)
+          .filter(([, items]) => items.length)
+          .map(([label, items]) => {
+            const grid = items.map((slot) => {
+              const active = slot.value === slotInput.value;
+              return `<button type="button" class="booking-slot-option${active ? ' active' : ''}" data-slot-value="${slot.value}" data-slot-label="${slot.label}">${slot.start_label}</button>`;
+            }).join("");
+            return `<div class="booking-slot-group"><h3>${label}</h3><div class="booking-slot-grid">${grid}</div></div>`;
+          })
+          .join("");
+      }
+
+      function renderMiniCalendar() {
+        if (!miniCalendarGrid || !miniCalendarLabel) return;
+
+        const selectedDate = parseDateValue(dateInput.value) || today;
+        miniCalendarLabel.textContent = monthAnchor.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+        const monthStart = new Date(monthAnchor.getFullYear(), monthAnchor.getMonth(), 1);
+        const gridStart = new Date(monthStart);
+        const firstWeekday = (monthStart.getDay() + 6) % 7;
+        gridStart.setDate(monthStart.getDate() - firstWeekday);
+        const todayKey = formatDateValue(today);
+        const selectedKey = formatDateValue(selectedDate);
+
+        const cells = [];
+        for (let index = 0; index < 42; index += 1) {
+          const current = new Date(gridStart);
+          current.setDate(gridStart.getDate() + index);
+          const iso = formatDateValue(current);
+          const outside = current.getMonth() !== monthAnchor.getMonth();
+          const disabled = current < today;
+          cells.push(`
+            <button
+              type="button"
+              class="pb-mini-day${outside ? ' outside' : ''}${iso === todayKey ? ' today' : ''}${iso === selectedKey ? ' selected' : ''}"
+              data-date="${iso}"
+              ${disabled ? 'disabled' : ''}
+            >
+              ${current.getDate()}
+            </button>
+          `);
+        }
+        miniCalendarGrid.innerHTML = cells.join("");
+      }
+
+      function updateReview() {
+        const selectedDate = parseDateValue(dateInput.value);
+        if (selectedDateLabel) selectedDateLabel.textContent = formatFriendlyDate(selectedDate);
+        reviewDate.textContent = formatFriendlyDate(selectedDate);
+        reviewTime.textContent = selectedSlotLabel();
+        reviewLocation.textContent = selectedLocationLabel();
+        reviewClinician.textContent = selectedClinicianLabel();
+        reviewNote.textContent = detailsInput.value.trim()
+          ? detailsInput.value.trim()
+          : "No extra booking details added. You can still confirm the appointment.";
+      }
+
+      function updateStepUI() {
+        panels.forEach((panel) => {
+          const step = Number(panel.dataset.bookingStep);
+          panel.classList.toggle("is-hidden", step !== currentStep);
+        });
+        stepperItems.forEach((item) => {
+          const step = Number(item.dataset.stepperItem);
+          item.classList.toggle("active", step === currentStep);
+          item.classList.toggle("complete", step < currentStep);
+          const dot = item.querySelector(".booking-stepper-dot");
+          if (dot) {
+            dot.textContent = step < currentStep ? "OK" : String(step + 1);
           }
+        });
+        backButton.hidden = currentStep === 0;
+        nextButton.textContent = currentStep === 3 ? "Confirm booking" : "Continue";
+        nextButton.type = currentStep === 3 ? "submit" : "button";
+        if (currentStep === 0) {
+          actionHint.textContent = selectedServiceOption()
+            ? (selectedServiceOption().dataset.description || "Selected service is connected to the live booking inventory.")
+            : "Select a service to continue.";
+        } else if (currentStep === 1) {
+          actionHint.textContent = slotInput.value
+            ? `Selected slot: ${selectedSlotLabel()}`
+            : "Choose a live slot to continue.";
+        } else if (currentStep === 2) {
+          actionHint.textContent = "Add optional details for the clinic or continue to review the booking.";
+        } else {
+          actionHint.textContent = "Submitting this form creates the appointment in the live calendar.";
         }
+      }
+
+      function canAdvance() {
+        if (currentStep === 0) {
+          return Boolean(serviceInput.value);
+        }
+        if (currentStep === 1) {
+          const option = selectedServiceOption();
+          const routingMode = option && option.dataset ? option.dataset.routingMode : "specific_clinician";
+          const clinicianValid = routingMode === "team_round_robin" ? Boolean(clinicianInput.value) : Boolean(clinicianInput.value && clinicianInput.value !== "any");
+          return Boolean(serviceInput.value && locationInput.value && dateInput.value && slotInput.value && clinicianValid);
+        }
+        return true;
+      }
+
+      function moveStep(direction) {
+        const target = currentStep + direction;
+        if (target < 0 || target > 3) return;
+        if (direction > 0 && !canAdvance()) return;
+        currentStep = target;
+        updateStepUI();
       }
 
       async function loadAvailability() {
         syncServiceFields();
+        const previousSlot = slotInput.value;
         const params = new URLSearchParams({
           service_id: serviceInput.value,
-          appointment_type: typeHiddenInput ? typeHiddenInput.value : "",
+          appointment_type: typeHiddenInput.value,
           clinician_user_id: clinicianInput.value,
           location_id: locationInput.value,
           date: dateInput.value,
-          duration_minutes: durationHiddenInput ? durationHiddenInput.value : "",
+          duration_minutes: durationHiddenInput.value,
         });
-        const response = await fetch(`${availabilityUrl}?${params.toString()}`, {
-          headers: { "X-Requested-With": "fetch" },
-        });
-        if (!response.ok) {
-          slotInput.innerHTML = "";
-          slotInput.disabled = true;
-          slotHint.textContent = "Could not load availability.";
+
+        try {
+          const response = await fetch(`${availabilityUrl}?${params.toString()}`, {
+            headers: { "X-Requested-With": "fetch" },
+          });
+          if (!response.ok) {
+            throw new Error("Failed to load availability");
+          }
+          const payload = await response.json();
+          latestAvailability = payload.availability;
+        } catch (_) {
+          latestAvailability = null;
+          slotInput.value = "";
+          slotInput.dataset.label = "";
+          slotHint.textContent = "Could not load availability for this date.";
+          renderSlotGroups(null);
+          renderChips(shiftWrap, [], "No shift is configured for this day.");
+          renderChips(downtimeWrap, [], "No downtime blocks are set for this day.");
+          renderChips(bookedWrap, [], "No scheduled visits are blocking this date yet.", "sky");
+          updateReview();
+          updateStepUI();
           return;
         }
-        const payload = await response.json();
-        const availability = payload.availability;
-        slotInput.innerHTML = "";
-        for (const item of availability.available_slots) {
-          const option = document.createElement("option");
-          option.value = item.value;
-          option.textContent = item.label;
-          slotInput.appendChild(option);
-        }
-        slotInput.disabled = availability.available_slots.length === 0;
+
+        const availability = latestAvailability;
+        policyHint.textContent = servicePolicyText(availability);
+        paymentHint.textContent = paymentText(availability);
+        const reviewChargeText = paymentText(availability);
+        reviewCharge.textContent = reviewChargeText.startsWith("Payment due: ")
+          ? `${reviewChargeText.replace("Payment due: ", "")} due at booking`
+          : reviewChargeText;
+        reviewPolicy.textContent = servicePolicyText(availability);
+        selectedDateLabel.textContent = availability.date_label;
+        reviewDate.textContent = availability.date_label;
         slotHint.textContent = availability.available_slots.length
           ? `${availability.available_slots.length} slots available for ${availability.date_label}.`
-          : "No slots are available for the selected filters.";
-        if (durationDisplay) durationDisplay.value = `${availability.duration_minutes} minutes`;
-        if (durationHiddenInput) durationHiddenInput.value = String(availability.duration_minutes);
-        if (typeHiddenInput) typeHiddenInput.value = availability.appointment_type || typeHiddenInput.value;
-        if (policyHint) {
-          const maxText = availability.max_bookings_per_day
-            ? ` · max ${availability.max_bookings_per_day} bookings per chiropractor/day`
-            : "";
-          policyHint.textContent = `${availability.min_notice_minutes} minute minimum notice${maxText}.`;
+          : (availability.error || "No slots are available for the selected filters.");
+        renderChips(shiftWrap, availability.shift_windows, "No shift is configured for this day.");
+        renderChips(downtimeWrap, availability.downtime_windows, "No downtime blocks are set for this day.");
+        renderChips(bookedWrap, availability.booked_windows, "No scheduled visits are blocking this date yet.", "sky");
+
+        const currentOption = availability.available_slots.find((slot) => slot.value === previousSlot) || availability.available_slots[0] || null;
+        if (currentOption) {
+          slotInput.value = currentOption.value;
+          slotInput.dataset.label = currentOption.label;
+        } else {
+          slotInput.value = "";
+          slotInput.dataset.label = "";
         }
-        if (paymentHint) {
-          paymentHint.value = availability.requires_payment && availability.price_amount !== null
-            ? `Payment due: ${Number(availability.price_amount).toFixed(2)} ${availability.currency}`
-            : "No payment required at booking";
-        }
-        render(shiftWrap, availability.shift_windows, "No shift is configured for this day.");
-        render(downtimeWrap, availability.downtime_windows, "No downtime blocks are set for this day.");
-        render(bookedWrap, availability.booked_windows, "No scheduled visits are blocking this date yet.", "sky");
+
+        renderSlotGroups(availability);
+        updateReview();
+        updateStepUI();
       }
 
-      serviceInput.addEventListener("change", loadAvailability);
-      locationInput.addEventListener("change", loadAvailability);
-      clinicianInput.addEventListener("change", loadAvailability);
-      dateInput.addEventListener("change", loadAvailability);
+      serviceCards.forEach((card) => {
+        card.addEventListener("click", () => {
+          serviceInput.value = card.dataset.serviceCard;
+          slotInput.value = "";
+          slotInput.dataset.label = "";
+          syncServiceFields();
+          loadAvailability();
+        });
+      });
+
+      locationInput.addEventListener("change", () => {
+        slotInput.value = "";
+        slotInput.dataset.label = "";
+        updateReview();
+        loadAvailability();
+      });
+      clinicianInput.addEventListener("change", () => {
+        slotInput.value = "";
+        slotInput.dataset.label = "";
+        updateReview();
+        loadAvailability();
+      });
+      detailsInput.addEventListener("input", updateReview);
+      nextButton.addEventListener("click", (event) => {
+        if (currentStep < 3) {
+          event.preventDefault();
+          moveStep(1);
+        }
+      });
+      backButton.addEventListener("click", () => moveStep(-1));
+
+      if (miniCalendarGrid) {
+        miniCalendarGrid.addEventListener("click", (event) => {
+          const target = event.target.closest("[data-date]");
+          if (!target || target.disabled) return;
+          dateInput.value = target.dataset.date;
+          monthAnchor = new Date(target.dataset.date + "T00:00");
+          monthAnchor = new Date(monthAnchor.getFullYear(), monthAnchor.getMonth(), 1);
+          slotInput.value = "";
+          slotInput.dataset.label = "";
+          renderMiniCalendar();
+          updateReview();
+          loadAvailability();
+        });
+      }
+
+      if (slotGroups) {
+        slotGroups.addEventListener("click", (event) => {
+          const target = event.target.closest("[data-slot-value]");
+          if (!target) return;
+          slotInput.value = target.dataset.slotValue;
+          slotInput.dataset.label = target.dataset.slotLabel || target.textContent.trim();
+          renderSlotGroups(latestAvailability);
+          updateReview();
+          updateStepUI();
+        });
+      }
+
+      if (miniCalendarPrev) {
+        miniCalendarPrev.addEventListener("click", () => {
+          monthAnchor = new Date(monthAnchor.getFullYear(), monthAnchor.getMonth() - 1, 1);
+          renderMiniCalendar();
+        });
+      }
+      if (miniCalendarNext) {
+        miniCalendarNext.addEventListener("click", () => {
+          monthAnchor = new Date(monthAnchor.getFullYear(), monthAnchor.getMonth() + 1, 1);
+          renderMiniCalendar();
+        });
+      }
+      if (miniCalendarToday) {
+        miniCalendarToday.addEventListener("click", () => {
+          const nextDate = today > (parseDateValue(dateInput.value) || today) ? today : (parseDateValue(dateInput.value) || today);
+          monthAnchor = new Date(nextDate.getFullYear(), nextDate.getMonth(), 1);
+          dateInput.value = formatDateValue(nextDate);
+          slotInput.value = "";
+          slotInput.dataset.label = "";
+          renderMiniCalendar();
+          updateReview();
+          loadAvailability();
+        });
+      }
+
       syncServiceFields();
+      renderMiniCalendar();
+      updateReview();
+      updateStepUI();
+      loadAvailability();
     })();
   </script>
 {% endblock %}

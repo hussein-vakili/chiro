@@ -747,6 +747,148 @@ class PortalFlowTestCase(unittest.TestCase):
         self.assertIn("Your dashboard is the home screen", response.get_data(as_text=True))
         self.assertIn("Open calendar", response.get_data(as_text=True))
 
+    def test_staff_care_plan_calendar_sync(self) -> None:
+        staff_id = self.create_staff_user()
+        self.login_staff()
+
+        with self.app.app_context():
+            db = get_db()
+            patient_id = db.execute(
+                """
+                INSERT INTO users (first_name, last_name, email, password_hash, role, created_at)
+                VALUES (?, ?, ?, ?, 'client', ?)
+                """,
+                (
+                    "Mark",
+                    "Hughes",
+                    "mark@example.com",
+                    generate_password_hash("patientpass123", method="pbkdf2:sha256"),
+                    iso_now(),
+                ),
+            ).lastrowid
+            main_location_id = db.execute(
+                "SELECT id FROM locations WHERE slug = 'main-clinic'"
+            ).fetchone()["id"]
+            care_plan_service_id = db.execute(
+                "SELECT id FROM appointment_services WHERE service_key = 'follow_up_15'"
+            ).fetchone()["id"]
+            db.commit()
+
+        first_visit_start, _ = self.appointment_slot(days_from_now=4, hour=9, minute=15, duration_minutes=15)
+
+        response = self.client.post(
+            f"/staff/patients/{patient_id}/care-plan",
+            data={
+                "service_id": str(care_plan_service_id),
+                "appointment_type": "care_plan",
+                "clinician_user_id": str(staff_id),
+                "location_id": str(main_location_id),
+                "appointment_date": first_visit_start[:10],
+                "duration_minutes": "15",
+                "slot_increment_minutes": "15",
+                "slot_start": first_visit_start,
+                "patient_details": "Follow the 3-week reset care plan.",
+                "note": "Generated from the care plan calendar.",
+                "frequency_per_week": "2",
+                "duration_weeks": "3",
+                "care_plan_booking_mode": "as_you_go",
+                "care_plan_title": "3-week reset",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("Care plan created", html)
+        self.assertIn("3-week reset", html)
+        self.assertIn("Book next visit in live diary", html)
+        self.assertIn("Load into diary", html)
+
+        with self.app.app_context():
+            db = get_db()
+            care_plan = db.execute(
+                "SELECT * FROM care_plans WHERE patient_user_id = ? ORDER BY id DESC LIMIT 1",
+                (patient_id,),
+            ).fetchone()
+            visits = db.execute(
+                "SELECT * FROM care_plan_visits WHERE care_plan_id = ? ORDER BY visit_number ASC",
+                (care_plan["id"],),
+            ).fetchall()
+        self.assertIsNotNone(care_plan)
+        self.assertEqual(care_plan["title"], "3-week reset")
+        self.assertEqual(care_plan["total_visits"], 6)
+        self.assertEqual(len(visits), 6)
+        self.assertEqual(visits[0]["status"], "scheduled")
+        self.assertEqual(visits[0]["booked"], 1)
+        self.assertEqual(visits[2]["visit_kind"], "progress_check")
+        self.assertEqual(visits[5]["visit_kind"], "reassessment")
+        self.assertEqual(sum(1 for row in visits if row["status"] == "unbooked"), 5)
+
+        next_visit = visits[1]
+        next_visit_start = next_visit["suggested_starts_at"]
+        response = self.client.post(
+            f"/staff/patients/{patient_id}/appointments",
+            data={
+                "service_id": str(care_plan_service_id),
+                "appointment_type": "care_plan",
+                "clinician_user_id": str(staff_id),
+                "location_id": str(main_location_id),
+                "appointment_date": next_visit_start[:10],
+                "duration_minutes": str(next_visit["duration_minutes"]),
+                "slot_start": next_visit_start,
+                "repeat_count": "1",
+                "repeat_every_days": "7",
+                "patient_details": next_visit["patient_details"],
+                "note": next_visit["note"],
+                "care_plan_visit_id": str(next_visit["id"]),
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Care Plan Visit (Visit 2) scheduled.", response.get_data(as_text=True))
+
+        with self.app.app_context():
+            db = get_db()
+            linked_visit = db.execute(
+                "SELECT * FROM care_plan_visits WHERE id = ?",
+                (next_visit["id"],),
+            ).fetchone()
+            linked_appointment = db.execute(
+                "SELECT * FROM appointments WHERE id = ?",
+                (linked_visit["appointment_id"],),
+            ).fetchone()
+        self.assertEqual(linked_visit["status"], "scheduled")
+        self.assertEqual(linked_visit["booked"], 1)
+        self.assertIsNotNone(linked_appointment)
+
+        response = self.client.post(
+            f"/staff/patients/{patient_id}/appointments/{linked_appointment['id']}",
+            data={
+                "action": "complete",
+                "appointment_type": "care_plan",
+                "status": "scheduled",
+                "location_id": str(main_location_id),
+                "clinician_user_id": str(staff_id),
+                "starts_at": linked_appointment["starts_at"],
+                "ends_at": linked_appointment["ends_at"] or "",
+                "note": linked_appointment["note"],
+                "patient_details": linked_appointment["patient_details"],
+                "clinical_note": linked_appointment["clinical_note"],
+                "billing_status": linked_appointment["billing_status"],
+                "billing_code": linked_appointment["billing_code"],
+                "billing_amount": linked_appointment["billing_amount"] if linked_appointment["billing_amount"] is not None else "",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Appointment marked completed", response.get_data(as_text=True))
+
+        with self.app.app_context():
+            synced_visit = get_db().execute(
+                "SELECT status FROM care_plan_visits WHERE id = ?",
+                (next_visit["id"],),
+            ).fetchone()
+        self.assertEqual(synced_visit["status"], "completed")
+
     def test_staff_learning_portal_progress(self) -> None:
         staff_user_id = self.create_staff_user()
         self.login_staff()
@@ -786,6 +928,114 @@ class PortalFlowTestCase(unittest.TestCase):
         self.assertIsNotNone(row)
         self.assertEqual(row["is_completed"], 0)
         self.assertEqual(row["reflection"], "Need to revisit adjustment dosage guidance.")
+
+    def test_staff_settings_controls(self) -> None:
+        staff_id = self.create_staff_user()
+        self.login_staff()
+
+        response = self.client.get("/staff/settings")
+        self.assertEqual(response.status_code, 200)
+        settings_html = response.get_data(as_text=True)
+        self.assertIn("Settings workspace", settings_html)
+        self.assertIn("Profile &amp; Practice", settings_html)
+        self.assertIn("Subscription", settings_html)
+        self.assertIn("Download SQLite backup", settings_html)
+
+        response = self.client.post(
+            "/staff/settings/general",
+            data={
+                "calendar_time_format": "12h",
+                "calendar_slot_increment_minutes": "5",
+                "booking_search_window_days": "14",
+                "booking_cancellation_hours": "48",
+                "max_active_chiropractors": "2",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        updated_html = response.get_data(as_text=True)
+        self.assertIn("Settings updated.", updated_html)
+        self.assertIn("9:00 AM - 5:00 PM", updated_html)
+
+        with self.app.app_context():
+            db = get_db()
+            settings_rows = db.execute(
+                "SELECT setting_key, setting_value FROM app_settings"
+            ).fetchall()
+            settings_map = {row["setting_key"]: row["setting_value"] for row in settings_rows}
+            self.assertEqual(settings_map["calendar_time_format"], "12h")
+            self.assertEqual(settings_map["calendar_slot_increment_minutes"], "5")
+            self.assertEqual(settings_map["booking_search_window_days"], "14")
+            self.assertEqual(settings_map["booking_cancellation_hours"], "48")
+            self.assertEqual(settings_map["max_active_chiropractors"], "2")
+            main_location_id = db.execute(
+                "SELECT id FROM locations WHERE slug = 'main-clinic'"
+            ).fetchone()["id"]
+
+        availability_date = (date.today() + timedelta(days=1)).isoformat()
+        response = self.client.get(
+            f"/staff/availability?date={availability_date}&clinician_user_id={staff_id}&location_id={main_location_id}&duration_minutes=30"
+        )
+        self.assertEqual(response.status_code, 200)
+        availability_payload = response.get_json()
+        self.assertEqual(availability_payload["slot_increment_minutes"], 5)
+        self.assertTrue(any(item["time_label"] == "12:00 PM - 1:00 PM" for item in availability_payload["downtime_windows"]))
+
+        response = self.client.post(
+            "/staff/settings/preferences/profile",
+            data={
+                "practice_practitioner_name": "Dr Stone",
+                "practice_registration_number": "GCC-12345",
+                "practice_qualifications": "DC",
+                "practice_clinic_name": "Summit Chiropractic",
+                "practice_email": "clinic@summit.test",
+                "practice_phone": "555-1111",
+                "practice_address": "1 Summit Street",
+                "practice_bio": "Focused on practical chiropractic care.",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        profile_html = response.get_data(as_text=True)
+        self.assertIn("Summit Chiropractic", profile_html)
+
+        response = self.client.post(
+            "/staff/settings/chiropractors",
+            data={
+                "first_name": "Maya",
+                "last_name": "Blue",
+                "email": "maya.blue@example.com",
+                "password": "chiroPass123",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Chiropractor account created.", response.get_data(as_text=True))
+
+        with self.app.app_context():
+            clinician_row = get_db().execute(
+                """
+                SELECT first_name, last_name, role, is_active
+                FROM users
+                WHERE email = ?
+                """,
+                ("maya.blue@example.com",),
+            ).fetchone()
+            self.assertIsNotNone(clinician_row)
+            self.assertEqual(clinician_row["role"], "clinician")
+            self.assertEqual(clinician_row["is_active"], 1)
+            self.assertEqual(
+                get_db().execute(
+                    "SELECT setting_value FROM app_settings WHERE setting_key = 'practice_clinic_name'"
+                ).fetchone()["setting_value"],
+                "Summit Chiropractic",
+            )
+
+        response = self.client.get("/staff/settings/database-backup")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("attachment;", response.headers.get("Content-Disposition", ""))
+        self.assertGreater(len(response.get_data()), 0)
+        response.close()
 
     def test_staff_journal_claude_chat_fallback(self) -> None:
         staff_user_id = self.create_staff_user()

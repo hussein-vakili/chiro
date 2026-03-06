@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS users (
     email TEXT NOT NULL UNIQUE COLLATE NOCASE,
     password_hash TEXT NOT NULL,
     role TEXT NOT NULL DEFAULT 'client',
+    is_active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL
 );
 
@@ -218,6 +219,58 @@ CREATE TABLE IF NOT EXISTS appointments (
 CREATE INDEX IF NOT EXISTS idx_appointments_patient ON appointments(patient_user_id);
 CREATE INDEX IF NOT EXISTS idx_appointments_starts_at ON appointments(starts_at);
 
+CREATE TABLE IF NOT EXISTS care_plans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    patient_user_id INTEGER NOT NULL,
+    clinician_user_id INTEGER,
+    location_id INTEGER,
+    service_id INTEGER,
+    title TEXT NOT NULL DEFAULT '',
+    frequency_per_week INTEGER NOT NULL DEFAULT 1,
+    duration_weeks INTEGER NOT NULL DEFAULT 6,
+    total_visits INTEGER NOT NULL DEFAULT 0,
+    midpoint_visit_number INTEGER NOT NULL DEFAULT 0,
+    booking_mode TEXT NOT NULL DEFAULT 'all',
+    start_date TEXT NOT NULL,
+    start_slot TEXT,
+    status TEXT NOT NULL DEFAULT 'active',
+    patient_details TEXT NOT NULL DEFAULT '',
+    note TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (patient_user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (clinician_user_id) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (location_id) REFERENCES locations(id) ON DELETE SET NULL,
+    FOREIGN KEY (service_id) REFERENCES appointment_services(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_care_plans_patient ON care_plans(patient_user_id, status, id);
+
+CREATE TABLE IF NOT EXISTS care_plan_visits (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    care_plan_id INTEGER NOT NULL,
+    visit_number INTEGER NOT NULL,
+    visit_kind TEXT NOT NULL DEFAULT 'follow_up',
+    label TEXT NOT NULL DEFAULT '',
+    suggested_date TEXT NOT NULL,
+    suggested_starts_at TEXT,
+    duration_minutes INTEGER NOT NULL DEFAULT 15,
+    fee_amount REAL,
+    status TEXT NOT NULL DEFAULT 'unbooked',
+    booked INTEGER NOT NULL DEFAULT 0,
+    appointment_id INTEGER,
+    patient_details TEXT NOT NULL DEFAULT '',
+    note TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (care_plan_id, visit_number),
+    FOREIGN KEY (care_plan_id) REFERENCES care_plans(id) ON DELETE CASCADE,
+    FOREIGN KEY (appointment_id) REFERENCES appointments(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_care_plan_visits_plan ON care_plan_visits(care_plan_id, visit_number);
+CREATE INDEX IF NOT EXISTS idx_care_plan_visits_appointment ON care_plan_visits(appointment_id);
+
 CREATE TABLE IF NOT EXISTS appointment_reminders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     appointment_id INTEGER NOT NULL,
@@ -356,6 +409,12 @@ CREATE TABLE IF NOT EXISTS visit_reports (
 );
 
 CREATE INDEX IF NOT EXISTS idx_visit_reports_patient ON visit_reports(patient_user_id);
+
+CREATE TABLE IF NOT EXISTS app_settings (
+    setting_key TEXT PRIMARY KEY,
+    setting_value TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL
+);
 """
 
 
@@ -571,6 +630,30 @@ def _seed_default_appointment_services(db: sqlite3.Connection) -> None:
     )
 
 
+def _seed_default_app_settings(db: sqlite3.Connection) -> None:
+    active_clinician_count = db.execute(
+        """
+        SELECT COUNT(*) AS count
+        FROM users
+        WHERE role = 'clinician' AND COALESCE(is_active, 1) = 1
+        """
+    ).fetchone()["count"]
+    defaults = {
+        "calendar_time_format": "24h",
+        "calendar_slot_increment_minutes": "15",
+        "booking_search_window_days": "21",
+        "max_active_chiropractors": str(max(active_clinician_count, 3)),
+    }
+    db.executemany(
+        """
+        INSERT INTO app_settings (setting_key, setting_value, updated_at)
+        VALUES (?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(setting_key) DO NOTHING
+        """,
+        [(setting_key, setting_value) for setting_key, setting_value in defaults.items()],
+    )
+
+
 def _backfill_appointment_service_defaults(db: sqlite3.Connection) -> None:
     service_map = {
         "initial_consult": "new_patient_30",
@@ -653,6 +736,7 @@ def init_db() -> None:
     db = get_db()
     db.executescript(SCHEMA)
     _ensure_column(db, "users", "role", "TEXT NOT NULL DEFAULT 'client'")
+    _ensure_column(db, "users", "is_active", "INTEGER NOT NULL DEFAULT 1")
     visit_report_columns = {
         "assessment_payload_json": "TEXT NOT NULL DEFAULT '{}'",
         "rapport_notes": "TEXT NOT NULL DEFAULT ''",
@@ -748,6 +832,7 @@ def init_db() -> None:
     db.execute("CREATE INDEX IF NOT EXISTS idx_booking_webhook_events_created ON booking_webhook_events(created_at)")
     default_location_id = _seed_default_locations(db)
     _seed_default_appointment_services(db)
+    _seed_default_app_settings(db)
     _backfill_accepted_invitation_appointments(db)
     _seed_default_schedule_windows(db)
     _backfill_default_location_assignments(db, default_location_id)

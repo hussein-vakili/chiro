@@ -375,11 +375,117 @@
         </div>
 
         <div class="stack-section">
+          <div class="care-plan-panel">
+            <div class="panel-label">Care plan calendar sync</div>
+            {% if care_plan["plan"] %}
+              <div class="care-plan-head">
+                <div>
+                  <h3>{{ care_plan["plan"]["title"] }}</h3>
+                  <p>{{ care_plan["plan"]["frequency_label"] }} for {{ care_plan["plan"]["duration_weeks"] }} weeks · {{ care_plan["plan"]["total_visits"] }} visits · {{ care_plan["plan"]["booking_mode_label"] }}</p>
+                </div>
+                <span class="status-dot {{ 'life' if care_plan['plan']['status'] == 'completed' else 'sky' }}">{{ care_plan["plan"]["status_label"] }}</span>
+              </div>
+              <div class="care-plan-stat-grid">
+                <div class="mini-card">
+                  <strong>{{ care_plan["stats"]["completed"] }}</strong>
+                  <small>Completed</small>
+                </div>
+                <div class="mini-card">
+                  <strong>{{ care_plan["stats"]["booked"] }}</strong>
+                  <small>Booked</small>
+                </div>
+                <div class="mini-card">
+                  <strong>{{ care_plan["stats"]["remaining"] }}</strong>
+                  <small>Remaining</small>
+                </div>
+                <div class="mini-card">
+                  <strong>{{ care_plan["stats"]["unbooked"] }}</strong>
+                  <small>Unbooked</small>
+                </div>
+              </div>
+              {% if care_plan["next_unbooked"] %}
+                <div class="care-plan-next">
+                  <div>
+                    <strong>Next unbooked: {{ care_plan["next_unbooked"]["label"] }}</strong>
+                    <small>{{ care_plan["next_unbooked"]["suggested_long_label"] }} · {{ care_plan["next_unbooked"]["duration_minutes"] }} min</small>
+                  </div>
+                  <a
+                    class="tiny-button sky"
+                    href="{{ url_for('main.staff_patient_detail', user_id=patient['id'], care_plan_visit_id=care_plan['next_unbooked']['id'], service_id=care_plan['plan']['service_id'], appointment_type='care_plan', duration_minutes=care_plan['next_unbooked']['duration_minutes'], appointment_date=care_plan['next_unbooked']['suggested_date']) }}"
+                  >
+                    Book next visit in live diary
+                  </a>
+                </div>
+              {% endif %}
+              <div class="care-plan-month-grid">
+                {% for month in care_plan["months"] %}
+                  <div class="care-plan-month-card">
+                    <strong>{{ month["label"] }}</strong>
+                    <div class="care-plan-month-weekdays">
+                      {% for label in ['S', 'M', 'T', 'W', 'T', 'F', 'S'] %}
+                        <span>{{ label }}</span>
+                      {% endfor %}
+                    </div>
+                    <div class="care-plan-month-days">
+                      {% for week in month["weeks"] %}
+                        {% for day in week %}
+                          <div class="care-plan-month-day {% if not day['in_month'] %}outside{% endif %} {% if day['is_today'] %}today{% endif %}">
+                            <span>{{ day["day_number"] }}</span>
+                            {% if day["primary_visit"] %}
+                              <div class="care-plan-month-marker {{ day['primary_visit']['visit_kind_tone'] }} {% if not day['primary_visit']['booked'] %}is-unbooked{% endif %}" title="{{ day['primary_visit']['label'] }}"></div>
+                            {% endif %}
+                          </div>
+                        {% endfor %}
+                      {% endfor %}
+                    </div>
+                  </div>
+                {% endfor %}
+              </div>
+              <div class="care-plan-visit-list">
+                {% for visit in care_plan["visits"] %}
+                  <div class="care-plan-visit-card {% if selected_care_plan_visit and selected_care_plan_visit['id'] == visit['id'] %}active{% endif %}">
+                    <div class="care-plan-visit-main">
+                      <div class="care-plan-visit-number {{ visit['visit_kind_tone'] }}">{{ visit["visit_number"] }}</div>
+                      <div>
+                        <div class="care-plan-visit-headline">
+                          <strong>{{ visit["label"] }}</strong>
+                          <span class="mini-tag mini-tag-{{ 'danger' if visit['visit_kind_tone'] == 'rose' else 'accent' if visit['visit_kind_tone'] == 'life' else 'sky' if visit['visit_kind_tone'] == 'sky' else 'purple' if visit['visit_kind_tone'] == 'purple' else 'warm' }}">{{ visit["visit_kind_label"] }}</span>
+                        </div>
+                        <small>{{ visit["effective_label"] }} · {{ visit["duration_minutes"] }} min{% if visit["fee_label"] %} · {{ visit["fee_label"] }}{% endif %}</small>
+                      </div>
+                    </div>
+                    <div class="care-plan-visit-actions">
+                      <span class="status-dot {{ visit['status_tone'] }}">{{ visit["status_label"] }}</span>
+                      {% if not visit["booked"] %}
+                        <a
+                          class="tiny-button"
+                          href="{{ url_for('main.staff_patient_detail', user_id=patient['id'], care_plan_visit_id=visit['id'], service_id=care_plan['plan']['service_id'], appointment_type='care_plan', duration_minutes=visit['duration_minutes'], appointment_date=visit['suggested_date']) }}"
+                        >
+                          Load into diary
+                        </a>
+                      {% elif visit["appointment"] and (g.user["role"] == "admin" or visit["appointment"]["clinician_user_id"] == g.user["id"]) %}
+                        <a class="tiny-button sky" href="{{ url_for('main.practitioner_appointment_soap_note', appointment_id=visit['appointment']['id']) }}">{{ visit["appointment"]["soap_note_action_label"] }}</a>
+                      {% endif %}
+                    </div>
+                  </div>
+                {% endfor %}
+              </div>
+            {% else %}
+              <p>No active care plan yet. Use the live diary below to anchor the first visit, then create a Claude-style care plan that stays linked to the calendar.</p>
+            {% endif %}
+          </div>
+
           <div>
             <h3 style="font-family:var(--serif);font-size:24px;margin-bottom:10px">Schedule new visit</h3>
             <p>Select a date first, then book from the chiropractor's live shift slots while respecting clinic downtime and already-booked visits.</p>
           </div>
           <form method="post" action="{{ url_for('main.create_staff_patient_appointment', user_id=patient['id']) }}" class="auth-form">
+            <input type="hidden" name="care_plan_visit_id" value="{{ selected_care_plan_visit['id'] if selected_care_plan_visit else '' }}">
+            {% if selected_care_plan_visit %}
+              <div class="info-box" style="margin-top:0">
+                {{ selected_care_plan_visit["label"] }} is loaded into the live diary. Choose a slot and save the appointment to link it back to the active care plan.
+              </div>
+            {% endif %}
             <div class="appointment-form-grid">
               <label>
                 <span>Booking service (optional)</span>
@@ -470,13 +576,87 @@
               </label>
               <label class="full">
                 <span>Appointment details</span>
-                <textarea name="patient_details" rows="4" placeholder="What the patient will see in their portal for this booking."></textarea>
+                <textarea name="patient_details" rows="4" placeholder="What the patient will see in their portal for this booking.">{{ booking_prefill_patient_details }}</textarea>
               </label>
               <label class="full">
                 <span>Internal scheduling note</span>
-                <textarea name="note" rows="3" placeholder="Private admin note, preparation checklist, or handoff details."></textarea>
+                <textarea name="note" rows="3" placeholder="Private admin note, preparation checklist, or handoff details.">{{ booking_prefill_note }}</textarea>
               </label>
             </div>
+
+            <section class="care-plan-builder-card">
+              <div class="care-plan-builder-head">
+                <div>
+                  <div class="panel-label">Claude care plan builder</div>
+                  <h3>Create or replace the active care plan</h3>
+                  <p>Use the same live slot, chiropractor, location, and service selected above as the anchor for the plan.</p>
+                </div>
+                <div class="care-plan-preview">
+                  <strong id="carePlanPreviewVisits">12 visits</strong>
+                  <small id="carePlanPreviewMode">All visits will sync immediately.</small>
+                </div>
+              </div>
+              <div class="care-plan-builder-grid">
+                <label>
+                  <span>Care plan title</span>
+                  <input type="text" name="care_plan_title" id="carePlanTitle" placeholder="6-week care plan">
+                </label>
+                <label>
+                  <span>Frequency</span>
+                  <div class="care-plan-pill-row" id="carePlanFrequencyGroup">
+                    {% for option in care_plan_frequency_options %}
+                      <label class="care-plan-pill">
+                        <input type="radio" name="frequency_per_week" value="{{ option['value'] }}" {% if option['value'] == 2 %}checked{% endif %}>
+                        <strong>{{ option["label"] }}</strong>
+                        <small>{{ option["short_label"] }}</small>
+                      </label>
+                    {% endfor %}
+                  </div>
+                </label>
+                <label>
+                  <span>Duration</span>
+                  <div class="care-plan-pill-row" id="carePlanWeeksGroup">
+                    {% for option in care_plan_week_options %}
+                      <label class="care-plan-pill compact">
+                        <input type="radio" name="duration_weeks" value="{{ option }}" {% if option == 6 %}checked{% endif %}>
+                        <strong>{{ option }}</strong>
+                        <small>weeks</small>
+                      </label>
+                    {% endfor %}
+                  </div>
+                </label>
+                <label>
+                  <span>Booking mode</span>
+                  <div class="care-plan-pill-row" id="carePlanBookingModeGroup">
+                    {% for option in care_plan_booking_mode_options %}
+                      <label class="care-plan-pill">
+                        <input type="radio" name="care_plan_booking_mode" value="{{ option['value'] }}" {% if option['value'] == 'all' %}checked{% endif %}>
+                        <strong>{{ option["label"] }}</strong>
+                        <small>{{ option["description"] }}</small>
+                      </label>
+                    {% endfor %}
+                  </div>
+                </label>
+              </div>
+              <div class="care-plan-preview-grid">
+                <div class="mini-card">
+                  <span>Total visits</span>
+                  <strong id="carePlanPreviewCount">12</strong>
+                </div>
+                <div class="mini-card">
+                  <span>Progress check</span>
+                  <strong id="carePlanPreviewMidpoint">Visit 6</strong>
+                </div>
+                <div class="mini-card">
+                  <span>Reassessment</span>
+                  <strong id="carePlanPreviewFinal">Visit 12</strong>
+                </div>
+                <div class="mini-card">
+                  <span>Service anchor</span>
+                  <strong id="carePlanPreviewService">{{ booking_policy["service_label"] }}</strong>
+                </div>
+              </div>
+            </section>
 
             <section class="booking-diary-shell" aria-label="Daily booking diary">
               <aside class="booking-diary-sidebar">
@@ -558,7 +738,10 @@
                 </div>
               </div>
             </div>
-            <button type="submit" class="primary-button">Schedule appointment</button>
+            <div class="care-plan-submit-row">
+              <button type="submit" class="primary-button">{{ 'Book care-plan visit' if selected_care_plan_visit else 'Schedule appointment' }}</button>
+              <button type="submit" formaction="{{ url_for('main.create_staff_patient_care_plan', user_id=patient['id']) }}" class="secondary-button">Create care plan</button>
+            </div>
           </form>
         </div>
       </div>
@@ -664,6 +847,15 @@
       const showBookedInput = document.getElementById("bookingShowBooked");
       const showShiftInput = document.getElementById("bookingShowShift");
       const showDowntimeInput = document.getElementById("bookingShowDowntime");
+      const carePlanFrequencyInputs = Array.from(document.querySelectorAll('input[name="frequency_per_week"]'));
+      const carePlanWeeksInputs = Array.from(document.querySelectorAll('input[name="duration_weeks"]'));
+      const carePlanBookingModeInputs = Array.from(document.querySelectorAll('input[name="care_plan_booking_mode"]'));
+      const carePlanPreviewVisits = document.getElementById("carePlanPreviewVisits");
+      const carePlanPreviewMode = document.getElementById("carePlanPreviewMode");
+      const carePlanPreviewCount = document.getElementById("carePlanPreviewCount");
+      const carePlanPreviewMidpoint = document.getElementById("carePlanPreviewMidpoint");
+      const carePlanPreviewFinal = document.getElementById("carePlanPreviewFinal");
+      const carePlanPreviewService = document.getElementById("carePlanPreviewService");
       const availabilityUrl = "{{ url_for('main.staff_schedule_availability') }}";
       const monthFormatter = new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric" });
       const weekDayFormatter = new Intl.DateTimeFormat("en-GB", { weekday: "short" });
@@ -933,6 +1125,43 @@
         }
       }
 
+      function selectedRadioValue(inputs, fallback) {
+        const selected = inputs.find((input) => input.checked);
+        return selected ? selected.value : fallback;
+      }
+
+      function updateCarePlanPreview() {
+        const frequency = Number(selectedRadioValue(carePlanFrequencyInputs, "2")) || 2;
+        const weeks = Number(selectedRadioValue(carePlanWeeksInputs, "6")) || 6;
+        const bookingMode = selectedRadioValue(carePlanBookingModeInputs, "all");
+        const totalVisits = frequency * weeks;
+        const midpoint = Math.ceil(totalVisits / 2);
+        const serviceLabel = serviceInput && serviceInput.selectedOptions.length
+          ? serviceInput.selectedOptions[0].textContent.split("·")[0].trim() || "Care plan visit"
+          : "Care plan visit";
+
+        if (carePlanPreviewVisits) {
+          carePlanPreviewVisits.textContent = `${totalVisits} visits`;
+        }
+        if (carePlanPreviewMode) {
+          carePlanPreviewMode.textContent = bookingMode === "all"
+            ? "All visits will sync immediately."
+            : "Only the first visit will book now.";
+        }
+        if (carePlanPreviewCount) {
+          carePlanPreviewCount.textContent = String(totalVisits);
+        }
+        if (carePlanPreviewMidpoint) {
+          carePlanPreviewMidpoint.textContent = `Visit ${midpoint}`;
+        }
+        if (carePlanPreviewFinal) {
+          carePlanPreviewFinal.textContent = `Visit ${totalVisits}`;
+        }
+        if (carePlanPreviewService) {
+          carePlanPreviewService.textContent = serviceLabel;
+        }
+      }
+
       async function loadAvailability() {
         syncServiceSelection();
         const previousSlot = slotInput.value;
@@ -1007,7 +1236,10 @@
         loadAvailability();
       });
       if (serviceInput) {
-        serviceInput.addEventListener("change", loadAvailability);
+        serviceInput.addEventListener("change", () => {
+          loadAvailability();
+          updateCarePlanPreview();
+        });
       }
       clinicianInput.addEventListener("change", loadAvailability);
       locationInput.addEventListener("change", loadAvailability);
@@ -1068,9 +1300,12 @@
       [showAvailableInput, showBookedInput, showShiftInput, showDowntimeInput]
         .filter(Boolean)
         .forEach((input) => input.addEventListener("change", () => renderDiary(latestAvailability)));
+      [...carePlanFrequencyInputs, ...carePlanWeeksInputs, ...carePlanBookingModeInputs]
+        .forEach((input) => input.addEventListener("change", updateCarePlanPreview));
 
       syncServiceSelection();
       renderMiniCalendar();
+      updateCarePlanPreview();
       loadAvailability();
     })();
   </script>

@@ -1,6 +1,7 @@
 {% extends "base.html" %}
+{% from "_branding.html" import life_logo_mark %}
 
-{% block title %}Clinic Calendar · Life Chiropractic{% endblock %}
+{% block title %}Clinic Calendar · {{ ui_branding["clinic_name"] }}{% endblock %}
 
 {% block content %}
   <section class="hero-panel">
@@ -273,6 +274,13 @@
     <article class="panel">
       <div class="panel-label">Publish booking access</div>
       <p style="margin-top:10px">Share a direct booking link or embed the booking page on your website.</p>
+      <div class="booking-wizard-brand" style="margin-top:14px">
+        <div class="booking-wizard-brand-mark">{{ life_logo_mark(size=34) }}</div>
+        <div class="booking-wizard-brand-copy">
+          <small>Patient booking experience</small>
+          <strong style="font-size:22px">{{ ui_branding["clinic_name"] }}</strong>
+        </div>
+      </div>
       <div class="auth-form" style="margin-top:14px">
         <label>
           <span>Booking link</span>
@@ -283,7 +291,7 @@
         </label>
         <label>
           <span>Embed snippet</span>
-          <textarea rows="4" id="bookingEmbedValue" readonly>&lt;iframe src="{{ url_for('main.appointments', _external=True) }}" title="Life Chiropractic Booking" style="width:100%;min-height:860px;border:0;border-radius:16px;" loading="lazy"&gt;&lt;/iframe&gt;</textarea>
+          <textarea rows="4" id="bookingEmbedValue" readonly>&lt;iframe src="{{ url_for('main.appointments', _external=True) }}" title="{{ ui_branding['clinic_name'] }} Booking" style="width:100%;min-height:860px;border:0;border-radius:16px;" loading="lazy"&gt;&lt;/iframe&gt;</textarea>
           <div class="tiny-actions">
             <button type="button" class="tiny-button sky" id="copyBookingEmbed">Copy embed</button>
           </div>

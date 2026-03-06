@@ -1,3 +1,4 @@
+{% from "_branding.html" import life_logo_mark %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -8,17 +9,33 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  <style>
+    :root{
+      --life: {{ ui_branding["brand_color"] }};
+      --life-d: {{ ui_branding["brand_color"] }};
+      --life-g: linear-gradient(135deg, {{ ui_branding["brand_color"] }}, {{ ui_branding["brand_color"] }});
+      {% if ui_branding["font_style"] == "classic" %}
+      --font: 'Newsreader', Georgia, serif;
+      --serif: 'Newsreader', Georgia, serif;
+      {% elif ui_branding["font_style"] == "clean" %}
+      --font: 'Outfit', system-ui, sans-serif;
+      --serif: 'Outfit', system-ui, sans-serif;
+      {% endif %}
+    }
+  </style>
   {% block head %}{% endblock %}
 </head>
-<body class="{% block body_class %}{% endblock %}">
+<body class="theme-{{ ui_branding['theme'] }} font-{{ ui_branding['font_style'] }} {% block body_class %}{% endblock %}">
   {% set endpoint = request.endpoint or "" %}
+  {% set show_portal_branding = ui_branding["show_portal_branding"] or not g.user or g.user["role"] != "client" %}
+  {% set portal_brand_name = ui_branding["clinic_name"] if show_portal_branding else "Patient Portal" %}
   {% if g.user %}
     <div class="app-layout">
       <aside class="app-sidebar">
         <a class="sidebar-brand" href="{{ url_for('main.dashboard') }}">
-          <span class="brand-mark">LC</span>
+          <span class="brand-mark">{{ life_logo_mark(size=42, class_name='brand-mark-svg') }}</span>
           <span class="brand-copy">
-            <strong>Life Chiropractic</strong>
+            <strong>{{ portal_brand_name }}</strong>
             <small>
               {% if g.user["role"] == "clinician" %}
                 Practitioner Portal
@@ -41,6 +58,7 @@
             <a class="sidebar-link {% if endpoint == 'main.dashboard' %}active{% endif %}" href="{{ url_for('main.dashboard') }}">Dashboard</a>
             <a class="sidebar-link {% if endpoint == 'main.staff_dashboard' %}active{% endif %}" href="{{ url_for('main.staff_dashboard') }}">Clinic Ops</a>
             <a class="sidebar-link {% if endpoint == 'main.staff_calendar' %}active{% endif %}" href="{{ url_for('main.staff_calendar') }}">Calendar</a>
+            <a class="sidebar-link {% if endpoint == 'main.staff_settings' %}active{% endif %}" href="{{ url_for('main.staff_settings') }}">Settings</a>
             <a class="sidebar-link {% if endpoint == 'main.staff_reminders' %}active{% endif %}" href="{{ url_for('main.staff_reminders') }}">Reminders</a>
             <a class="sidebar-link {% if endpoint == 'main.staff_journal' %}active{% endif %}" href="{{ url_for('main.staff_journal') }}">Journal</a>
             <a class="sidebar-link {% if endpoint == 'main.staff_learning' %}active{% endif %}" href="{{ url_for('main.staff_learning') }}">Learning</a>
@@ -49,6 +67,7 @@
           {% else %}
             <a class="sidebar-link {% if endpoint == 'main.staff_dashboard' or endpoint == 'main.dashboard' %}active{% endif %}" href="{{ url_for('main.staff_dashboard') }}">Dashboard</a>
             <a class="sidebar-link {% if endpoint == 'main.staff_calendar' %}active{% endif %}" href="{{ url_for('main.staff_calendar') }}">Calendar</a>
+            <a class="sidebar-link {% if endpoint == 'main.staff_settings' %}active{% endif %}" href="{{ url_for('main.staff_settings') }}">Settings</a>
             <a class="sidebar-link {% if endpoint == 'main.staff_reminders' %}active{% endif %}" href="{{ url_for('main.staff_reminders') }}">Reminders</a>
             <a class="sidebar-link {% if endpoint == 'main.staff_journal' %}active{% endif %}" href="{{ url_for('main.staff_journal') }}">Journal</a>
             <a class="sidebar-link {% if endpoint == 'main.staff_learning' %}active{% endif %}" href="{{ url_for('main.staff_learning') }}">Learning</a>
