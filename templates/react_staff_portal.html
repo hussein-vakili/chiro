@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block title %}Staff Portal · {{ ui_branding["clinic_name"] }}{% endblock %}
+
+{% block head %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='react-portal/portal.css') }}">
+{% endblock %}
+
+{% block shell_class %}react-portal-shell{% endblock %}
+
+{% block content %}
+  <div
+    id="react-portal-root"
+    data-portal-kind="staff"
+    data-router-basename="/staff/app"
+    data-initial-path="{{ staff_portal_path }}"
+    data-session-endpoint="{{ url_for('main.api_staff_session') }}"
+    data-staff-dashboard-endpoint="{{ url_for('main.api_staff_dashboard') }}"
+    data-spa-root="{{ staff_portal_entry_url }}"
+  >
+    <section class="panel">
+      <div class="panel-label">Loading staff portal</div>
+      <h2>Preparing the React staff workspace.</h2>
+      <p>If this does not load, refresh the page and rebuild the frontend bundle.</p>
+    </section>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script type="module" src="{{ url_for('static', filename='react-portal/portal.js') }}"></script>
+{% endblock %}

@@ -76,6 +76,15 @@ class PortalFlowTestCase(unittest.TestCase):
         self.assertIn("Practitioner dashboard", response.get_data(as_text=True))
         self.assertIn("My patients", response.get_data(as_text=True))
 
+    def login_client(self, email: str = "patient.one@example.com", password: str = "patientpass123") -> None:
+        response = self.client.post(
+            "/login",
+            data={"email": email, "password": password},
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("your onboarding is ready", response.get_data(as_text=True))
+
     def appointment_slot(self, days_from_now: int, hour: int, minute: int, duration_minutes: int = 30) -> tuple[str, str]:
         start = (self.base_now + timedelta(days=days_from_now)).replace(hour=hour, minute=minute)
         if start <= self.base_now:
@@ -1329,6 +1338,216 @@ class PortalFlowTestCase(unittest.TestCase):
         staff_dashboard_html = response.get_data(as_text=True)
         self.assertIn("Care-plan follow-up", staff_dashboard_html)
         self.assertIn("Mark Hughes", staff_dashboard_html)
+
+    def test_react_client_portal_shell_and_session_api(self) -> None:
+        self.create_client_user()
+        self.login_client()
+
+        response = self.client.get("/app")
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("react-portal-root", html)
+        self.assertIn("/api/client/session", html)
+        self.assertIn("/static/react-portal/portal.js", html)
+
+        response = self.client.get("/api/client/session")
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["user"]["email"], "patient.one@example.com")
+        self.assertTrue(any(item["label"] == "Care Plan" for item in payload["nav"]))
+        self.assertTrue(any(item["url"] == "/app/results" for item in payload["nav"]))
+        self.assertTrue(any(item["url"] == "/app/intake" for item in payload["nav"]))
+
+        response = self.client.get("/api/client/results")
+        self.assertEqual(response.status_code, 409)
+        results_payload = response.get_json()
+        self.assertFalse(results_payload["ok"])
+        self.assertEqual(results_payload["redirect"], "/intake")
+
+        response = self.client.get("/app/intake")
+        self.assertEqual(response.status_code, 200)
+        intake_html = response.get_data(as_text=True)
+        self.assertIn("/intake/embed", intake_html)
+
+        response = self.client.get("/intake/embed")
+        self.assertEqual(response.status_code, 200)
+        embedded_html = response.get_data(as_text=True)
+        self.assertIn('class="embed-mode"', embedded_html)
+
+    def test_react_staff_portal_shell_and_session_api(self) -> None:
+        self.create_staff_user()
+        self.login_staff()
+
+        response = self.client.get("/staff/app")
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("react-portal-root", html)
+        self.assertIn('data-portal-kind="staff"', html)
+        self.assertIn("/api/staff/session", html)
+        self.assertIn("/api/staff/dashboard", html)
+
+        response = self.client.get("/api/staff/session")
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["user"]["email"], "staff@example.com")
+        self.assertTrue(any(item["url"] == "/staff/app/calendar" for item in payload["nav"]))
+        self.assertTrue(any(item["url"] == "/staff/app/clinic-ops" for item in payload["nav"]))
+
+        response = self.client.get("/api/staff/dashboard")
+        self.assertEqual(response.status_code, 200)
+        dashboard_payload = response.get_json()
+        self.assertTrue(dashboard_payload["ok"])
+        self.assertEqual(dashboard_payload["view"], "practitioner")
+
+        response = self.client.get("/staff/calendar?embed=1")
+        self.assertEqual(response.status_code, 200)
+        embedded_html = response.get_data(as_text=True)
+        self.assertIn("embedded-frame", embedded_html)
+        self.assertNotIn("app-sidebar", embedded_html)
+
+    def test_api_appointments_books_care_plan_visit_for_react_portal(self) -> None:
+        staff_id = self.create_staff_user()
+        self.login_staff()
+
+        with self.app.app_context():
+            db = get_db()
+            patient_id = db.execute(
+                """
+                INSERT INTO users (first_name, last_name, email, password_hash, role, created_at)
+                VALUES (?, ?, ?, ?, 'client', ?)
+                """,
+                (
+                    "Leah",
+                    "Rowe",
+                    "leah@example.com",
+                    generate_password_hash("patientpass123", method="pbkdf2:sha256"),
+                    iso_now(),
+                ),
+            ).lastrowid
+            main_location_id = db.execute(
+                "SELECT id FROM locations WHERE slug = 'main-clinic'"
+            ).fetchone()["id"]
+            care_plan_service_id = db.execute(
+                "SELECT id FROM appointment_services WHERE service_key = 'follow_up_15'"
+            ).fetchone()["id"]
+            db.commit()
+
+        first_visit_start, _ = self.appointment_slot(days_from_now=4, hour=10, minute=0, duration_minutes=15)
+
+        response = self.client.post(
+            f"/staff/patients/{patient_id}/care-plan",
+            data={
+                "service_id": str(care_plan_service_id),
+                "appointment_type": "care_plan",
+                "clinician_user_id": str(staff_id),
+                "location_id": str(main_location_id),
+                "appointment_date": first_visit_start[:10],
+                "duration_minutes": "15",
+                "slot_increment_minutes": "15",
+                "slot_start": first_visit_start,
+                "patient_details": "Follow the reset plan.",
+                "note": "Generated from the care plan calendar.",
+                "frequency_per_week": "2",
+                "duration_weeks": "3",
+                "care_plan_booking_mode": "as_you_go",
+                "care_plan_title": "Reset plan",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Care plan created", response.get_data(as_text=True))
+
+        with self.app.app_context():
+            db = get_db()
+            care_plan = db.execute(
+                "SELECT id FROM care_plans WHERE patient_user_id = ? ORDER BY id DESC LIMIT 1",
+                (patient_id,),
+            ).fetchone()
+            overdue_visit = db.execute(
+                """
+                SELECT *
+                FROM care_plan_visits
+                WHERE care_plan_id = ? AND status = 'unbooked'
+                ORDER BY visit_number ASC
+                LIMIT 1
+                """,
+                (care_plan["id"],),
+            ).fetchone()
+            self.assertIsNotNone(overdue_visit)
+            overdue_date = (date.today() - timedelta(days=1)).isoformat()
+            db.execute(
+                """
+                UPDATE care_plan_visits
+                SET suggested_date = ?,
+                    suggested_starts_at = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    overdue_date,
+                    f"{overdue_date}T09:00",
+                    iso_now(),
+                    overdue_visit["id"],
+                ),
+            )
+            db.commit()
+
+        self.client.post("/logout", follow_redirects=True)
+        self.login_client("leah@example.com", "patientpass123")
+
+        response = self.client.get(f"/api/client/appointments/context?care_plan_visit_id={overdue_visit['id']}")
+        self.assertEqual(response.status_code, 200)
+        context_payload = response.get_json()
+        self.assertTrue(context_payload["ok"])
+        appointments_context = context_payload["appointments"]
+        self.assertEqual(appointments_context["selected_care_plan_visit"]["id"], overdue_visit["id"])
+        booking_date = appointments_context["booking_date"]
+        self.assertGreaterEqual(booking_date, date.today().isoformat())
+
+        response = self.client.get(
+            f"/api/availability?date={booking_date}&clinician_user_id={staff_id}&location_id={main_location_id}&service_id={care_plan_service_id}&appointment_type=care_plan&duration_minutes=15"
+        )
+        self.assertEqual(response.status_code, 200)
+        availability_payload = response.get_json()
+        self.assertTrue(availability_payload["ok"])
+        selected_slot = availability_payload["availability"]["available_slots"][0]["value"]
+
+        response = self.client.post(
+            "/api/appointments",
+            json={
+                "service_id": str(care_plan_service_id),
+                "appointment_type": "care_plan",
+                "clinician_user_id": str(staff_id),
+                "location_id": str(main_location_id),
+                "appointment_date": booking_date,
+                "duration_minutes": "15",
+                "slot_start": selected_slot,
+                "patient_details": "Booked from the React portal API.",
+                "care_plan_visit_id": str(overdue_visit["id"]),
+            },
+        )
+        self.assertEqual(response.status_code, 201)
+        api_payload = response.get_json()
+        self.assertTrue(api_payload["ok"])
+        self.assertEqual(api_payload["care_plan_visit_id"], overdue_visit["id"])
+
+        with self.app.app_context():
+            linked_visit = get_db().execute(
+                "SELECT status, booked, appointment_id FROM care_plan_visits WHERE id = ?",
+                (overdue_visit["id"],),
+            ).fetchone()
+            linked_appointment = get_db().execute(
+                "SELECT note, booking_source, appointment_type FROM appointments WHERE id = ?",
+                (linked_visit["appointment_id"],),
+            ).fetchone()
+        self.assertEqual(linked_visit["status"], "scheduled")
+        self.assertEqual(linked_visit["booked"], 1)
+        self.assertIsNotNone(linked_visit["appointment_id"])
+        self.assertEqual(linked_appointment["appointment_type"], "care_plan")
+        self.assertEqual(linked_appointment["booking_source"], "api_client")
+        self.assertEqual(linked_appointment["note"], "Booked from the React portal API.")
 
     def test_staff_learning_portal_progress(self) -> None:
         staff_user_id = self.create_staff_user()

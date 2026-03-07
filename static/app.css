@@ -148,6 +148,7 @@ body.theme-dark .settings-search{
 }
 .sidebar-logout:hover{border-color:rgba(59,122,87,.28);color:var(--life)}
 .app-main{min-width:0;padding:22px 18px 24px}
+body.embedded-frame .app-main{padding:0}
 
 .site-header{display:flex;align-items:center;justify-content:space-between;padding:22px 28px;gap:24px}
 .brand{display:flex;align-items:center;gap:14px;text-decoration:none}
@@ -161,6 +162,7 @@ body.theme-dark .settings-search{
 .site-nav a:hover,.link-button:hover{color:var(--ink)}
 
 .page-shell{max-width:1120px;margin:0 auto;padding:0 24px 48px}
+body.embedded-frame .page-shell{max-width:none;padding:0 8px 12px}
 .auth-shell{display:flex;align-items:center;justify-content:center;min-height:calc(100vh - 40px)}
 
 .flash-stack{display:grid;gap:10px;margin-bottom:20px}

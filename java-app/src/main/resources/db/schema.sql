@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS users (
     email TEXT NOT NULL UNIQUE COLLATE NOCASE,
     password_hash TEXT NOT NULL,
     role TEXT NOT NULL DEFAULT 'client',
+    is_active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL
 );
 
@@ -60,6 +61,63 @@ CREATE TABLE IF NOT EXISTS invitations (
 
 CREATE INDEX IF NOT EXISTS idx_invitations_email ON invitations(email);
 CREATE INDEX IF NOT EXISTS idx_invitations_token ON invitations(token);
+
+CREATE TABLE IF NOT EXISTS appointment_slot_holds (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    invitation_id INTEGER,
+    lead_id INTEGER,
+    clinician_user_id INTEGER NOT NULL,
+    location_id INTEGER,
+    service_id INTEGER,
+    appointment_type TEXT NOT NULL DEFAULT 'initial_consult',
+    starts_at TEXT NOT NULL,
+    ends_at TEXT,
+    status TEXT NOT NULL DEFAULT 'active',
+    expires_at TEXT NOT NULL,
+    consumed_appointment_id INTEGER,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (invitation_id) REFERENCES invitations(id) ON DELETE SET NULL,
+    FOREIGN KEY (lead_id) REFERENCES leads(id) ON DELETE SET NULL,
+    FOREIGN KEY (clinician_user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (location_id) REFERENCES locations(id) ON DELETE SET NULL,
+    FOREIGN KEY (service_id) REFERENCES appointment_services(id) ON DELETE SET NULL,
+    FOREIGN KEY (consumed_appointment_id) REFERENCES appointments(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_appointment_slot_holds_clinician_date ON appointment_slot_holds(clinician_user_id, starts_at);
+CREATE INDEX IF NOT EXISTS idx_appointment_slot_holds_status_expires ON appointment_slot_holds(status, expires_at);
+CREATE INDEX IF NOT EXISTS idx_appointment_slot_holds_lead ON appointment_slot_holds(lead_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_appointment_slot_holds_invitation_unique ON appointment_slot_holds(invitation_id);
+
+CREATE TABLE IF NOT EXISTS leads (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    first_name TEXT NOT NULL,
+    last_name TEXT NOT NULL,
+    email TEXT NOT NULL COLLATE NOCASE,
+    phone TEXT NOT NULL DEFAULT '',
+    source TEXT NOT NULL DEFAULT 'website',
+    status TEXT NOT NULL DEFAULT 'new',
+    preferred_service_id INTEGER,
+    preferred_location_id INTEGER,
+    preferred_clinician_user_id INTEGER,
+    requested_starts_at TEXT,
+    reason TEXT NOT NULL DEFAULT '',
+    notes TEXT NOT NULL DEFAULT '',
+    invitation_id INTEGER,
+    converted_user_id INTEGER,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (preferred_service_id) REFERENCES appointment_services(id) ON DELETE SET NULL,
+    FOREIGN KEY (preferred_location_id) REFERENCES locations(id) ON DELETE SET NULL,
+    FOREIGN KEY (preferred_clinician_user_id) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (invitation_id) REFERENCES invitations(id) ON DELETE SET NULL,
+    FOREIGN KEY (converted_user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_leads_status_created ON leads(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_leads_email ON leads(email);
+CREATE INDEX IF NOT EXISTS idx_leads_requested_starts_at ON leads(requested_starts_at);
 
 CREATE TABLE IF NOT EXISTS password_reset_tokens (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -118,6 +176,24 @@ CREATE TABLE IF NOT EXISTS practitioner_learning_progress (
 
 CREATE INDEX IF NOT EXISTS idx_practitioner_learning_progress_clinician ON practitioner_learning_progress(clinician_user_id);
 CREATE INDEX IF NOT EXISTS idx_practitioner_learning_progress_slug ON practitioner_learning_progress(topic_slug);
+
+CREATE TABLE IF NOT EXISTS patient_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    patient_user_id INTEGER NOT NULL,
+    sender_user_id INTEGER NOT NULL,
+    sender_role TEXT NOT NULL,
+    topic TEXT NOT NULL DEFAULT 'appointment',
+    body TEXT NOT NULL DEFAULT '',
+    read_by_staff_at TEXT,
+    read_by_patient_at TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (patient_user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (sender_user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_patient_messages_patient ON patient_messages(patient_user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_patient_messages_unread_staff ON patient_messages(patient_user_id, read_by_staff_at);
+CREATE INDEX IF NOT EXISTS idx_patient_messages_unread_patient ON patient_messages(patient_user_id, read_by_patient_at);
 
 CREATE TABLE IF NOT EXISTS locations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -191,6 +267,58 @@ CREATE TABLE IF NOT EXISTS appointments (
 
 CREATE INDEX IF NOT EXISTS idx_appointments_patient ON appointments(patient_user_id);
 CREATE INDEX IF NOT EXISTS idx_appointments_starts_at ON appointments(starts_at);
+
+CREATE TABLE IF NOT EXISTS care_plans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    patient_user_id INTEGER NOT NULL,
+    clinician_user_id INTEGER,
+    location_id INTEGER,
+    service_id INTEGER,
+    title TEXT NOT NULL DEFAULT '',
+    frequency_per_week INTEGER NOT NULL DEFAULT 1,
+    duration_weeks INTEGER NOT NULL DEFAULT 6,
+    total_visits INTEGER NOT NULL DEFAULT 0,
+    midpoint_visit_number INTEGER NOT NULL DEFAULT 0,
+    booking_mode TEXT NOT NULL DEFAULT 'all',
+    start_date TEXT NOT NULL,
+    start_slot TEXT,
+    status TEXT NOT NULL DEFAULT 'active',
+    patient_details TEXT NOT NULL DEFAULT '',
+    note TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (patient_user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (clinician_user_id) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (location_id) REFERENCES locations(id) ON DELETE SET NULL,
+    FOREIGN KEY (service_id) REFERENCES appointment_services(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_care_plans_patient ON care_plans(patient_user_id, status, id);
+
+CREATE TABLE IF NOT EXISTS care_plan_visits (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    care_plan_id INTEGER NOT NULL,
+    visit_number INTEGER NOT NULL,
+    visit_kind TEXT NOT NULL DEFAULT 'follow_up',
+    label TEXT NOT NULL DEFAULT '',
+    suggested_date TEXT NOT NULL,
+    suggested_starts_at TEXT,
+    duration_minutes INTEGER NOT NULL DEFAULT 15,
+    fee_amount REAL,
+    status TEXT NOT NULL DEFAULT 'unbooked',
+    booked INTEGER NOT NULL DEFAULT 0,
+    appointment_id INTEGER,
+    patient_details TEXT NOT NULL DEFAULT '',
+    note TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (care_plan_id, visit_number),
+    FOREIGN KEY (care_plan_id) REFERENCES care_plans(id) ON DELETE CASCADE,
+    FOREIGN KEY (appointment_id) REFERENCES appointments(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_care_plan_visits_plan ON care_plan_visits(care_plan_id, visit_number);
+CREATE INDEX IF NOT EXISTS idx_care_plan_visits_appointment ON care_plan_visits(appointment_id);
 
 CREATE TABLE IF NOT EXISTS appointment_reminders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -330,3 +458,9 @@ CREATE TABLE IF NOT EXISTS visit_reports (
 );
 
 CREATE INDEX IF NOT EXISTS idx_visit_reports_patient ON visit_reports(patient_user_id);
+
+CREATE TABLE IF NOT EXISTS app_settings (
+    setting_key TEXT PRIMARY KEY,
+    setting_value TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL
+);

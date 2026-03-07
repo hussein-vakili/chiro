@@ -619,6 +619,173 @@ def dashboard_redirect_for(user) -> str:
     return url_for("main.dashboard") if user else url_for("main.login")
 
 
+def client_spa_url(path: str = "", **values) -> str:
+    normalized_path = path.strip("/")
+    base = "/app"
+    if normalized_path:
+        base = f"{base}/{normalized_path}"
+    if values:
+        query_parts = []
+        for key, value in values.items():
+            if value in {None, ""}:
+                continue
+            query_parts.append(f"{key}={value}")
+        if query_parts:
+            base = f"{base}?{'&'.join(query_parts)}"
+    return base
+
+
+def staff_spa_url(path: str = "", **values) -> str:
+    normalized_path = path.strip("/")
+    base = "/staff/app"
+    if normalized_path:
+        base = f"{base}/{normalized_path}"
+    if values:
+        query_parts = []
+        for key, value in values.items():
+            if value in {None, ""}:
+                continue
+            query_parts.append(f"{key}={value}")
+        if query_parts:
+            base = f"{base}?{'&'.join(query_parts)}"
+    return base
+
+
+def client_portal_nav_items() -> list[dict]:
+    return [
+        {"key": "dashboard", "label": "Dashboard", "url": client_spa_url()},
+        {"key": "intake", "label": "Intake", "url": client_spa_url("intake")},
+        {"key": "appointments", "label": "Appointments", "url": client_spa_url("appointments")},
+        {"key": "care_plan", "label": "Care Plan", "url": client_spa_url("care-plan")},
+        {"key": "results", "label": "Results", "url": client_spa_url("results")},
+        {"key": "messages", "label": "Messages", "url": client_spa_url("messages")},
+    ]
+
+
+def portal_user_payload(user) -> dict:
+    return {
+        "id": user["id"],
+        "role": user["role"],
+        "first_name": user["first_name"],
+        "last_name": user["last_name"],
+        "email": user["email"],
+        "display_name": f"{user['first_name']} {user['last_name']}".strip(),
+    }
+
+
+def client_user_payload(user) -> dict:
+    return portal_user_payload(user)
+
+
+def staff_portal_nav_items(user) -> list[dict]:
+    if is_clinician(user):
+        return [
+            {"key": "dashboard", "label": "Dashboard", "url": staff_spa_url()},
+            {"key": "clinic_ops", "label": "Clinic Ops", "url": staff_spa_url("clinic-ops")},
+            {"key": "calendar", "label": "Calendar", "url": staff_spa_url("calendar")},
+            {"key": "settings", "label": "Settings", "url": staff_spa_url("settings")},
+            {"key": "reminders", "label": "Reminders", "url": staff_spa_url("reminders")},
+            {"key": "journal", "label": "Journal", "url": staff_spa_url("journal")},
+            {"key": "learning", "label": "Learning", "url": staff_spa_url("learning")},
+            {"key": "messaging", "label": "Messaging", "url": staff_spa_url("messaging")},
+            {"key": "new_invite", "label": "New Invite", "url": staff_spa_url("new-invite")},
+        ]
+    return [
+        {"key": "dashboard", "label": "Dashboard", "url": staff_spa_url()},
+        {"key": "calendar", "label": "Calendar", "url": staff_spa_url("calendar")},
+        {"key": "settings", "label": "Settings", "url": staff_spa_url("settings")},
+        {"key": "reminders", "label": "Reminders", "url": staff_spa_url("reminders")},
+        {"key": "journal", "label": "Journal", "url": staff_spa_url("journal")},
+        {"key": "learning", "label": "Learning", "url": staff_spa_url("learning")},
+        {"key": "messaging", "label": "Messaging", "url": staff_spa_url("messaging")},
+        {"key": "new_invite", "label": "New Invite", "url": staff_spa_url("new-invite")},
+    ]
+
+
+def dashboard_api_payload(context: dict) -> dict:
+    submission = context.get("submission")
+    invitation = context.get("invitation")
+    visit_report = context.get("visit_report")
+    return {
+        "schedule": context["schedule"],
+        "care_plan": context["care_plan"],
+        "next_appointment": context["next_appointment"],
+        "recent_messages": context["recent_messages"],
+        "unread_message_count": context["unread_message_count"],
+        "completed_visit_count": context["completed_visit_count"],
+        "cancelled_visit_count": context["cancelled_visit_count"],
+        "recent_history": context["recent_history"],
+        "portal_metrics": context["portal_metrics"],
+        "portal_actions": context["portal_actions"],
+        "portal_journey": context["portal_journey"],
+        "next_step": context["next_step"],
+        "results_highlight": context["results_highlight"],
+        "submission": (
+            {
+                "status": submission["status"],
+                "updated_at": submission["updated_at"],
+            }
+            if submission is not None
+            else None
+        ),
+        "invitation": (
+            {
+                "id": invitation["id"],
+                "appointment_at": invitation["appointment_at"],
+                "note": invitation["note"],
+                "status": invitation["status"],
+            }
+            if invitation is not None
+            else None
+        ),
+        "visit_report": (
+            {
+                "id": visit_report["id"],
+                "report_status": visit_report["report_status"],
+                "patient_summary": visit_report["patient_summary"],
+                "care_plan": visit_report["care_plan"],
+                "follow_up_plan": visit_report["follow_up_plan"],
+                "patient_recommendations": visit_report["patient_recommendations"],
+                "updated_at": visit_report["updated_at"],
+            }
+            if visit_report is not None
+            else None
+        ),
+    }
+
+
+def staff_dashboard_api_payload(user, month_value: str | None = None, *, clinic_ops: bool = False) -> dict:
+    if is_clinician(user) and not clinic_ops:
+        return {
+            "view": "practitioner",
+            "dashboard": practitioner_dashboard_context(user["id"]),
+        }
+    return {
+        "view": "clinic_ops",
+        "dashboard": staff_dashboard_context(month_value),
+    }
+
+
+def client_portal_user_payload(user) -> dict:
+    return {
+        "id": user["id"],
+        "first_name": user["first_name"],
+        "last_name": user["last_name"],
+        "display_name": f"{user['first_name']} {user['last_name']}".strip(),
+        "email": user["email"],
+        "role": user["role"],
+    }
+
+
+def render_client_portal_shell(initial_path: str = "/dashboard"):
+    normalized_path = initial_path if initial_path.startswith("/") else f"/{initial_path}"
+    return render_template(
+        "react_portal.html",
+        portal_user=client_portal_user_payload(g.user),
+        portal_initial_path=normalized_path,
+    )
+
+
 def current_local_timestamp() -> str:
     return datetime.now().replace(second=0, microsecond=0).isoformat(timespec="minutes")
 
@@ -5952,6 +6119,30 @@ def dashboard():
     return render_template("dashboard.html", **context)
 
 
+@bp.get("/app")
+@bp.get("/app/<path:portal_path>")
+@client_required
+def react_client_portal(portal_path: str = ""):
+    return render_template(
+        "react_portal.html",
+        client_portal_path=portal_path,
+        client_portal_nav=client_portal_nav_items(),
+        client_portal_entry_url=url_for("main.react_client_portal"),
+    )
+
+
+@bp.get("/staff/app")
+@bp.get("/staff/app/<path:portal_path>")
+@staff_required
+def react_staff_portal(portal_path: str = ""):
+    return render_template(
+        "react_staff_portal.html",
+        staff_portal_path=portal_path,
+        staff_portal_nav=staff_portal_nav_items(g.user),
+        staff_portal_entry_url=url_for("main.react_staff_portal"),
+    )
+
+
 @bp.route("/staff/dashboard")
 @staff_required
 def staff_dashboard():
@@ -7925,6 +8116,64 @@ def cancel_self_booked_appointment(appointment_id: int):
     return redirect(url_for("main.appointments"))
 
 
+@bp.post("/api/client/appointments/<int:appointment_id>/cancel")
+@client_required
+def api_cancel_self_booked_appointment(appointment_id: int):
+    appointment_row = get_appointment_with_people(appointment_id)
+    if appointment_row is None or appointment_row["patient_user_id"] != g.user["id"]:
+        return jsonify({"ok": False, "errors": ["Appointment could not be found."]}), 404
+
+    appointment = build_appointment_item(appointment_row)
+    linked_care_plan_visit = get_care_plan_visit_by_appointment(appointment_id)
+    if appointment["status"] != "scheduled":
+        return jsonify({"ok": False, "errors": ["Only scheduled appointments can be cancelled."]}), 400
+    if not appointment["can_self_cancel"]:
+        return jsonify(
+            {
+                "ok": False,
+                "errors": ["This appointment is inside the minimum notice window and can no longer be cancelled online."],
+            }
+        ), 400
+
+    get_db().execute(
+        """
+        UPDATE appointments
+        SET status = 'cancelled',
+            updated_at = ?
+        WHERE id = ? AND patient_user_id = ?
+        """,
+        (iso_now(), appointment_id, g.user["id"]),
+    )
+    log_booking_event(
+        "booking_cancelled",
+        appointment_id,
+        g.user["id"],
+        {
+            "source": "patient_portal",
+            "self_service": True,
+        },
+    )
+    sync_care_plan_visit_for_appointment(appointment_id)
+    get_db().commit()
+
+    return jsonify(
+        {
+            "ok": True,
+            "message": (
+                "Appointment cancelled. Choose a new time to stay on track with your care plan."
+                if linked_care_plan_visit is not None and linked_care_plan_visit["patient_user_id"] == g.user["id"]
+                else "Appointment cancelled. You can book a new slot anytime."
+            ),
+            "care_plan_visit_id": (
+                linked_care_plan_visit["id"]
+                if linked_care_plan_visit is not None and linked_care_plan_visit["patient_user_id"] == g.user["id"]
+                else None
+            ),
+            "appointment_id": appointment_id,
+        }
+    )
+
+
 @bp.route("/staff/patients/<int:user_id>")
 @staff_required
 def staff_patient_detail(user_id: int):
@@ -8467,6 +8716,20 @@ def intake():
     )
 
 
+@bp.route("/intake/embed")
+@client_required
+def intake_embed():
+    submission = get_submission_for_user(g.user["id"])
+    payload = json.loads(submission["payload_json"]) if submission else {}
+    seed_payload = build_seed_payload(dict(g.user), payload)
+    return render_template(
+        "intake.html",
+        intake_payload=seed_payload,
+        submission_status=submission["status"] if submission else "draft",
+        embed_mode=True,
+    )
+
+
 @bp.get("/api/intake")
 @client_required
 def intake_json():
@@ -8529,6 +8792,181 @@ def save_intake():
             "status": status,
             "updatedAt": now,
             "redirect": url_for("main.results") if status == "submitted" else None,
+        }
+    )
+
+
+@bp.get("/api/client/session")
+@client_required
+def api_client_session():
+    return jsonify(
+        {
+            "ok": True,
+            "user": client_user_payload(g.user),
+            "ui_branding": {
+                "clinic_name": clinic_display_name(),
+                "brand_color": appearance_brand_color(),
+                "theme": appearance_theme_value(),
+                "font_style": appearance_font_style_value(),
+                "show_portal_branding": setting_enabled("appearance_show_portal_branding", True),
+            },
+            "nav": client_portal_nav_items(),
+            "routes": {
+                "spa_root": client_spa_url(),
+                "legacy_intake": url_for("main.intake"),
+                "logout": url_for("main.logout"),
+            },
+        }
+    )
+
+
+@bp.get("/api/staff/session")
+@staff_required
+def api_staff_session():
+    return jsonify(
+        {
+            "ok": True,
+            "user": portal_user_payload(g.user),
+            "ui_branding": {
+                "clinic_name": clinic_display_name(),
+                "brand_color": appearance_brand_color(),
+                "theme": appearance_theme_value(),
+                "font_style": appearance_font_style_value(),
+                "show_portal_branding": setting_enabled("appearance_show_portal_branding", True),
+            },
+            "nav": staff_portal_nav_items(g.user),
+            "routes": {
+                "spa_root": staff_spa_url(),
+                "logout": url_for("main.logout"),
+            },
+        }
+    )
+
+
+@bp.get("/api/staff/dashboard")
+@staff_required
+def api_staff_dashboard():
+    requested_view = request.args.get("view", "").strip().lower()
+    clinic_ops = requested_view == "clinic_ops"
+    payload = staff_dashboard_api_payload(g.user, request.args.get("month"), clinic_ops=clinic_ops)
+    return jsonify({"ok": True, **payload})
+
+
+@bp.get("/api/client/dashboard")
+@client_required
+def api_client_dashboard():
+    context = build_client_dashboard_context(g.user["id"], request.args.get("month"))
+    return jsonify({"ok": True, "dashboard": dashboard_api_payload(context)})
+
+
+@bp.get("/api/client/appointments/context")
+@client_required
+def api_client_appointments_context():
+    schedule = build_patient_schedule_context(g.user["id"], request.args.get("month"))
+    booking = patient_portal_booking_context(g.user["id"])
+    booking_disabled_reason = None
+    if not online_booking_enabled():
+        booking_disabled_reason = "Online booking is disabled in clinic settings. Contact the clinic to schedule a visit."
+    return jsonify(
+        {
+            "ok": True,
+            "appointments": {
+                "schedule": schedule,
+                "care_plan": booking["care_plan"],
+                "service_options": booking["service_options"],
+                "location_options": booking["location_options"],
+                "clinician_options": booking["clinician_options"],
+                "selected_care_plan_visit": booking["selected_care_plan_visit"],
+                "selected_service_id": booking["selected_service_id"],
+                "selected_appointment_type": booking["selected_appointment_type"],
+                "selected_duration_minutes": booking["selected_duration_minutes"],
+                "selected_location_id": booking["selected_location_id"],
+                "selected_clinician_id": booking["selected_clinician_id"],
+                "selected_clinician_choice": booking["selected_clinician_choice"],
+                "booking_policy": booking["booking_policy"],
+                "booking_date": booking["booking_date"],
+                "booking_availability": serialize_schedule_availability(booking["booking_availability"]),
+                "booking_disabled_reason": booking_disabled_reason,
+                "allow_any_clinician": booking["booking_policy"]["routing_mode"] == "team_round_robin",
+            },
+        }
+    )
+
+
+@bp.get("/api/client/care-plan")
+@client_required
+def api_client_care_plan():
+    return jsonify({"ok": True, "care_plan": build_care_plan_context(g.user["id"])})
+
+
+@bp.get("/api/client/messages")
+@client_required
+def api_client_messages():
+    unread_before_open = get_patient_unread_message_count(g.user["id"])
+    mark_patient_messages_read_for_patient(g.user["id"])
+    get_db().commit()
+    messages = get_patient_message_thread(g.user["id"])
+    return jsonify(
+        {
+            "ok": True,
+            "messages": messages,
+            "message_topics": message_topic_options(),
+            "unread_before_open": unread_before_open,
+            "unread_message_count": 0,
+        }
+    )
+
+
+@bp.post("/api/client/messages")
+@client_required
+def api_client_send_message():
+    payload = request.get_json(silent=True) or {}
+    topic = str(payload.get("topic", "")).strip()
+    body = str(payload.get("body", "")).strip()
+
+    errors = []
+    if topic not in MESSAGE_TOPIC_META:
+        errors.append("Choose a valid message topic.")
+    if not body:
+        errors.append("Write a message before sending.")
+    if errors:
+        return jsonify({"ok": False, "errors": errors}), 400
+
+    insert_patient_message(g.user["id"], g.user["id"], "client", topic, body)
+    get_db().commit()
+    messages = get_patient_message_thread(g.user["id"])
+    return jsonify({"ok": True, "messages": messages, "message": "Message sent to your chiropractic team."}), 201
+
+
+@bp.get("/api/client/results")
+@client_required
+def api_client_results():
+    context = results_page_context(g.user["id"])
+    if context is None or context["submission"] is None:
+        return jsonify(
+            {
+                "ok": False,
+                "error": "Complete your intake before viewing results.",
+                "redirect": url_for("main.intake"),
+            }
+        ), 409
+
+    return jsonify(
+        {
+            "ok": True,
+            "results": {
+                "summary": context["summary"],
+                "patient": {
+                    "id": context["patient"]["id"],
+                    "first_name": context["patient"]["first_name"],
+                    "last_name": context["patient"]["last_name"],
+                    "email": context["patient"]["email"],
+                },
+                "submission": {
+                    "status": context["submission"]["status"],
+                    "updated_at": context["submission"]["updated_at"],
+                },
+            },
         }
     )
 
@@ -8614,6 +9052,25 @@ def api_appointments():
         )
     )
     booking_policy = resolve_booking_policy(selected_service, appointment_type, duration_minutes if isinstance(duration_minutes, int) else None)
+    care_plan_visit_id = int_or_none(str(incoming.get("care_plan_visit_id", "")))
+    if is_staff(g.user):
+        patient_user_id = int_or_none(str(incoming.get("patient_user_id", "")))
+        if not isinstance(patient_user_id, int) or get_client_user(patient_user_id) is None:
+            return jsonify({"ok": False, "errors": ["A valid patient_user_id is required for staff bookings."]}), 400
+        booking_source = "api_staff"
+    else:
+        patient_user_id = g.user["id"]
+        booking_source = "api_client"
+    care_plan_visit = get_care_plan_visit(care_plan_visit_id) if isinstance(care_plan_visit_id, int) else None
+    if care_plan_visit is not None:
+        booking_policy = care_plan_visit_policy(
+            booking_policy,
+            {
+                "visit_kind": care_plan_visit["visit_kind"],
+                "duration_minutes": care_plan_visit["duration_minutes"] or booking_policy["duration_minutes"],
+            },
+        )
+        booking_policy["service_label"] = care_plan_visit["label"] or booking_policy["service_label"]
     incoming_clinician_value = incoming.get("clinician_user_id")
     raw_clinician_value = "" if incoming_clinician_value is None else str(incoming_clinician_value).strip()
     clinician_user_id = requested_clinician_user_id(
@@ -8626,18 +9083,15 @@ def api_appointments():
     slot_start = str(incoming.get("slot_start", "")).strip()
     patient_details = str(incoming.get("patient_details", "")).strip()
 
-    if is_staff(g.user):
-        patient_user_id = int_or_none(str(incoming.get("patient_user_id", "")))
-        if not isinstance(patient_user_id, int) or get_client_user(patient_user_id) is None:
-            return jsonify({"ok": False, "errors": ["A valid patient_user_id is required for staff bookings."]}), 400
-        booking_source = "api_staff"
-    else:
-        patient_user_id = g.user["id"]
-        booking_source = "api_client"
-
     errors = []
     if appointment_type not in APPOINTMENT_TYPE_META:
         errors.append("Choose a valid appointment type.")
+    if care_plan_visit is not None and appointment_type != "care_plan":
+        errors.append("This rebooking link is only for care-plan visits.")
+    if isinstance(care_plan_visit_id, int) and (care_plan_visit is None or care_plan_visit["patient_user_id"] != patient_user_id):
+        errors.append("That care-plan visit could not be loaded.")
+    if care_plan_visit is not None and care_plan_visit["appointment_id"] is not None:
+        errors.append("That care-plan step is already booked.")
     if location_id is None:
         errors.append("Choose a valid location.")
     if booking_policy["routing_mode"] != "team_round_robin" and clinician_user_id is None:
@@ -8674,6 +9128,27 @@ def api_appointments():
         policy_snapshot=booking_policy,
         booking_source=booking_source,
     )
+    if care_plan_visit is not None:
+        get_db().execute(
+            """
+            UPDATE care_plan_visits
+            SET appointment_id = ?,
+                booked = 1,
+                status = 'scheduled',
+                patient_details = ?,
+                note = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                appointment_id,
+                patient_details,
+                patient_details,
+                iso_now(),
+                care_plan_visit["id"],
+            ),
+        )
+        refresh_care_plan_status(care_plan_visit["care_plan_id"])
     log_booking_event(
         "booking_created",
         appointment_id,
@@ -8688,7 +9163,13 @@ def api_appointments():
     )
     get_db().commit()
     appointment = build_appointment_item(get_appointment_with_people(appointment_id))
-    return jsonify({"ok": True, "appointment": serialize_appointment_for_api(appointment, include_internal=is_staff(g.user))}), 201
+    return jsonify(
+        {
+            "ok": True,
+            "appointment": serialize_appointment_for_api(appointment, include_internal=is_staff(g.user)),
+            "care_plan_visit_id": care_plan_visit["id"] if care_plan_visit is not None else None,
+        }
+    ), 201
 
 
 @bp.route("/results")

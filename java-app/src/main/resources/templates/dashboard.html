@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard · Life Chiropractic Java</title>
+  <link rel="stylesheet" th:href="@{/app.css}">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand-block">
+        <div class="brand-mark">LC</div>
+        <div>
+          <strong>Life Chiropractic</strong>
+          <small>Java migration</small>
+        </div>
+      </div>
+      <nav class="sidebar-nav">
+        <a class="sidebar-link active" th:href="@{/dashboard}">Dashboard</a>
+        <a class="sidebar-link" th:if="${principal.client}" th:href="@{/appointments}">Appointments</a>
+        <a class="sidebar-link" th:if="${principal.client}" th:href="@{/care-plan}">Care plan</a>
+        <a class="sidebar-link" th:if="${!principal.client}" th:href="@{/legacy/appointments}">Legacy booking scaffold</a>
+      </nav>
+      <form method="post" th:action="@{/logout}">
+        <button type="submit" class="secondary-button full-width">Log out</button>
+      </form>
+    </aside>
+    <main class="page-shell">
+      <div class="flash flash-success" th:if="${flashMessage}" th:text="${flashMessage}"></div>
+      <section class="hero-panel">
+        <div>
+          <div class="eyebrow" th:text="${principal.role}"></div>
+          <h1 th:text="${principal.displayName() + ', welcome back.'}"></h1>
+          <p th:text="${summary.detail}"></p>
+        </div>
+        <div class="status-card">
+          <span th:text="${summary.primaryMetricLabel}"></span>
+          <strong th:text="${summary.primaryMetricValue}"></strong>
+          <small th:text="${summary.secondaryMetricLabel + ': ' + summary.secondaryMetricValue}"></small>
+        </div>
+      </section>
+
+      <section class="dashboard-grid two-up" th:if="${principal.client}">
+        <article class="panel">
+          <div class="panel-label">Next step</div>
+          <h2 th:text="${carePlan.adherence['title']}"></h2>
+          <p th:text="${carePlan.adherence['detail']}"></p>
+          <div class="metric-strip">
+            <div class="metric-pill">
+              <span>Care plan progress</span>
+              <strong th:text="${carePlan.adherence['progress_label']}"></strong>
+            </div>
+            <div class="metric-pill">
+              <span>Visits still to arrange</span>
+              <strong th:text="${carePlan.adherence['needs_booking_count']}"></strong>
+            </div>
+          </div>
+          <div class="panel-actions">
+            <a class="primary-button" th:href="${carePlan.adherence['action_url']}" th:text="${carePlan.adherence['action_label']}"></a>
+            <a class="secondary-button" th:href="@{/care-plan}">Open care plan</a>
+          </div>
+        </article>
+        <article class="panel">
+          <div class="panel-label">Portal shortcuts</div>
+          <div class="appointment-list">
+            <article class="appointment-card">
+              <div>
+                <strong>Appointments</strong>
+                <p>Review upcoming visits, change plans, and reserve live slots.</p>
+              </div>
+              <div class="appointment-actions">
+                <a class="secondary-button" th:href="@{/appointments}">Open calendar</a>
+              </div>
+            </article>
+            <article class="appointment-card">
+              <div>
+                <strong>Care plan</strong>
+                <p th:text="${carePlan.plan != null ? carePlan.plan['title'] : 'Your chiropractor will publish the next stage of care here.'}"></p>
+              </div>
+              <div class="appointment-actions">
+                <a class="secondary-button" th:href="@{/care-plan}">Open plan</a>
+              </div>
+            </article>
+          </div>
+        </article>
+      </section>
+
+      <section class="dashboard-grid two-up" th:if="${!principal.client}">
+        <article class="panel">
+          <div class="panel-label">Current scope</div>
+          <h2 th:text="${summary.title}"></h2>
+          <p>The Java slice now covers schema parity, authentication, invitation acceptance, patient appointments, and patient-facing care-plan adherence.</p>
+        </article>
+        <article class="panel">
+          <div class="panel-label">Next migration steps</div>
+          <ul class="check-list">
+            <li>Port staff booking and patient detail screens</li>
+            <li>Move care-plan creation and staff follow-up queues</li>
+            <li>Move intake, results, and messaging</li>
+          </ul>
+        </article>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

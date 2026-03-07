@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Accept Invitation · Life Chiropractic Java</title>
+  <link rel="stylesheet" th:href="@{/app.css}">
+</head>
+<body class="auth-body">
+  <main class="auth-shell">
+    <section class="auth-card" th:if="${invalid}">
+      <div class="eyebrow">Invitation unavailable</div>
+      <h1>This invite is no longer valid.</h1>
+      <p th:text="${invalidMessage ?: 'The invitation has expired or already been used.'}"></p>
+      <div class="panel-actions">
+        <a class="secondary-button" th:href="@{/login}">Back to sign in</a>
+      </div>
+    </section>
+
+    <section class="auth-card" th:unless="${invalid}">
+      <div class="eyebrow">Clinic invitation</div>
+      <h1>Finish setting up your Java account</h1>
+      <p>
+        This invite is for
+        <strong th:text="${invitation.firstName + ' ' + invitation.lastName}"></strong>
+        at
+        <strong th:text="${invitation.email}"></strong>.
+      </p>
+      <div class="info-box" th:if="${reservedAppointmentLabel}">
+        Reserved appointment: <strong th:text="${reservedAppointmentLabel}"></strong>
+      </div>
+      <div class="info-box" th:if="${slotHold != null}">
+        <strong th:text="${slotHold.serviceLabel != null ? slotHold.serviceLabel : 'Reserved consultation'}"></strong>
+        <span th:if="${slotHold.clinicianName != null and !#strings.isEmpty(slotHold.clinicianName)}" th:text="${' with ' + slotHold.clinicianName}"></span>
+        <span th:if="${slotHold.locationName != null and !#strings.isEmpty(slotHold.locationName)}" th:text="${' at ' + slotHold.locationName}"></span>
+        <br>
+        Hold expires <strong th:text="${slotHold.expiresAt}"></strong>
+      </div>
+      <div class="info-box" th:if="${invitation.note != null and !#strings.isEmpty(invitation.note)}" th:text="${invitation.note}"></div>
+      <div class="flash flash-error" th:if="${errorMessage}" th:text="${errorMessage}"></div>
+      <form method="post" class="auth-form">
+        <label>
+          <span>Create password</span>
+          <input type="password" name="password" minlength="8" autocomplete="new-password" required>
+        </label>
+        <label>
+          <span>Confirm password</span>
+          <input type="password" name="confirm_password" minlength="8" autocomplete="new-password" required>
+        </label>
+        <button type="submit" class="primary-button">Accept invitation</button>
+      </form>
+    </section>
+  </main>
+</body>
+</html>

@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block title %}Patient Portal · {{ ui_branding["clinic_name"] }}{% endblock %}
+
+{% block head %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='react-portal/portal.css') }}">
+{% endblock %}
+
+{% block shell_class %}react-portal-shell{% endblock %}
+
+{% block content %}
+  <div
+    id="react-portal-root"
+    data-portal-kind="client"
+    data-router-basename="/app"
+    data-initial-path="{{ client_portal_path }}"
+    data-session-endpoint="{{ url_for('main.api_client_session') }}"
+    data-dashboard-endpoint="{{ url_for('main.api_client_dashboard') }}"
+    data-appointments-endpoint="{{ url_for('main.api_client_appointments_context') }}"
+    data-care-plan-endpoint="{{ url_for('main.api_client_care_plan') }}"
+    data-messages-endpoint="{{ url_for('main.api_client_messages') }}"
+    data-results-endpoint="{{ url_for('main.api_client_results') }}"
+    data-intake-endpoint="{{ url_for('main.intake_json') }}"
+    data-save-intake-endpoint="{{ url_for('main.save_intake') }}"
+    data-intake-embed-endpoint="{{ url_for('main.intake_embed') }}"
+    data-book-appointment-endpoint="{{ url_for('main.api_appointments') }}"
+    data-availability-endpoint="{{ url_for('main.api_availability') }}"
+    data-cancel-appointment-base="/api/client/appointments"
+    data-spa-root="{{ client_portal_entry_url }}"
+  >
+    <section class="panel">
+      <div class="panel-label">Loading portal</div>
+      <h2>Preparing your React workspace.</h2>
+      <p>If this does not load, refresh the page and make sure the frontend bundle has been built.</p>
+    </section>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script type="module" src="{{ url_for('static', filename='react-portal/portal.js') }}"></script>
+{% endblock %}

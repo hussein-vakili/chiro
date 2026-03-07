@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign In · Life Chiropractic Java</title>
+  <link rel="stylesheet" th:href="@{/app.css}">
+</head>
+<body class="auth-body">
+  <main class="auth-shell">
+    <section class="auth-card">
+      <div class="eyebrow">Java migration slice</div>
+      <h1>Sign in to the Java portal</h1>
+      <p>This backend now owns authentication and invitation acceptance. It uses the same SQLite clinic data and password hashes as the Flask app.</p>
+      <div class="info-box">
+        Default local staff login: <strong>staff@example.com</strong> / <strong>staffpass123</strong>
+      </div>
+      <div class="flash flash-error" th:if="${loginError}">Incorrect email or password.</div>
+      <div class="flash flash-success" th:if="${loggedOut}">You have been signed out.</div>
+      <div class="flash flash-success" th:if="${flashMessage}" th:text="${flashMessage}"></div>
+      <form method="post" th:action="@{/login}" class="auth-form">
+        <label>
+          <span>Email</span>
+          <input type="email" name="username" autocomplete="email" required>
+        </label>
+        <label>
+          <span>Password</span>
+          <input type="password" name="password" autocomplete="current-password" required>
+        </label>
+        <button type="submit" class="primary-button">Sign in</button>
+      </form>
+      <div class="footer-link-row">
+        <span>Have an invite?</span>
+        <a th:href="@{/invite/demo-invite-token}">Open demo invitation</a>
+      </div>
+      <div class="footer-link-row muted">
+        <span>Flask app still runs separately at</span>
+        <code>127.0.0.1:5050</code>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

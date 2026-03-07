@@ -25,11 +25,12 @@
   </style>
   {% block head %}{% endblock %}
 </head>
-<body class="theme-{{ ui_branding['theme'] }} font-{{ ui_branding['font_style'] }} {% block body_class %}{% endblock %}">
+{% set embed_mode = embed_mode if embed_mode is defined else request.args.get('embed') == '1' %}
+<body class="theme-{{ ui_branding['theme'] }} font-{{ ui_branding['font_style'] }} {% if embed_mode %}embedded-frame{% endif %} {% block body_class %}{% endblock %}">
   {% set endpoint = request.endpoint or "" %}
   {% set show_portal_branding = ui_branding["show_portal_branding"] or not g.user or g.user["role"] != "client" %}
   {% set portal_brand_name = ui_branding["clinic_name"] if show_portal_branding else "Patient Portal" %}
-  {% if g.user %}
+  {% if g.user and not embed_mode %}
     <div class="app-layout">
       <aside class="app-sidebar">
         <a class="sidebar-brand" href="{{ url_for('main.dashboard') }}">
@@ -49,30 +50,31 @@
         </a>
         <nav class="sidebar-nav">
           {% if g.user["role"] == "client" %}
-            <a class="sidebar-link {% if endpoint == 'main.dashboard' %}active{% endif %}" href="{{ url_for('main.dashboard') }}">Dashboard</a>
-            <a class="sidebar-link {% if endpoint == 'main.intake' %}active{% endif %}" href="{{ url_for('main.intake') }}">Intake</a>
-            <a class="sidebar-link {% if endpoint == 'main.appointments' %}active{% endif %}" href="{{ url_for('main.appointments') }}">Appointments</a>
-            <a class="sidebar-link {% if endpoint == 'main.results' %}active{% endif %}" href="{{ url_for('main.results') }}">Results</a>
-            <a class="sidebar-link {% if endpoint == 'main.patient_messages' %}active{% endif %}" href="{{ url_for('main.patient_messages') }}">Messages</a>
+            <a class="sidebar-link {% if endpoint == 'main.react_client_portal' and (request.path == '/app' or request.path == '/app/') %}active{% endif %}" href="{{ url_for('main.react_client_portal') }}">Dashboard</a>
+            <a class="sidebar-link {% if (endpoint == 'main.react_client_portal' and request.path.startswith('/app/intake')) or endpoint == 'main.intake' or endpoint == 'main.intake_embed' %}active{% endif %}" href="{{ url_for('main.react_client_portal', portal_path='intake') }}">Intake</a>
+            <a class="sidebar-link {% if endpoint == 'main.react_client_portal' and request.path.startswith('/app/appointments') %}active{% endif %}" href="{{ url_for('main.react_client_portal', portal_path='appointments') }}">Appointments</a>
+            <a class="sidebar-link {% if endpoint == 'main.react_client_portal' and request.path.startswith('/app/care-plan') %}active{% endif %}" href="{{ url_for('main.react_client_portal', portal_path='care-plan') }}">Care Plan</a>
+            <a class="sidebar-link {% if endpoint == 'main.react_client_portal' and request.path.startswith('/app/results') %}active{% endif %}" href="{{ url_for('main.react_client_portal', portal_path='results') }}">Results</a>
+            <a class="sidebar-link {% if endpoint == 'main.react_client_portal' and request.path.startswith('/app/messages') %}active{% endif %}" href="{{ url_for('main.react_client_portal', portal_path='messages') }}">Messages</a>
           {% elif g.user["role"] == "clinician" %}
-            <a class="sidebar-link {% if endpoint == 'main.dashboard' %}active{% endif %}" href="{{ url_for('main.dashboard') }}">Dashboard</a>
-            <a class="sidebar-link {% if endpoint == 'main.staff_dashboard' %}active{% endif %}" href="{{ url_for('main.staff_dashboard') }}">Clinic Ops</a>
-            <a class="sidebar-link {% if endpoint == 'main.staff_calendar' %}active{% endif %}" href="{{ url_for('main.staff_calendar') }}">Calendar</a>
-            <a class="sidebar-link {% if endpoint == 'main.staff_settings' %}active{% endif %}" href="{{ url_for('main.staff_settings') }}">Settings</a>
-            <a class="sidebar-link {% if endpoint == 'main.staff_reminders' %}active{% endif %}" href="{{ url_for('main.staff_reminders') }}">Reminders</a>
-            <a class="sidebar-link {% if endpoint == 'main.staff_journal' %}active{% endif %}" href="{{ url_for('main.staff_journal') }}">Journal</a>
-            <a class="sidebar-link {% if endpoint == 'main.staff_learning' %}active{% endif %}" href="{{ url_for('main.staff_learning') }}">Learning</a>
-            <a class="sidebar-link {% if endpoint == 'main.staff_messaging' %}active{% endif %}" href="{{ url_for('main.staff_messaging') }}">Messaging</a>
-            <a class="sidebar-link {% if endpoint == 'main.staff_new_invitation' %}active{% endif %}" href="{{ url_for('main.staff_new_invitation') }}">New Invite</a>
+            <a class="sidebar-link {% if endpoint == 'main.react_staff_portal' and (request.path == '/staff/app' or request.path == '/staff/app/') %}active{% endif %}" href="{{ url_for('main.react_staff_portal') }}">Dashboard</a>
+            <a class="sidebar-link {% if endpoint == 'main.react_staff_portal' and request.path.startswith('/staff/app/clinic-ops') %}active{% endif %}" href="{{ url_for('main.react_staff_portal', portal_path='clinic-ops') }}">Clinic Ops</a>
+            <a class="sidebar-link {% if endpoint == 'main.react_staff_portal' and request.path.startswith('/staff/app/calendar') %}active{% endif %}" href="{{ url_for('main.react_staff_portal', portal_path='calendar') }}">Calendar</a>
+            <a class="sidebar-link {% if endpoint == 'main.react_staff_portal' and request.path.startswith('/staff/app/settings') %}active{% endif %}" href="{{ url_for('main.react_staff_portal', portal_path='settings') }}">Settings</a>
+            <a class="sidebar-link {% if endpoint == 'main.react_staff_portal' and request.path.startswith('/staff/app/reminders') %}active{% endif %}" href="{{ url_for('main.react_staff_portal', portal_path='reminders') }}">Reminders</a>
+            <a class="sidebar-link {% if endpoint == 'main.react_staff_portal' and request.path.startswith('/staff/app/journal') %}active{% endif %}" href="{{ url_for('main.react_staff_portal', portal_path='journal') }}">Journal</a>
+            <a class="sidebar-link {% if endpoint == 'main.react_staff_portal' and request.path.startswith('/staff/app/learning') %}active{% endif %}" href="{{ url_for('main.react_staff_portal', portal_path='learning') }}">Learning</a>
+            <a class="sidebar-link {% if endpoint == 'main.react_staff_portal' and request.path.startswith('/staff/app/messaging') %}active{% endif %}" href="{{ url_for('main.react_staff_portal', portal_path='messaging') }}">Messaging</a>
+            <a class="sidebar-link {% if endpoint == 'main.react_staff_portal' and request.path.startswith('/staff/app/new-invite') %}active{% endif %}" href="{{ url_for('main.react_staff_portal', portal_path='new-invite') }}">New Invite</a>
           {% else %}
-            <a class="sidebar-link {% if endpoint == 'main.staff_dashboard' or endpoint == 'main.dashboard' %}active{% endif %}" href="{{ url_for('main.staff_dashboard') }}">Dashboard</a>
-            <a class="sidebar-link {% if endpoint == 'main.staff_calendar' %}active{% endif %}" href="{{ url_for('main.staff_calendar') }}">Calendar</a>
-            <a class="sidebar-link {% if endpoint == 'main.staff_settings' %}active{% endif %}" href="{{ url_for('main.staff_settings') }}">Settings</a>
-            <a class="sidebar-link {% if endpoint == 'main.staff_reminders' %}active{% endif %}" href="{{ url_for('main.staff_reminders') }}">Reminders</a>
-            <a class="sidebar-link {% if endpoint == 'main.staff_journal' %}active{% endif %}" href="{{ url_for('main.staff_journal') }}">Journal</a>
-            <a class="sidebar-link {% if endpoint == 'main.staff_learning' %}active{% endif %}" href="{{ url_for('main.staff_learning') }}">Learning</a>
-            <a class="sidebar-link {% if endpoint == 'main.staff_messaging' %}active{% endif %}" href="{{ url_for('main.staff_messaging') }}">Messaging</a>
-            <a class="sidebar-link {% if endpoint == 'main.staff_new_invitation' %}active{% endif %}" href="{{ url_for('main.staff_new_invitation') }}">New Invite</a>
+            <a class="sidebar-link {% if endpoint == 'main.react_staff_portal' and (request.path == '/staff/app' or request.path == '/staff/app/') %}active{% endif %}" href="{{ url_for('main.react_staff_portal') }}">Dashboard</a>
+            <a class="sidebar-link {% if endpoint == 'main.react_staff_portal' and request.path.startswith('/staff/app/calendar') %}active{% endif %}" href="{{ url_for('main.react_staff_portal', portal_path='calendar') }}">Calendar</a>
+            <a class="sidebar-link {% if endpoint == 'main.react_staff_portal' and request.path.startswith('/staff/app/settings') %}active{% endif %}" href="{{ url_for('main.react_staff_portal', portal_path='settings') }}">Settings</a>
+            <a class="sidebar-link {% if endpoint == 'main.react_staff_portal' and request.path.startswith('/staff/app/reminders') %}active{% endif %}" href="{{ url_for('main.react_staff_portal', portal_path='reminders') }}">Reminders</a>
+            <a class="sidebar-link {% if endpoint == 'main.react_staff_portal' and request.path.startswith('/staff/app/journal') %}active{% endif %}" href="{{ url_for('main.react_staff_portal', portal_path='journal') }}">Journal</a>
+            <a class="sidebar-link {% if endpoint == 'main.react_staff_portal' and request.path.startswith('/staff/app/learning') %}active{% endif %}" href="{{ url_for('main.react_staff_portal', portal_path='learning') }}">Learning</a>
+            <a class="sidebar-link {% if endpoint == 'main.react_staff_portal' and request.path.startswith('/staff/app/messaging') %}active{% endif %}" href="{{ url_for('main.react_staff_portal', portal_path='messaging') }}">Messaging</a>
+            <a class="sidebar-link {% if endpoint == 'main.react_staff_portal' and request.path.startswith('/staff/app/new-invite') %}active{% endif %}" href="{{ url_for('main.react_staff_portal', portal_path='new-invite') }}">New Invite</a>
           {% endif %}
         </nav>
         <form method="post" action="{{ url_for('main.logout') }}" class="sidebar-logout-form">
@@ -96,7 +98,7 @@
         {% block content %}{% endblock %}
       </main>
     </div>
-  {% if g.user %}
+  {% if g.user and not embed_mode %}
     </div>
   {% endif %}
   {% block scripts %}{% endblock %}

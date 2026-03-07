@@ -56,6 +56,11 @@ body{font-family:var(--font);background:var(--bg);color:var(--ink);line-height:1
 .portal-brand strong{font-size:15px;display:block}
 .portal-brand small{font-size:11px;color:var(--ink4);text-transform:uppercase;letter-spacing:.12em}
 .mini-mark{width:36px;height:36px;border-radius:12px;background:var(--life-g);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;box-shadow:0 8px 18px rgba(59,122,87,.18)}
+body.embed-mode{background:transparent}
+body.embed-mode .intake-layout{grid-template-columns:1fr}
+body.embed-mode .intake-side{display:none}
+body.embed-mode .shell{max-width:760px}
+body.embed-mode .hero{padding-top:28px}
 @media(max-width:980px){
   .intake-layout{grid-template-columns:1fr}
   .intake-side{
@@ -249,6 +254,7 @@ select{cursor:pointer;-webkit-appearance:none;appearance:none;background-image:u
 @media(max-width:400px){.chip{padding:9px 13px;font-size:12px}.btn{padding:12px 22px;font-size:13px}}
 @media(max-width:560px){.nav-in{flex-wrap:wrap}.nav-meta{order:3;flex-basis:100%}.nav-actions{width:100%;justify-content:flex-end}}
 @media(max-width:980px){.nav{left:0}}
+body.embed-mode .nav{left:0}
 
 /* ═══ CLINICIAN PROFILE ═══ */
 .prof-hero{background:var(--life-g);border-radius:var(--r);padding:28px 24px;color:#fff;margin-bottom:14px;position:relative;overflow:hidden}
@@ -279,9 +285,10 @@ select{cursor:pointer;-webkit-appearance:none;appearance:none;background-image:u
 .prof-score-fill{height:100%;border-radius:6px;transition:width .5s var(--ease)}
 </style>
 </head>
-<body>
+<body class="{% if embed_mode %}embed-mode{% endif %}">
 
 <div class="intake-layout">
+  {% if not embed_mode %}
   <aside class="intake-side">
     <a class="portal-brand" href="{{ url_for('main.dashboard') }}">
       <span class="mini-mark">LC</span>
@@ -300,6 +307,7 @@ select{cursor:pointer;-webkit-appearance:none;appearance:none;background-image:u
       <button type="submit" class="intake-side-logout">Log out</button>
     </form>
   </aside>
+  {% endif %}
   <main class="intake-main">
 <div class="shell">
 

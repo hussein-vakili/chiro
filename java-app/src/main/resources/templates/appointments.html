@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Appointments · Life Chiropractic Java</title>
+  <link rel="stylesheet" th:href="@{/app.css}">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand-block">
+        <div class="brand-mark">LC</div>
+        <div>
+          <strong>Life Chiropractic</strong>
+          <small>Java migration</small>
+        </div>
+      </div>
+      <nav class="sidebar-nav">
+        <a class="sidebar-link" th:href="@{/dashboard}">Dashboard</a>
+        <a class="sidebar-link active" th:href="@{/appointments}">Appointments</a>
+        <a class="sidebar-link" th:href="@{/care-plan}">Care plan</a>
+      </nav>
+      <form method="post" th:action="@{/logout}">
+        <button type="submit" class="secondary-button full-width">Log out</button>
+      </form>
+    </aside>
+    <main class="page-shell">
+      <div class="flash flash-success" th:if="${flashMessage}" th:text="${flashMessage}"></div>
+      <div class="flash flash-error" th:if="${errorMessage}" th:text="${errorMessage}"></div>
+
+      <section class="hero-panel">
+        <div>
+          <div class="eyebrow">Patient portal</div>
+          <h1>Your appointments and next booking.</h1>
+          <p>Review upcoming visits, check recent history, and reserve a new appointment using the same live service rules and diary availability used by the clinic team.</p>
+        </div>
+        <div class="status-card">
+          <span th:text="${page.carePlan.plan != null ? 'Care plan status' : (page.nextAppointment != null ? 'Next visit' : 'Booking status')}"></span>
+          <strong th:text="${page.carePlan.plan != null ? page.carePlan.adherence['title'] : (page.nextAppointment != null ? page.nextAppointment['appointment_type_label'] : 'No upcoming visits')}"></strong>
+          <small th:text="${page.carePlan.plan != null ? page.carePlan.adherence['detail'] : (page.nextAppointment != null ? page.nextAppointment['starts_label'] : 'Choose a service and load live times below.')}"></small>
+          <small th:if="${page.nextAppointment != null and page.nextAppointment['location_name'] != null}" th:text="${page.nextAppointment['location_name']}"></small>
+        </div>
+      </section>
+
+      <section class="panel" style="margin-bottom:20px;" th:if="${page.carePlan.plan != null}">
+        <div class="panel-label">Care plan</div>
+        <div class="care-plan-header-grid">
+          <div>
+            <h2 th:text="${page.carePlan.plan['title']}"></h2>
+            <p th:text="${page.carePlan.plan['frequency_label'] + ' for ' + page.carePlan.plan['duration_weeks'] + ' weeks · ' + page.carePlan.plan['total_visits'] + ' visits'}"></p>
+          </div>
+          <div class="metric-strip">
+            <div class="metric-pill">
+              <span>Completed</span>
+              <strong th:text="${page.carePlan.stats['completed']}"></strong>
+            </div>
+            <div class="metric-pill">
+              <span>Next step</span>
+              <strong th:text="${page.carePlan.adherence['needs_booking_count']}"></strong>
+            </div>
+          </div>
+        </div>
+        <div class="panel-actions">
+          <a class="primary-button" th:href="${page.carePlan.adherence['action_url']}" th:text="${page.carePlan.adherence['action_label']}"></a>
+          <a class="secondary-button" th:href="@{/care-plan}">Open full care plan</a>
+        </div>
+      </section>
+
+      <section class="panel" style="margin-bottom:20px;">
+        <div class="panel-label">Upcoming mix</div>
+        <div class="metric-strip">
+          <div class="metric-pill">
+            <span>Initial consultation</span>
+            <strong th:text="${page.counts['initial_consult']}"></strong>
+          </div>
+          <div class="metric-pill">
+            <span>Report of findings</span>
+            <strong th:text="${page.counts['report_of_findings']}"></strong>
+          </div>
+          <div class="metric-pill">
+            <span>Care plan visit</span>
+            <strong th:text="${page.counts['care_plan']}"></strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="dashboard-grid two-up">
+        <article class="panel">
+          <div class="panel-label">Upcoming visits</div>
+          <div class="appointment-list" th:if="${!#lists.isEmpty(page.upcomingAppointments)}">
+            <article class="appointment-card" th:each="appointment : ${page.upcomingAppointments}">
+              <div>
+                <strong th:text="${appointment['service_label']}"></strong>
+                <p th:text="${appointment['starts_label']}"></p>
+                <small th:text="${appointment['location_name']}"></small>
+                <small th:if="${appointment['clinician_name'] != null}" th:text="${appointment['clinician_name']}"></small>
+              </div>
+              <div class="appointment-actions">
+                <span class="detail-chip" th:text="${appointment['status_label']}"></span>
+                <form method="post" th:if="${appointment['can_self_cancel']}" th:action="@{'/appointments/' + ${appointment['id']} + '/cancel'}">
+                  <button type="submit" class="secondary-button">Cancel</button>
+                </form>
+                <small th:if="${appointment['cancellation_policy_label'] != null}" th:text="${appointment['cancellation_policy_label']}"></small>
+              </div>
+            </article>
+          </div>
+          <div class="empty-state" th:if="${#lists.isEmpty(page.upcomingAppointments)}">
+            <strong>No visits booked</strong>
+            <p>You do not currently have a scheduled appointment. Use the booking controls to reserve the next available slot.</p>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-label">Book a visit</div>
+          <div class="info-box" th:if="${page.bookingDisabledReason}" th:text="${page.bookingDisabledReason}"></div>
+          <div class="info-box" th:if="${page.selectedCarePlanVisit != null}">
+            <strong th:text="${page.selectedCarePlanVisit['label']}"></strong>
+            <div th:text="${page.selectedCarePlanVisit['suggested_long_label'] + ' · ' + page.selectedCarePlanVisit['duration_minutes'] + ' min'}"></div>
+            <small>This booking is linked to your active care plan and will update the plan as soon as you confirm the appointment.</small>
+          </div>
+
+          <form method="get" th:action="@{/appointments}" class="auth-form compact-form">
+            <input type="hidden" name="care_plan_visit_id" th:value="${page.selectedCarePlanVisit != null ? page.selectedCarePlanVisit['id'] : ''}">
+            <div class="simple-form-grid">
+              <label>
+                <span>Service</span>
+                <select name="service_id">
+                  <option th:each="service : ${page.serviceOptions}"
+                          th:value="${service['id']}"
+                          th:selected="${service['id'] == page.selectedService['id']}"
+                          th:text="${service['label']}"></option>
+                </select>
+              </label>
+              <label>
+                <span>Location</span>
+                <select name="location_id">
+                  <option th:each="location : ${page.locationOptions}"
+                          th:value="${location['value']}"
+                          th:selected="${location['value'] == page.selectedLocationId}"
+                          th:text="${location['label']}"></option>
+                </select>
+              </label>
+              <label>
+                <span>Chiropractor</span>
+                <select name="clinician_user_id">
+                  <option value="any" th:if="${page.allowAnyClinician}" th:selected="${page.selectedClinicianChoice == 'any'}">Any available</option>
+                  <option th:each="clinician : ${page.clinicianOptions}"
+                          th:value="${clinician['value']}"
+                          th:selected="${#strings.equals(page.selectedClinicianChoice, #strings.toString(clinician['value']))}"
+                          th:text="${clinician['label']}"></option>
+                </select>
+              </label>
+              <label>
+                <span>Date</span>
+                <input type="date" name="appointment_date" th:value="${page.bookingDate}">
+              </label>
+            </div>
+            <button type="submit" class="secondary-button">Show live times</button>
+          </form>
+
+          <div class="booking-grid">
+            <div class="info-box">
+              <strong th:text="${page.selectedCarePlanVisit != null ? page.selectedCarePlanVisit['label'] : page.selectedService['label']}"></strong>
+              <div>
+                <small th:text="${page.selectedDurationMinutes + ' min · ' + page.selectedService['routing_mode_label']}"></small>
+              </div>
+              <div>
+                <small th:if="${page.selectedService['requires_payment']}">
+                  Payment due at booking: <span th:text="${page.selectedService['price_amount'] + ' ' + page.selectedService['currency']}"></span>
+                </small>
+                <small th:unless="${page.selectedService['requires_payment']}">No payment required at booking.</small>
+              </div>
+            </div>
+            <div class="info-box" th:if="${page.availability['error']}">
+              <strong>Availability notice</strong>
+              <div th:text="${page.availability['error']}"></div>
+            </div>
+          </div>
+
+          <form method="post" th:action="@{/appointments/self-book}" class="auth-form compact-form" th:if="${page.bookingDisabledReason == null}">
+            <input type="hidden" name="care_plan_visit_id" th:value="${page.selectedCarePlanVisit != null ? page.selectedCarePlanVisit['id'] : ''}">
+            <input type="hidden" name="service_id" th:value="${page.selectedService['id']}">
+            <input type="hidden" name="location_id" th:value="${page.selectedLocationId}">
+            <input type="hidden" name="clinician_user_id" th:value="${page.selectedClinicianChoice}">
+            <input type="hidden" name="appointment_date" th:value="${page.bookingDate}">
+            <label>
+              <span>Available time</span>
+              <select name="slot_start" required>
+                <option value="">Choose a live slot</option>
+                <option th:each="slot : ${page.availability['available_slots']}"
+                        th:value="${slot['value']}"
+                        th:text="${slot['label'] + (slot['clinician_name'] != null ? ' · ' + slot['clinician_name'] : '')}"></option>
+              </select>
+            </label>
+            <label>
+              <span>Notes for the clinic</span>
+              <textarea name="patient_details" rows="4" placeholder="Optional note for the front desk or chiropractor"></textarea>
+            </label>
+            <button type="submit" class="primary-button" th:text="${page.selectedCarePlanVisit != null ? 'Book this care-plan visit' : 'Book appointment'}"></button>
+          </form>
+        </article>
+      </section>
+
+      <section class="panel" style="margin-top:20px;">
+        <div class="panel-label">Recent history</div>
+        <div class="appointment-list" th:if="${!#lists.isEmpty(page.appointmentHistory)}">
+          <article class="appointment-card muted-card" th:each="appointment : ${page.appointmentHistory}">
+            <div>
+              <strong th:text="${appointment['service_label']}"></strong>
+              <p th:text="${appointment['starts_label']}"></p>
+              <small th:text="${appointment['location_name']}"></small>
+            </div>
+            <div class="appointment-actions">
+              <span class="detail-chip" th:text="${appointment['status_label']}"></span>
+            </div>
+          </article>
+        </div>
+        <div class="empty-state" th:if="${#lists.isEmpty(page.appointmentHistory)}">
+          <strong>No past visits yet</strong>
+          <p>Your completed and cancelled appointments will appear here once you start attending visits.</p>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

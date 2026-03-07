@@ -4,3 +4,5 @@
 __pycache__/
 instance/
 *.sqlite3
+java-app/target/
+frontend-react/node_modules/

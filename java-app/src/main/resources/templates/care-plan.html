@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Care Plan · Life Chiropractic Java</title>
+  <link rel="stylesheet" th:href="@{/app.css}">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand-block">
+        <div class="brand-mark">LC</div>
+        <div>
+          <strong>Life Chiropractic</strong>
+          <small>Java migration</small>
+        </div>
+      </div>
+      <nav class="sidebar-nav">
+        <a class="sidebar-link" th:href="@{/dashboard}">Dashboard</a>
+        <a class="sidebar-link" th:href="@{/appointments}">Appointments</a>
+        <a class="sidebar-link active" th:href="@{/care-plan}">Care plan</a>
+      </nav>
+      <form method="post" th:action="@{/logout}">
+        <button type="submit" class="secondary-button full-width">Log out</button>
+      </form>
+    </aside>
+    <main class="page-shell">
+      <section class="hero-panel">
+        <div>
+          <div class="eyebrow">Patient portal</div>
+          <h1 th:text="${page.adherence['title']}"></h1>
+          <p th:text="${page.adherence['detail']}"></p>
+          <div class="panel-actions">
+            <a class="primary-button" th:href="${page.adherence['action_url']}" th:text="${page.adherence['action_label']}"></a>
+            <a class="secondary-button" th:href="${page.adherence['secondary_action_url']}" th:text="${page.adherence['secondary_action_label']}"></a>
+          </div>
+        </div>
+        <div class="status-card">
+          <span th:text="${page.plan != null ? 'Care plan status' : 'Next step'}"></span>
+          <strong th:text="${page.adherence['progress_label']}"></strong>
+          <small th:text="${page.plan != null ? page.plan['title'] : 'No active care plan'}"></small>
+          <small th:if="${page.nextBooked != null}" th:text="${'Next booked: ' + page.nextBooked['effective_label']}"></small>
+        </div>
+      </section>
+
+      <section class="panel" th:if="${page.plan != null}" style="margin-bottom:20px;">
+        <div class="panel-label">Current plan</div>
+        <div class="care-plan-header-grid">
+          <div>
+            <h2 th:text="${page.plan['title']}"></h2>
+            <p th:text="${page.plan['frequency_label'] + ' for ' + page.plan['duration_weeks'] + ' weeks · ' + page.plan['total_visits'] + ' visits'}"></p>
+            <small th:if="${page.plan['clinician_name'] != null}" th:text="${'Lead chiropractor: ' + page.plan['clinician_name']}"></small>
+            <small th:if="${page.plan['location_name'] != null}" th:text="${page.plan['location_name']}"></small>
+          </div>
+          <div class="metric-strip">
+            <div class="metric-pill">
+              <span>Completed</span>
+              <strong th:text="${page.stats['completed']}"></strong>
+            </div>
+            <div class="metric-pill">
+              <span>Booked</span>
+              <strong th:text="${page.stats['booked']}"></strong>
+            </div>
+            <div class="metric-pill">
+              <span>Still to arrange</span>
+              <strong th:text="${page.adherence['needs_booking_count']}"></strong>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" th:if="${page.plan == null}">
+        <div class="empty-state" style="margin-top:0;">
+          <strong>Care plan not yet published</strong>
+          <p>Your chiropractor will publish the next stage of care here after your review. Until then, you can still manage appointments from the calendar.</p>
+          <div class="panel-actions">
+            <a class="primary-button" th:href="@{/appointments}">Open appointments</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" th:if="${page.plan != null}">
+        <div class="panel-label">Visit sequence</div>
+        <div class="care-plan-visit-list" th:if="${!#lists.isEmpty(page.visits)}">
+          <article class="care-plan-visit-card" th:each="visit : ${page.visits}">
+            <div>
+              <div class="visit-title-row">
+                <strong th:text="${visit['label']}"></strong>
+                <span class="detail-chip" th:classappend="${' tone-' + visit['status_tone']}" th:text="${visit['status_label']}"></span>
+              </div>
+              <p th:text="${visit['suggested_long_label'] + ' · ' + visit['duration_minutes'] + ' min'}"></p>
+              <small th:if="${visit['appointment_location_name'] != null}" th:text="${visit['appointment_location_name']}"></small>
+              <small th:if="${visit['appointment_clinician_name'] != null}" th:text="${visit['appointment_clinician_name']}"></small>
+            </div>
+            <div class="appointment-actions">
+              <small th:text="${visit['visit_kind_label']}"></small>
+              <small th:if="${visit['is_linked']}" th:text="${'Booked for ' + visit['effective_label']}"></small>
+              <a class="primary-button" th:if="${visit['status'] == 'unbooked'}" th:href="${visit['patient_booking_url']}">Book this visit</a>
+              <a class="secondary-button" th:if="${visit['status'] == 'scheduled'}" th:href="@{/appointments}">Open appointment</a>
+            </div>
+          </article>
+        </div>
+        <div class="empty-state" th:if="${#lists.isEmpty(page.visits)}">
+          <strong>No care-plan visits yet</strong>
+          <p>The clinic has not added visit milestones to this plan yet.</p>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
