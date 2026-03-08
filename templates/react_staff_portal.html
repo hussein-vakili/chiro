@@ -16,6 +16,12 @@
     data-initial-path="{{ staff_portal_path }}"
     data-session-endpoint="{{ url_for('main.api_staff_session') }}"
     data-staff-dashboard-endpoint="{{ url_for('main.api_staff_dashboard') }}"
+    data-staff-calendar-endpoint="{{ url_for('main.api_staff_calendar') }}"
+    data-staff-reminders-endpoint="{{ url_for('main.api_staff_reminders') }}"
+    data-staff-settings-endpoint="{{ url_for('main.api_staff_settings') }}"
+    data-staff-messages-endpoint="{{ url_for('main.api_staff_messages') }}"
+    data-staff-invitations-endpoint="{{ url_for('main.api_staff_new_invitation') }}"
+    data-staff-create-invitation-endpoint="{{ url_for('main.api_staff_create_invitation') }}"
     data-spa-root="{{ staff_portal_entry_url }}"
   >
     <section class="panel">

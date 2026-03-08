@@ -338,6 +338,25 @@ def parse_iso(value: str | None) -> datetime | None:
         return None
 
 
+def current_time_like(reference: datetime | None = None) -> datetime:
+    if reference is not None and reference.tzinfo is not None:
+        return datetime.now(reference.tzinfo)
+    return datetime.now()
+
+
+def align_datetimes(*values: datetime) -> tuple[datetime, ...]:
+    tzinfo = next((value.tzinfo for value in values if value.tzinfo is not None), None)
+    if tzinfo is None:
+        return values
+    aligned = []
+    for value in values:
+        if value.tzinfo is None:
+            aligned.append(value.replace(tzinfo=tzinfo))
+        else:
+            aligned.append(value.astimezone(tzinfo))
+    return tuple(aligned)
+
+
 def get_app_settings() -> dict[str, str]:
     cached = getattr(g, "app_settings_cache", None)
     if cached is not None:
@@ -719,6 +738,8 @@ def dashboard_api_payload(context: dict) -> dict:
         "portal_actions": context["portal_actions"],
         "portal_journey": context["portal_journey"],
         "next_step": context["next_step"],
+        "journey_state": context["journey_state"],
+        "journey_summary": context["journey_summary"],
         "results_highlight": context["results_highlight"],
         "submission": (
             {
@@ -763,6 +784,150 @@ def staff_dashboard_api_payload(user, month_value: str | None = None, *, clinic_
     return {
         "view": "clinic_ops",
         "dashboard": staff_dashboard_context(month_value),
+    }
+
+
+def staff_calendar_api_payload(month_value: str | None = None) -> dict:
+    context = build_staff_calendar_context(month_value)
+    calendar = context["calendar"]
+    return {
+        "viewer": portal_user_payload(g.user),
+        "calendar": {
+            **calendar,
+            "weeks": [
+                [
+                    {
+                        **day,
+                        "appointments": [serialize_appointment_for_api(item, include_internal=True) | {
+                            "patient_name": item["patient_name"],
+                            "type_tone": item["type_tone"],
+                            "type_short_label": item["type_short_label"],
+                        } for item in day["appointments"]],
+                    }
+                    for day in week
+                ]
+                for week in calendar["weeks"]
+            ],
+        },
+        "counts": context["counts"],
+        "upcoming": [
+            serialize_appointment_for_api(item, include_internal=True) | {
+                "patient_name": item["patient_name"],
+                "type_tone": item["type_tone"],
+                "reminder_label": item["reminder_label"],
+                "reminder_tone": item["reminder_tone"],
+                "can_email": item["can_email"],
+                "can_sms": item["can_sms"],
+            }
+            for item in [decorate_appointment_contacts(dict(item)) for item in context["upcoming"]]
+        ],
+        "reminders": [
+            serialize_appointment_for_api(item, include_internal=True) | {
+                "patient_name": item["patient_name"],
+                "type_tone": item["type_tone"],
+                "reminder_label": item["reminder_label"],
+                "reminder_tone": item["reminder_tone"],
+                "can_email": item["can_email"],
+                "can_sms": item["can_sms"],
+            }
+            for item in context["reminders"]
+        ],
+        "locations": context["locations"],
+        "clinician_options": clinician_options(),
+        "location_options": location_options(),
+        "weekday_options": weekday_options(),
+        "schedule_window_type_options": schedule_window_type_options(),
+        "appointment_duration_options": APPOINTMENT_DURATION_OPTIONS,
+        "schedule_templates": context["schedule_templates"],
+        "service_inventory": context["service_inventory"],
+        "booking_events": context["booking_events"],
+        "booking_event_counts": context["booking_event_counts"],
+        "routes": {
+            "legacy_calendar": url_for("main.staff_calendar", month=calendar["month_value"]),
+            "legacy_settings": url_for("main.staff_settings"),
+            "legacy_reminders": url_for("main.staff_reminders"),
+            "booking_page": url_for("main.appointments"),
+            "month_base": staff_spa_url("calendar"),
+            "create_schedule_window": url_for("main.api_create_staff_schedule_window"),
+            "delete_schedule_window_base": "/api/staff/schedule-windows",
+            "update_service_duration_base": "/api/staff/booking-services",
+        },
+    }
+
+
+def staff_reminders_api_payload() -> dict:
+    context = build_staff_reminders_context()
+    return {
+        "due_reminders": [
+            serialize_appointment_for_api(item, include_internal=True) | {
+                "patient_name": item["patient_name"],
+                "type_tone": item["type_tone"],
+                "reminder_label": item["reminder_label"],
+                "reminder_tone": item["reminder_tone"],
+                "can_email": item["can_email"],
+                "can_sms": item["can_sms"],
+            }
+            for item in context["due_reminders"]
+        ],
+        "recent_deliveries": context["recent_deliveries"],
+        "delivery_counts": context["delivery_counts"],
+        "email_mode": context["email_mode"],
+        "sms_mode": context["sms_mode"],
+        "routes": {
+            "legacy_reminders": url_for("main.staff_reminders"),
+            "legacy_calendar": url_for("main.staff_calendar"),
+            "spa_root": staff_spa_url("reminders"),
+        },
+    }
+
+
+def staff_settings_api_payload() -> dict:
+    context = build_staff_settings_context()
+    return {
+        "viewer": portal_user_payload(g.user),
+        "app_settings": context["app_settings"],
+        "time_format_options": context["time_format_options"],
+        "slot_increment_options": context["slot_increment_options"],
+        "booking_search_window_days": context["booking_search_window_days"],
+        "max_active_chiropractors": context["max_active_chiropractors"],
+        "active_chiropractor_count": context["active_chiropractor_count"],
+        "remaining_chiropractor_capacity": context["remaining_chiropractor_capacity"],
+        "chiropractors": context["chiropractors"],
+        "locations": context["locations"],
+        "clinician_options": clinician_options(),
+        "location_options": location_options(),
+        "weekday_options": weekday_options(),
+        "schedule_window_type_options": schedule_window_type_options(),
+        "appointment_duration_options": APPOINTMENT_DURATION_OPTIONS,
+        "schedule_templates": context["schedule_templates"],
+        "service_inventory": context["service_inventory"],
+        "database_summary": context["database_summary"],
+        "booking_link": context["booking_link"],
+        "booking_events": context["booking_events"],
+        "booking_event_counts": context["booking_event_counts"],
+        "settings_lists": context["settings_lists"],
+        "routes": {
+            "legacy_settings": url_for("main.staff_settings"),
+            "legacy_calendar": url_for("main.staff_calendar"),
+            "update_general": url_for("main.update_staff_settings"),
+            "profile_action": url_for("main.update_staff_settings_section", section_key="profile"),
+            "clinic_action": url_for("main.update_staff_settings_section", section_key="clinic"),
+            "notifications_action": url_for("main.update_staff_settings_section", section_key="notifications"),
+            "clinical_action": url_for("main.update_staff_settings_section", section_key="clinical"),
+            "billing_action": url_for("main.update_staff_settings_section", section_key="billing"),
+            "security_action": url_for("main.update_staff_settings_section", section_key="security"),
+            "data_action": url_for("main.update_staff_settings_section", section_key="data"),
+            "appearance_action": url_for("main.update_staff_settings_section", section_key="appearance"),
+            "integrations_action": url_for("main.update_staff_settings_section", section_key="integrations"),
+            "create_chiropractor": url_for("main.create_staff_chiropractor"),
+            "update_chiropractor_status_base": "/staff/settings/chiropractors",
+            "create_location": url_for("main.create_staff_location"),
+            "download_backup": url_for("main.download_staff_database_backup"),
+            "spa_root": staff_spa_url("settings"),
+            "create_schedule_window": url_for("main.api_create_staff_schedule_window"),
+            "delete_schedule_window_base": "/api/staff/schedule-windows",
+            "update_service_duration_base": "/api/staff/booking-services",
+        },
     }
 
 
@@ -1252,6 +1417,54 @@ def insert_patient_message(patient_user_id: int, sender_user_id: int, sender_rol
     )
 
 
+def staff_message_workspace_payload(search_query: str | None = None, selected_patient_id: int | None = None) -> dict:
+    search = (search_query or "").strip()
+    threads = get_staff_message_threads(search)
+
+    selected_id = selected_patient_id if isinstance(selected_patient_id, int) else None
+    if selected_id is None and threads:
+        selected_id = threads[0]["patient_user_id"]
+
+    selected_patient = get_client_user(selected_id) if selected_id is not None else None
+    if selected_patient is None and threads:
+        selected_id = threads[0]["patient_user_id"]
+        selected_patient = get_client_user(selected_id)
+
+    messages = []
+    unread_before_open = 0
+    if selected_patient is not None:
+        matching_thread = next(
+            (thread for thread in threads if thread["patient_user_id"] == selected_patient["id"]),
+            None,
+        )
+        unread_before_open = int(matching_thread["unread_for_staff"] or 0) if matching_thread is not None else 0
+        mark_patient_messages_read_for_staff(selected_patient["id"])
+        get_db().commit()
+        if matching_thread is not None:
+            matching_thread["unread_for_staff"] = 0
+        messages = get_patient_message_thread(selected_patient["id"])
+
+    return {
+        "threads": threads,
+        "selected_patient": (
+            {
+                "id": selected_patient["id"],
+                "first_name": selected_patient["first_name"],
+                "last_name": selected_patient["last_name"],
+                "full_name": f"{selected_patient['first_name']} {selected_patient['last_name']}".strip(),
+                "email": selected_patient["email"],
+            }
+            if selected_patient is not None
+            else None
+        ),
+        "selected_patient_id": selected_patient["id"] if selected_patient is not None else None,
+        "messages": messages,
+        "message_topics": message_topic_options(),
+        "search_query": search,
+        "unread_before_open": unread_before_open,
+    }
+
+
 def get_practitioner_journal_entries(clinician_user_id: int):
     return get_db().execute(
         """
@@ -1577,6 +1790,133 @@ def build_lead_item(row) -> dict:
         "create_invite_url": url_for("main.staff_new_invitation", lead_id=row["id"]),
         "invite_url": invite_url,
         "has_active_invite": has_active_invite,
+    }
+
+
+def staff_invitation_workspace_payload(
+    lead_id: int | None = None,
+    *,
+    source_values=None,
+    created_invitation=None,
+    created_slot_hold=None,
+) -> dict:
+    linked_lead = get_lead(lead_id) if isinstance(lead_id, int) else None
+    values = source_values if source_values is not None else request.values
+    invite_prefill = {
+        "lead_id": str(linked_lead["id"]) if linked_lead is not None else "",
+        "first_name": values.get("first_name", "").strip(),
+        "last_name": values.get("last_name", "").strip(),
+        "email": values.get("email", "").strip().lower(),
+        "appointment_at": values.get("appointment_at", "").strip(),
+        "note": values.get("note", "").strip(),
+    }
+    if linked_lead is not None:
+        invite_prefill = {
+            "lead_id": str(linked_lead["id"]),
+            "first_name": linked_lead["first_name"],
+            "last_name": linked_lead["last_name"],
+            "email": linked_lead["email"],
+            "appointment_at": linked_lead["requested_starts_at"] or "",
+            "note": linked_lead["reason"] or linked_lead["notes"] or "",
+        }
+
+    built_created_invitation = None
+    if created_invitation is not None:
+        built_created_invitation = {
+            "id": created_invitation["id"],
+            "token": created_invitation["token"],
+            "first_name": created_invitation["first_name"],
+            "last_name": created_invitation["last_name"],
+            "email": created_invitation["email"],
+            "appointment_at": created_invitation["appointment_at"],
+            "note": created_invitation["note"],
+            "expires_at": created_invitation["expires_at"],
+            "accept_url": url_for("main.accept_invite", token=created_invitation["token"]),
+            "accept_url_external": url_for("main.accept_invite", token=created_invitation["token"], _external=True),
+        }
+
+    return {
+        "invite_prefill": invite_prefill,
+        "linked_lead": build_lead_item(linked_lead) if linked_lead is not None else None,
+        "created_invitation": built_created_invitation,
+        "created_slot_hold": build_slot_hold_item(created_slot_hold),
+        "open_leads": [build_lead_item(row) for row in get_recent_leads(limit=8, statuses=("new", "invited"))],
+    }
+
+
+def process_staff_invitation_request(invite_prefill: dict, linked_lead, created_by_user_id: int) -> dict:
+    first_name = invite_prefill["first_name"]
+    last_name = invite_prefill["last_name"]
+    email = invite_prefill["email"]
+    appointment_at = invite_prefill["appointment_at"] or None
+    note = invite_prefill["note"]
+
+    error = None
+    if not first_name or not last_name:
+        error = "Patient first and last name are required."
+    elif not email:
+        error = "Patient email is required."
+
+    initial_service = default_service_for_appointment_type("initial_consult")
+    booking_policy = resolve_booking_policy(initial_service, "initial_consult", None)
+    location_id = selected_location_id(
+        str(linked_lead["preferred_location_id"]) if linked_lead is not None and linked_lead["preferred_location_id"] is not None else None
+    )
+    clinician_user_id = selected_clinician_user_id(
+        str(linked_lead["preferred_clinician_user_id"]) if linked_lead is not None and linked_lead["preferred_clinician_user_id"] is not None else None
+    )
+    appointment_at_parsed = parse_iso(appointment_at) if appointment_at else None
+    slot_assignment = None
+    if error is None and appointment_at and appointment_at_parsed is None:
+        error = "Choose a valid appointment date and time."
+    elif error is None and appointment_at_parsed is not None:
+        slot_assignment = resolve_slot_assignment(appointment_at_parsed, clinician_user_id, location_id, booking_policy)
+        if slot_assignment is None:
+            error = "That appointment slot is no longer available. Choose another time."
+
+    if error is not None:
+        return {"ok": False, "error": error}
+
+    now = iso_now()
+    expires_at = utc_future_timestamp(days=STAFF_INVITE_EXPIRY_DAYS)
+    db = get_db()
+    created_invitation = create_invitation_record(
+        email=email,
+        first_name=first_name,
+        last_name=last_name,
+        appointment_at=slot_assignment["value"] if slot_assignment is not None else appointment_at,
+        note=note,
+        created_by=created_by_user_id,
+        expires_at=expires_at,
+    )
+    created_slot_hold = None
+    if slot_assignment is not None and appointment_at_parsed is not None:
+        created_slot_hold = upsert_invitation_slot_hold(
+            invitation_id=created_invitation["id"],
+            lead_id=linked_lead["id"] if linked_lead is not None else None,
+            clinician_user_id=slot_assignment["clinician_user_id"],
+            location_id=location_id,
+            booking_policy=booking_policy,
+            starts_at=appointment_at_parsed,
+            expires_at=expires_at,
+        )
+    if linked_lead is not None:
+        db.execute(
+            """
+            UPDATE leads
+            SET status = 'invited',
+                invitation_id = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (created_invitation["id"], now, linked_lead["id"]),
+        )
+    db.commit()
+    return {
+        "ok": True,
+        "created_invitation": created_invitation,
+        "created_slot_hold": created_slot_hold,
+        "message": "Invitation created from the lead request." if linked_lead is not None else "Invitation created.",
     }
 
 
@@ -2410,6 +2750,24 @@ def get_schedule_window(window_id: int):
     return get_db().execute("SELECT * FROM schedule_windows WHERE id = ?", (window_id,)).fetchone()
 
 
+def get_schedule_window_detail(window_id: int):
+    return get_db().execute(
+        """
+        SELECT
+            sw.*,
+            l.name AS location_name,
+            u.first_name AS clinician_first_name,
+            u.last_name AS clinician_last_name
+        FROM schedule_windows sw
+        LEFT JOIN locations l ON l.id = sw.location_id
+        LEFT JOIN users u ON u.id = sw.clinician_user_id
+        WHERE sw.id = ?
+        LIMIT 1
+        """,
+        (window_id,),
+    ).fetchone()
+
+
 def get_schedule_windows_for_day(weekday: int, clinician_user_id: int | None, location_id: int | None):
     params: list = [weekday]
     query = """
@@ -2978,6 +3336,7 @@ def normalized_booking_date_value(
 
 
 def overlaps(start_a: datetime, end_a: datetime, start_b: datetime, end_b: datetime) -> bool:
+    start_a, end_a, start_b, end_b = align_datetimes(start_a, end_a, start_b, end_b)
     return start_a < end_b and start_b < end_a
 
 
@@ -3630,7 +3989,7 @@ def build_appointment_item(row) -> dict:
     ends_at = row["ends_at"] if "ends_at" in row.keys() else None
     starts_parsed = parse_iso(starts_at)
     ends_parsed = parse_iso(ends_at)
-    now = datetime.now()
+    now = current_time_like(starts_parsed)
     type_meta = appointment_type_meta(row["appointment_type"])
     status_meta = appointment_status_meta(row["status"])
     billing_meta = billing_status_meta(row["billing_status"]) if "billing_status" in row.keys() else billing_status_meta("pending")
@@ -3666,7 +4025,7 @@ def build_appointment_item(row) -> dict:
         starts_parsed
         and row["status"] == "scheduled"
         and cancellation_cutoff is not None
-        and datetime.now() <= cancellation_cutoff
+        and now <= cancellation_cutoff
     )
     patient_name = None
     patient_first_name = None
@@ -3776,7 +4135,7 @@ def appointment_needs_soap(appointment: dict) -> bool:
     starts_at = parse_iso(appointment["starts_at"])
     if starts_at is None:
         return False
-    return appointment["status"] == "completed" or starts_at <= datetime.now()
+    return appointment["status"] == "completed" or starts_at <= current_time_like(starts_at)
 
 
 def serialize_appointment_for_api(item: dict, *, include_internal: bool = False) -> dict:
@@ -3934,6 +4293,659 @@ def get_patient_message_preview(patient_user_id: int, limit: int = 3) -> list[di
             }
         )
     return items
+
+
+def build_client_journey_summary(
+    *,
+    submission,
+    schedule: dict,
+    care_plan: dict,
+    visit_report,
+    intake_status: dict,
+    results_status: dict,
+    unread_messages: int,
+) -> dict:
+    next_appointment = schedule["next_appointment"]
+    care_plan_adherence = care_plan["adherence"]
+    history = schedule["history"]
+    completed_history = [item for item in history if item["status"] == "completed"]
+    completed_initial = any(item["type"] == "initial_consult" for item in completed_history)
+    report_visit = next((item for item in schedule["upcoming"] if item["type"] == "report_of_findings"), None)
+    next_action_visit = care_plan_adherence.get("next_action_visit")
+    reassessment_due = (
+        next_action_visit is not None
+        and next_action_visit.get("visit_kind") in {"progress_check", "reassessment"}
+        and care_plan_adherence["state"] == "needs_booking"
+    )
+    unread_label = f"{unread_messages} unread" if unread_messages else "Up to date"
+    unread_detail = (
+        "The clinic has replied in your secure portal thread."
+        if unread_messages
+        else "Use messages for updates, symptoms, and appointment questions."
+    )
+
+    if submission is None and next_appointment and next_appointment["type"] == "initial_consult":
+        return {
+            "state": "booked_first_visit",
+            "stage_label": "First visit booked",
+            "title": "Complete your intake before your first visit",
+            "detail": f"Your initial consultation is booked for {next_appointment['starts_label']}.",
+            "tone": "warm",
+            "helper": "The clinic needs your history, consent, and questionnaires before your first consultation.",
+            "primary_action_label": "Start intake",
+            "primary_action_url": client_spa_url("intake"),
+            "secondary_action_label": "View appointment",
+            "secondary_action_url": client_spa_url("appointments"),
+            "checklist": [
+                {
+                    "label": "First visit",
+                    "value": next_appointment["type_label"],
+                    "detail": next_appointment["starts_label"],
+                    "tone": next_appointment["type_tone"],
+                    "url": client_spa_url("appointments"),
+                    "action_label": "Open calendar",
+                },
+                {
+                    "label": "Intake",
+                    "value": intake_status["value"],
+                    "detail": intake_status["detail"],
+                    "tone": intake_status["tone"],
+                    "url": client_spa_url("intake"),
+                    "action_label": intake_status["action_label"],
+                },
+                {
+                    "label": "Messages",
+                    "value": unread_label,
+                    "detail": unread_detail,
+                    "tone": "rose" if unread_messages else "life",
+                    "url": client_spa_url("messages"),
+                    "action_label": "Open messages",
+                },
+            ],
+            "focus": [
+                {
+                    "label": "Onboarding",
+                    "title": "Complete your history and consent",
+                    "detail": "Fill in the intake once so your chiropractor can prepare properly for the first visit.",
+                    "tone": intake_status["tone"],
+                    "url": client_spa_url("intake"),
+                },
+                {
+                    "label": "Appointment",
+                    "title": "Review your first visit details",
+                    "detail": next_appointment["starts_label"],
+                    "tone": next_appointment["type_tone"],
+                    "url": client_spa_url("appointments"),
+                },
+            ],
+        }
+
+    if (submission is None or submission["status"] != "submitted") and not care_plan_adherence["exists"]:
+        return {
+            "state": "intake_pending",
+            "stage_label": "Pre-visit onboarding",
+            "title": "Finish your intake before the clinic visit",
+            "detail": intake_status["detail"],
+            "tone": intake_status["tone"],
+            "helper": "Drafts save automatically. Submitting your intake gives the clinic your symptoms, history, and consent in one place.",
+            "primary_action_label": intake_status["action_label"],
+            "primary_action_url": client_spa_url("intake"),
+            "secondary_action_label": "Open calendar",
+            "secondary_action_url": client_spa_url("appointments"),
+            "checklist": [
+                {
+                    "label": "Intake",
+                    "value": intake_status["value"],
+                    "detail": intake_status["detail"],
+                    "tone": intake_status["tone"],
+                    "url": client_spa_url("intake"),
+                    "action_label": intake_status["action_label"],
+                },
+                {
+                    "label": "Appointment",
+                    "value": next_appointment["type_label"] if next_appointment else "Not booked yet",
+                    "detail": next_appointment["starts_label"] if next_appointment else "Your next visit will appear here once scheduled.",
+                    "tone": next_appointment["type_tone"] if next_appointment else "muted",
+                    "url": client_spa_url("appointments"),
+                    "action_label": "Open calendar",
+                },
+                {
+                    "label": "Messages",
+                    "value": unread_label,
+                    "detail": unread_detail,
+                    "tone": "rose" if unread_messages else "life",
+                    "url": client_spa_url("messages"),
+                    "action_label": "Open messages",
+                },
+            ],
+            "focus": [
+                {
+                    "label": "Intake",
+                    "title": intake_status["action_label"],
+                    "detail": "Complete your details, consent, and symptom questionnaires.",
+                    "tone": intake_status["tone"],
+                    "url": client_spa_url("intake"),
+                },
+                {
+                    "label": "Support",
+                    "title": "Message the clinic if you get stuck",
+                    "detail": "Use the secure thread instead of calling if you need help finishing the form.",
+                    "tone": "sky",
+                    "url": client_spa_url("messages"),
+                },
+            ],
+        }
+
+    if care_plan_adherence["exists"] and care_plan_adherence["state"] == "overdue":
+        focus_visit = care_plan_adherence["next_action_visit"]
+        return {
+            "state": "at_risk",
+            "stage_label": "Care plan recovery",
+            "title": "Let's get you back on track",
+            "detail": care_plan_adherence["detail"],
+            "tone": care_plan_adherence["tone"],
+            "helper": "Missing the next step can slow progress. Rebook the overdue visit now or message the clinic if you need help.",
+            "primary_action_label": care_plan_adherence["action_label"],
+            "primary_action_url": care_plan_adherence["action_url"],
+            "secondary_action_label": "Message clinic",
+            "secondary_action_url": client_spa_url("messages"),
+            "checklist": [
+                {
+                    "label": "Plan status",
+                    "value": care_plan_adherence["title"],
+                    "detail": care_plan_adherence["progress_label"],
+                    "tone": care_plan_adherence["tone"],
+                    "url": client_spa_url("care-plan"),
+                    "action_label": "View care plan",
+                },
+                {
+                    "label": "Overdue visit",
+                    "value": focus_visit["label"] if focus_visit else "Next visit due",
+                    "detail": focus_visit["suggested_long_label"] if focus_visit else care_plan_adherence["detail"],
+                    "tone": "rose",
+                    "url": care_plan_adherence["action_url"],
+                    "action_label": "Rebook now",
+                },
+                {
+                    "label": "Messages",
+                    "value": unread_label,
+                    "detail": unread_detail,
+                    "tone": "rose" if unread_messages else "life",
+                    "url": client_spa_url("messages"),
+                    "action_label": "Open messages",
+                },
+            ],
+            "focus": [
+                {
+                    "label": "Recovery",
+                    "title": "Rebook your overdue visit",
+                    "detail": focus_visit["label"] if focus_visit else "Book the next step in your plan.",
+                    "tone": "rose",
+                    "url": care_plan_adherence["action_url"],
+                },
+                {
+                    "label": "Support",
+                    "title": "Message the clinic",
+                    "detail": "Use the secure thread if your symptoms or schedule have changed.",
+                    "tone": "sky",
+                    "url": client_spa_url("messages"),
+                },
+            ],
+        }
+
+    if reassessment_due:
+        focus_visit = care_plan_adherence["next_action_visit"]
+        return {
+            "state": "reassessment_due",
+            "stage_label": "Progress review",
+            "title": "You're ready for a progress review",
+            "detail": care_plan_adherence["detail"],
+            "tone": focus_visit["visit_kind_tone"] if focus_visit else "purple",
+            "helper": "This milestone helps the clinic review how you are responding and adjust the next phase of care if needed.",
+            "primary_action_label": "Book progress review",
+            "primary_action_url": focus_visit["patient_booking_url"] if focus_visit else client_spa_url("appointments"),
+            "secondary_action_label": "Open care plan",
+            "secondary_action_url": client_spa_url("care-plan"),
+            "checklist": [
+                {
+                    "label": "Review visit",
+                    "value": focus_visit["label"] if focus_visit else "Progress review",
+                    "detail": focus_visit["suggested_long_label"] if focus_visit else care_plan_adherence["detail"],
+                    "tone": focus_visit["visit_kind_tone"] if focus_visit else "purple",
+                    "url": focus_visit["patient_booking_url"] if focus_visit else client_spa_url("appointments"),
+                    "action_label": "Book review",
+                },
+                {
+                    "label": "Progress",
+                    "value": care_plan_adherence["progress_label"],
+                    "detail": care_plan_adherence["detail"],
+                    "tone": care_plan_adherence["tone"],
+                    "url": client_spa_url("care-plan"),
+                    "action_label": "View care plan",
+                },
+                {
+                    "label": "Results",
+                    "value": results_status["value"],
+                    "detail": results_status["detail"],
+                    "tone": results_status["tone"],
+                    "url": client_spa_url("results"),
+                    "action_label": "Open results",
+                },
+            ],
+            "focus": [
+                {
+                    "label": "Milestone",
+                    "title": "Book the review visit",
+                    "detail": focus_visit["suggested_long_label"] if focus_visit else "Choose the next milestone appointment.",
+                    "tone": focus_visit["visit_kind_tone"] if focus_visit else "purple",
+                    "url": focus_visit["patient_booking_url"] if focus_visit else client_spa_url("appointments"),
+                },
+                {
+                    "label": "Preparation",
+                    "title": "Review your progress so far",
+                    "detail": "Use your care plan and results pages to see what has changed before the reassessment.",
+                    "tone": "sky",
+                    "url": client_spa_url("results"),
+                },
+            ],
+        }
+
+    if care_plan_adherence["exists"] and care_plan_adherence["state"] == "needs_booking":
+        focus_visit = care_plan_adherence["next_action_visit"]
+        return {
+            "state": "needs_booking",
+            "stage_label": "Active care plan",
+            "title": "Book your next recommended visit",
+            "detail": care_plan_adherence["detail"],
+            "tone": care_plan_adherence["tone"],
+            "helper": "Keeping the next visit booked makes it easier to stay in rhythm with your recommended plan.",
+            "primary_action_label": care_plan_adherence["action_label"],
+            "primary_action_url": care_plan_adherence["action_url"],
+            "secondary_action_label": "Open care plan",
+            "secondary_action_url": client_spa_url("care-plan"),
+            "checklist": [
+                {
+                    "label": "Plan progress",
+                    "value": care_plan_adherence["progress_label"],
+                    "detail": care_plan_adherence["detail"],
+                    "tone": care_plan_adherence["tone"],
+                    "url": client_spa_url("care-plan"),
+                    "action_label": "View care plan",
+                },
+                {
+                    "label": "Next recommended visit",
+                    "value": focus_visit["label"] if focus_visit else "Next visit",
+                    "detail": focus_visit["suggested_long_label"] if focus_visit else "Use the calendar to secure the next step in your plan.",
+                    "tone": focus_visit["visit_kind_tone"] if focus_visit else "sky",
+                    "url": care_plan_adherence["action_url"],
+                    "action_label": "Book next visit",
+                },
+                {
+                    "label": "Messages",
+                    "value": unread_label,
+                    "detail": unread_detail,
+                    "tone": "rose" if unread_messages else "life",
+                    "url": client_spa_url("messages"),
+                    "action_label": "Open messages",
+                },
+            ],
+            "focus": [
+                {
+                    "label": "Booking",
+                    "title": "Secure the next visit now",
+                    "detail": focus_visit["label"] if focus_visit else "Open the live diary and book the next recommended slot.",
+                    "tone": focus_visit["visit_kind_tone"] if focus_visit else "sky",
+                    "url": care_plan_adherence["action_url"],
+                },
+                {
+                    "label": "Plan",
+                    "title": "See your full care-plan timeline",
+                    "detail": "Review completed, booked, and outstanding visits in one place.",
+                    "tone": care_plan_adherence["tone"],
+                    "url": client_spa_url("care-plan"),
+                },
+            ],
+        }
+
+    if care_plan_adherence["exists"] and care_plan_adherence["state"] == "on_track":
+        return {
+            "state": "active_plan",
+            "stage_label": "Active care plan",
+            "title": "You're on track",
+            "detail": care_plan_adherence["detail"],
+            "tone": care_plan_adherence["tone"],
+            "helper": "Keep an eye on your next appointment and use the care-plan calendar if you need to change anything.",
+            "primary_action_label": "View care plan",
+            "primary_action_url": client_spa_url("care-plan"),
+            "secondary_action_label": "Open calendar",
+            "secondary_action_url": client_spa_url("appointments"),
+            "checklist": [
+                {
+                    "label": "Next booked visit",
+                    "value": care_plan_adherence["next_booked"]["label"] if care_plan_adherence["next_booked"] else "Booked",
+                    "detail": care_plan_adherence["next_booked"]["effective_label"] if care_plan_adherence["next_booked"] else care_plan_adherence["detail"],
+                    "tone": care_plan_adherence["tone"],
+                    "url": client_spa_url("appointments"),
+                    "action_label": "Open calendar",
+                },
+                {
+                    "label": "Plan progress",
+                    "value": care_plan_adherence["progress_label"],
+                    "detail": f"{care_plan['stats']['remaining']} visits remaining in this stage.",
+                    "tone": care_plan_adherence["tone"],
+                    "url": client_spa_url("care-plan"),
+                    "action_label": "View care plan",
+                },
+                {
+                    "label": "Messages",
+                    "value": unread_label,
+                    "detail": unread_detail,
+                    "tone": "rose" if unread_messages else "life",
+                    "url": client_spa_url("messages"),
+                    "action_label": "Open messages",
+                },
+            ],
+            "focus": [
+                {
+                    "label": "Next visit",
+                    "title": "Check your upcoming appointment",
+                    "detail": care_plan_adherence["next_booked"]["effective_label"] if care_plan_adherence["next_booked"] else care_plan_adherence["detail"],
+                    "tone": care_plan_adherence["tone"],
+                    "url": client_spa_url("appointments"),
+                },
+                {
+                    "label": "Plan",
+                    "title": "Track the full care-plan timeline",
+                    "detail": "See booked visits, remaining visits, and upcoming milestones.",
+                    "tone": "life",
+                    "url": client_spa_url("care-plan"),
+                },
+            ],
+        }
+
+    if care_plan_adherence["exists"] and care_plan_adherence["state"] == "completed":
+        return {
+            "state": "completed",
+            "stage_label": "Plan completed",
+            "title": "You've completed this stage of care",
+            "detail": care_plan_adherence["detail"],
+            "tone": care_plan_adherence["tone"],
+            "helper": "Review your results and keep an eye on the portal for any maintenance or follow-up recommendations.",
+            "primary_action_label": "Review results",
+            "primary_action_url": client_spa_url("results"),
+            "secondary_action_label": "View appointments",
+            "secondary_action_url": client_spa_url("appointments"),
+            "checklist": [
+                {
+                    "label": "Plan",
+                    "value": care_plan_adherence["title"],
+                    "detail": care_plan_adherence["progress_label"],
+                    "tone": care_plan_adherence["tone"],
+                    "url": client_spa_url("care-plan"),
+                    "action_label": "View care plan",
+                },
+                {
+                    "label": "Results",
+                    "value": results_status["value"],
+                    "detail": results_status["detail"],
+                    "tone": results_status["tone"],
+                    "url": client_spa_url("results"),
+                    "action_label": "Open results",
+                },
+                {
+                    "label": "History",
+                    "value": f"{len(completed_history)} completed",
+                    "detail": "Your visit history remains available in the portal.",
+                    "tone": "life",
+                    "url": client_spa_url("appointments"),
+                    "action_label": "View history",
+                },
+            ],
+            "focus": [
+                {
+                    "label": "Summary",
+                    "title": "Review your completed stage",
+                    "detail": "Use the results page to revisit the clinic summary and recommendations.",
+                    "tone": "life",
+                    "url": client_spa_url("results"),
+                },
+                {
+                    "label": "Appointments",
+                    "title": "Open your visit history",
+                    "detail": "Past appointments remain available if you need to check what was booked.",
+                    "tone": "sky",
+                    "url": client_spa_url("appointments"),
+                },
+            ],
+        }
+
+    if next_appointment and next_appointment["type"] == "initial_consult":
+        return {
+            "state": "visit_ready",
+            "stage_label": "Pre-visit ready",
+            "title": "You're ready for your first visit",
+            "detail": f"Initial consultation booked for {next_appointment['starts_label']}.",
+            "tone": next_appointment["type_tone"],
+            "helper": "Your intake is submitted. Review the appointment details and message the clinic if anything changes before you come in.",
+            "primary_action_label": "Open appointment details",
+            "primary_action_url": client_spa_url("appointments"),
+            "secondary_action_label": "Message clinic",
+            "secondary_action_url": client_spa_url("messages"),
+            "checklist": [
+                {
+                    "label": "Intake",
+                    "value": intake_status["value"],
+                    "detail": intake_status["detail"],
+                    "tone": intake_status["tone"],
+                    "url": client_spa_url("intake"),
+                    "action_label": "Review intake",
+                },
+                {
+                    "label": "First visit",
+                    "value": next_appointment["type_label"],
+                    "detail": next_appointment["starts_label"],
+                    "tone": next_appointment["type_tone"],
+                    "url": client_spa_url("appointments"),
+                    "action_label": "Open calendar",
+                },
+                {
+                    "label": "Messages",
+                    "value": unread_label,
+                    "detail": unread_detail,
+                    "tone": "rose" if unread_messages else "life",
+                    "url": client_spa_url("messages"),
+                    "action_label": "Open messages",
+                },
+            ],
+            "focus": [
+                {
+                    "label": "Appointment",
+                    "title": "Check your first visit details",
+                    "detail": next_appointment["starts_label"],
+                    "tone": next_appointment["type_tone"],
+                    "url": client_spa_url("appointments"),
+                },
+                {
+                    "label": "Support",
+                    "title": "Message the clinic if needed",
+                    "detail": "Use the secure thread if your symptoms or availability change before the visit.",
+                    "tone": "sky",
+                    "url": client_spa_url("messages"),
+                },
+            ],
+        }
+
+    if visit_report and visit_report["report_status"] == "published" and not care_plan["plan"]:
+        return {
+            "state": "plan_review",
+            "stage_label": "Review recommendations",
+            "title": "Review your findings and book the next step",
+            "detail": "Your chiropractor has published findings and recommendations in the portal.",
+            "tone": "life",
+            "helper": "Read the results summary, then use the portal calendar to secure the next recommended visit.",
+            "primary_action_label": "Book next visit",
+            "primary_action_url": client_spa_url("appointments"),
+            "secondary_action_label": "Review full results",
+            "secondary_action_url": client_spa_url("results"),
+            "checklist": [
+                {
+                    "label": "Results",
+                    "value": results_status["value"],
+                    "detail": results_status["detail"],
+                    "tone": results_status["tone"],
+                    "url": client_spa_url("results"),
+                    "action_label": "Open results",
+                },
+                {
+                    "label": "Appointments",
+                    "value": next_appointment["type_label"] if next_appointment else "Next visit not booked",
+                    "detail": next_appointment["starts_label"] if next_appointment else "Book the next recommended visit from the portal calendar.",
+                    "tone": next_appointment["type_tone"] if next_appointment else "warm",
+                    "url": client_spa_url("appointments"),
+                    "action_label": "Book now",
+                },
+                {
+                    "label": "Messages",
+                    "value": unread_label,
+                    "detail": unread_detail,
+                    "tone": "rose" if unread_messages else "life",
+                    "url": client_spa_url("messages"),
+                    "action_label": "Open messages",
+                },
+            ],
+            "focus": [
+                {
+                    "label": "Results",
+                    "title": "Read the findings summary",
+                    "detail": "See the clinic summary, key findings, and recommendations published to your portal.",
+                    "tone": "life",
+                    "url": client_spa_url("results"),
+                },
+                {
+                    "label": "Booking",
+                    "title": "Secure the next visit",
+                    "detail": "Move straight from your findings into the next recommended appointment.",
+                    "tone": "warm",
+                    "url": client_spa_url("appointments"),
+                },
+            ],
+        }
+
+    if completed_initial or report_visit is not None or completed_history:
+        report_detail = (
+            f"Your report of findings visit is booked for {report_visit['starts_label']}."
+            if report_visit is not None
+            else "The clinic is reviewing your assessment and preparing the next stage of care."
+        )
+        return {
+            "state": "rof_pending",
+            "stage_label": "Awaiting findings",
+            "title": "Your clinic is preparing your findings",
+            "detail": report_detail,
+            "tone": report_visit["type_tone"] if report_visit is not None else "sky",
+            "helper": "Use the secure thread if you need to update the clinic before your review or report visit.",
+            "primary_action_label": "Open messages",
+            "primary_action_url": client_spa_url("messages"),
+            "secondary_action_label": "Open calendar",
+            "secondary_action_url": client_spa_url("appointments"),
+            "checklist": [
+                {
+                    "label": "Assessment",
+                    "value": "Completed",
+                    "detail": "Your first visit has been completed and is now in clinic review.",
+                    "tone": "life",
+                    "url": client_spa_url("appointments"),
+                    "action_label": "View history",
+                },
+                {
+                    "label": "Results",
+                    "value": results_status["value"],
+                    "detail": results_status["detail"],
+                    "tone": results_status["tone"],
+                    "url": client_spa_url("results"),
+                    "action_label": results_status["action_label"],
+                },
+                {
+                    "label": "Messages",
+                    "value": unread_label,
+                    "detail": unread_detail,
+                    "tone": "rose" if unread_messages else "life",
+                    "url": client_spa_url("messages"),
+                    "action_label": "Open messages",
+                },
+            ],
+            "focus": [
+                {
+                    "label": "Review",
+                    "title": report_visit["type_label"] if report_visit is not None else "Await clinic review",
+                    "detail": report_detail,
+                    "tone": report_visit["type_tone"] if report_visit is not None else "sky",
+                    "url": client_spa_url("appointments"),
+                },
+                {
+                    "label": "Support",
+                    "title": "Send an update if anything changes",
+                    "detail": "You can message the clinic directly through the secure portal thread.",
+                    "tone": "sky",
+                    "url": client_spa_url("messages"),
+                },
+            ],
+        }
+
+    return {
+        "state": "active_plan",
+        "stage_label": "Portal home",
+        "title": next_appointment["type_label"] if next_appointment else "Book your next visit",
+        "detail": next_appointment["starts_label"] if next_appointment else "Use the portal calendar to find the next available appointment.",
+        "tone": next_appointment["type_tone"] if next_appointment else "sky",
+        "helper": "Your portal keeps appointments, results, messages, and care-plan updates in one place.",
+        "primary_action_label": "Open calendar",
+        "primary_action_url": client_spa_url("appointments"),
+        "secondary_action_label": "Open messages",
+        "secondary_action_url": client_spa_url("messages"),
+        "checklist": [
+            {
+                "label": "Appointments",
+                "value": next_appointment["type_label"] if next_appointment else "None booked",
+                "detail": next_appointment["starts_label"] if next_appointment else "Book from the portal calendar when you are ready.",
+                "tone": next_appointment["type_tone"] if next_appointment else "muted",
+                "url": client_spa_url("appointments"),
+                "action_label": "Open calendar",
+            },
+            {
+                "label": "Results",
+                "value": results_status["value"],
+                "detail": results_status["detail"],
+                "tone": results_status["tone"],
+                "url": client_spa_url("results"),
+                "action_label": "Open results",
+            },
+            {
+                "label": "Messages",
+                "value": unread_label,
+                "detail": unread_detail,
+                "tone": "rose" if unread_messages else "life",
+                "url": client_spa_url("messages"),
+                "action_label": "Open messages",
+            },
+        ],
+        "focus": [
+            {
+                "label": "Calendar",
+                "title": "Manage visits from the portal",
+                "detail": "See booked appointments and self-book the next available slot.",
+                "tone": "sky",
+                "url": client_spa_url("appointments"),
+            },
+            {
+                "label": "Messages",
+                "title": "Open your secure thread",
+                "detail": unread_detail,
+                "tone": "rose" if unread_messages else "life",
+                "url": client_spa_url("messages"),
+            },
+        ],
+    }
 
 
 def build_client_dashboard_context(patient_user_id: int, month_value: str | None = None) -> dict:
@@ -4201,6 +5213,16 @@ def build_client_dashboard_context(patient_user_id: int, month_value: str | None
             "action_url": url_for("main.results"),
         }
 
+    journey_summary = build_client_journey_summary(
+        submission=submission,
+        schedule=schedule,
+        care_plan=care_plan,
+        visit_report=visit_report,
+        intake_status=intake_status,
+        results_status=results_status,
+        unread_messages=unread_messages,
+    )
+
     return {
         "submission": submission,
         "invitation": invitation,
@@ -4217,6 +5239,8 @@ def build_client_dashboard_context(patient_user_id: int, month_value: str | None
         "portal_actions": portal_actions,
         "portal_journey": portal_journey,
         "next_step": next_step,
+        "journey_state": journey_summary["state"],
+        "journey_summary": journey_summary,
         "results_highlight": results_highlight,
     }
 
@@ -4430,9 +5454,15 @@ def build_staff_settings_context() -> dict:
     }
 
 
-def settings_redirect_url() -> str:
-    if (request.form.get("return_to") or "").strip() == "settings":
-        return url_for("main.staff_settings", section=request.form.get("section") or None)
+def settings_redirect_url(default_section: str | None = None) -> str:
+    return_to = (request.form.get("return_to") or "").strip()
+    section_value = request.form.get("section") or default_section
+    if return_to == "react_settings":
+        return staff_spa_url("settings", section=section_value)
+    if return_to == "settings":
+        return url_for("main.staff_settings", section=section_value or None)
+    if default_section is not None:
+        return url_for("main.staff_settings", section=section_value or None)
     return url_for("main.staff_calendar", month=request.form.get("month") or None)
 
 
@@ -4451,6 +5481,106 @@ def build_staff_reminders_context() -> dict:
         "email_mode": current_app.config.get("REMINDER_EMAIL_MODE", "outbox"),
         "sms_mode": current_app.config.get("REMINDER_SMS_MODE", "outbox"),
     }
+
+
+def process_staff_appointment_reminder(appointment_id: int, requested_channel: str, *, allow_resend: bool = False) -> tuple[dict, int]:
+    appointment_row = get_appointment_with_people(appointment_id)
+    if appointment_row is None:
+        return {"ok": False, "error": "Appointment not found."}, 404
+
+    appointment = decorate_appointment_contacts(build_appointment_item(appointment_row))
+    if not appointment["is_upcoming"]:
+        return {"ok": False, "error": "Only future scheduled appointments can receive reminders."}, 400
+
+    channels = ["email", "sms"] if requested_channel == "both" else [requested_channel]
+    valid_channels = [channel for channel in channels if channel in REMINDER_CHANNEL_META]
+    if not valid_channels:
+        return {"ok": False, "error": "Choose a valid reminder channel."}, 400
+    for channel in valid_channels:
+        if not reminder_channel_enabled(channel):
+            return {
+                "ok": False,
+                "error": f"{reminder_channel_meta(channel)['label']} reminders are disabled in settings.",
+            }, 400
+
+    outcomes = {"logged": 0, "sent": 0, "failed": 0, "skipped": 0}
+    skipped_labels: list[str] = []
+    db = get_db()
+
+    for channel in valid_channels:
+        payload = reminder_preview_payload(appointment, channel)
+        if not payload["recipient"]:
+            outcomes["skipped"] += 1
+            skipped_labels.append(f"{reminder_channel_meta(channel)['label']} missing contact details")
+            continue
+
+        bucket = appointment["reminder_bucket"] or "manual"
+        if not allow_resend and existing_appointment_reminder(appointment_id, channel, bucket) is not None:
+            outcomes["skipped"] += 1
+            skipped_labels.append(f"{reminder_channel_meta(channel)['label']} already sent for this reminder window")
+            continue
+
+        try:
+            status, delivery_mode, error_message = deliver_reminder(current_app.config, payload)
+        except Exception as exc:  # pragma: no cover - only hit on transport errors
+            status = "failed"
+            delivery_mode = current_app.config.get(
+                "REMINDER_EMAIL_MODE" if channel == "email" else "REMINDER_SMS_MODE",
+                "outbox",
+            )
+            error_message = str(exc)
+
+        log_appointment_reminder(
+            appointment,
+            channel,
+            payload,
+            status=status,
+            delivery_mode=delivery_mode,
+            error_message=error_message,
+        )
+        outcomes[status] += 1
+
+    db.commit()
+
+    summary_parts = []
+    if outcomes["sent"]:
+        summary_parts.append(f"{outcomes['sent']} sent")
+    if outcomes["logged"]:
+        summary_parts.append(f"{outcomes['logged']} logged to outbox")
+    if outcomes["failed"]:
+        summary_parts.append(f"{outcomes['failed']} failed")
+    if outcomes["skipped"]:
+        summary_parts.append(f"{outcomes['skipped']} skipped")
+
+    if outcomes["sent"] or outcomes["logged"]:
+        message = f"Reminder processing complete: {', '.join(summary_parts)}."
+        level = "success"
+        status_code = 200
+    elif outcomes["failed"]:
+        message = f"Reminder processing failed: {', '.join(summary_parts)}."
+        level = "error"
+        status_code = 400
+    else:
+        message = ", ".join(skipped_labels) or "No reminders were processed."
+        level = "error"
+        status_code = 400
+
+    refreshed = decorate_appointment_contacts(build_appointment_item(get_appointment_with_people(appointment_id)))
+    return {
+        "ok": level == "success",
+        "message": message,
+        "level": level,
+        "outcomes": outcomes,
+        "skipped_labels": skipped_labels,
+        "appointment": serialize_appointment_for_api(refreshed, include_internal=True) | {
+            "patient_name": refreshed["patient_name"],
+            "type_tone": refreshed["type_tone"],
+            "reminder_label": refreshed["reminder_label"],
+            "reminder_tone": refreshed["reminder_tone"],
+            "can_email": refreshed["can_email"],
+            "can_sms": refreshed["can_sms"],
+        },
+    }, status_code
 
 
 def booking_selection_context(source: str = "client") -> dict:
@@ -4974,7 +6104,7 @@ def practitioner_dashboard_context(clinician_user_id: int) -> dict:
         if appointment["is_upcoming"] and patient["next_appointment"] is None:
             patient["next_appointment"] = appointment
         starts_at = parse_iso(appointment["starts_at"])
-        if starts_at is not None and starts_at <= datetime.now():
+        if starts_at is not None and starts_at <= current_time_like(starts_at):
             patient["last_appointment"] = appointment
         if appointment["has_soap_note"]:
             patient["soap_note_count"] += 1
@@ -6266,33 +7396,11 @@ def staff_journal_claude_chat():
 @bp.get("/staff/messaging")
 @staff_required
 def staff_messaging():
-    search = request.args.get("q", "").strip()
-    threads = get_staff_message_threads(search)
-
-    selected_patient_id = int_or_none(request.args.get("patient_id"))
-    if not isinstance(selected_patient_id, int):
-        selected_patient_id = threads[0]["patient_user_id"] if threads else None
-
-    selected_patient = get_client_user(selected_patient_id) if selected_patient_id is not None else None
-    if selected_patient is None and threads:
-        selected_patient_id = threads[0]["patient_user_id"]
-        selected_patient = get_client_user(selected_patient_id)
-
-    messages = []
-    if selected_patient is not None:
-        mark_patient_messages_read_for_staff(selected_patient["id"])
-        get_db().commit()
-        messages = get_patient_message_thread(selected_patient["id"])
-
-    return render_template(
-        "staff_messaging.html",
-        threads=threads,
-        selected_patient=selected_patient,
-        selected_patient_id=selected_patient["id"] if selected_patient is not None else None,
-        messages=messages,
-        message_topics=message_topic_options(),
-        search_query=search,
+    payload = staff_message_workspace_payload(
+        request.args.get("q"),
+        int_or_none(request.args.get("patient_id")),
     )
+    return render_template("staff_messaging.html", **payload)
 
 
 @bp.post("/staff/messaging/<int:patient_user_id>")
@@ -6314,6 +7422,44 @@ def send_staff_message(patient_user_id: int):
         get_db().commit()
         flash("Message sent to patient.", "success")
     return redirect(url_for("main.staff_messaging", patient_id=patient_user_id))
+
+
+@bp.get("/api/staff/messages")
+@staff_required
+def api_staff_messages():
+    payload = staff_message_workspace_payload(
+        request.args.get("q"),
+        int_or_none(request.args.get("patient_id")),
+    )
+    return jsonify({"ok": True, **payload})
+
+
+@bp.post("/api/staff/messages/<int:patient_user_id>")
+@staff_required
+def api_staff_send_message(patient_user_id: int):
+    patient = get_client_user(patient_user_id)
+    if patient is None:
+        return jsonify({"ok": False, "error": "Patient not found."}), 404
+
+    payload = request.get_json(silent=True) or {}
+    topic = str(payload.get("topic", "")).strip()
+    body = str(payload.get("body", "")).strip()
+
+    errors = []
+    if topic not in MESSAGE_TOPIC_META:
+        errors.append("Choose a valid message topic.")
+    if not body:
+        errors.append("Write a message before sending.")
+    if errors:
+        return jsonify({"ok": False, "errors": errors}), 400
+
+    insert_patient_message(patient_user_id, g.user["id"], g.user["role"], topic, body)
+    get_db().commit()
+    workspace = staff_message_workspace_payload(
+        request.args.get("q"),
+        patient_user_id,
+    )
+    return jsonify({"ok": True, **workspace, "message": "Message sent to patient."}), 201
 
 
 @bp.get("/messages")
@@ -6465,104 +7611,29 @@ def update_staff_learning_progress():
 @bp.route("/staff/invitations/new", methods=("GET", "POST"))
 @staff_required
 def staff_new_invitation():
+    lead_id = int_or_none(request.values.get("lead_id"))
     created_invitation = None
     created_slot_hold = None
-    lead_id = int_or_none(request.values.get("lead_id"))
     linked_lead = get_lead(lead_id) if isinstance(lead_id, int) else None
-    invite_prefill = {
-        "lead_id": str(linked_lead["id"]) if linked_lead is not None else "",
-        "first_name": request.values.get("first_name", "").strip(),
-        "last_name": request.values.get("last_name", "").strip(),
-        "email": request.values.get("email", "").strip().lower(),
-        "appointment_at": request.values.get("appointment_at", "").strip(),
-        "note": request.values.get("note", "").strip(),
-    }
-    if linked_lead is not None:
-        invite_prefill = {
-            "lead_id": str(linked_lead["id"]),
-            "first_name": linked_lead["first_name"],
-            "last_name": linked_lead["last_name"],
-            "email": linked_lead["email"],
-            "appointment_at": linked_lead["requested_starts_at"] or "",
-            "note": linked_lead["reason"] or linked_lead["notes"] or "",
-        }
+    workspace = staff_invitation_workspace_payload(lead_id, source_values=request.values)
+    invite_prefill = workspace["invite_prefill"]
 
     if request.method == "POST":
-        first_name = invite_prefill["first_name"]
-        last_name = invite_prefill["last_name"]
-        email = invite_prefill["email"]
-        appointment_at = invite_prefill["appointment_at"] or None
-        note = invite_prefill["note"]
-
-        error = None
-        if not first_name or not last_name:
-            error = "Patient first and last name are required."
-        elif not email:
-            error = "Patient email is required."
-
-        initial_service = default_service_for_appointment_type("initial_consult")
-        booking_policy = resolve_booking_policy(initial_service, "initial_consult", None)
-        location_id = selected_location_id(
-            str(linked_lead["preferred_location_id"]) if linked_lead is not None and linked_lead["preferred_location_id"] is not None else None
-        )
-        clinician_user_id = selected_clinician_user_id(
-            str(linked_lead["preferred_clinician_user_id"]) if linked_lead is not None and linked_lead["preferred_clinician_user_id"] is not None else None
-        )
-        appointment_at_parsed = parse_iso(appointment_at) if appointment_at else None
-        slot_assignment = None
-        if error is None and appointment_at and appointment_at_parsed is None:
-            error = "Choose a valid appointment date and time."
-        elif error is None and appointment_at_parsed is not None:
-            slot_assignment = resolve_slot_assignment(appointment_at_parsed, clinician_user_id, location_id, booking_policy)
-            if slot_assignment is None:
-                error = "That appointment slot is no longer available. Choose another time."
-
-        if error is None:
-            now = iso_now()
-            expires_at = utc_future_timestamp(days=STAFF_INVITE_EXPIRY_DAYS)
-            db = get_db()
-            created_invitation = create_invitation_record(
-                email=email,
-                first_name=first_name,
-                last_name=last_name,
-                appointment_at=slot_assignment["value"] if slot_assignment is not None else appointment_at,
-                note=note,
-                created_by=g.user["id"],
-                expires_at=expires_at,
-            )
-            if slot_assignment is not None and appointment_at_parsed is not None:
-                created_slot_hold = upsert_invitation_slot_hold(
-                    invitation_id=created_invitation["id"],
-                    lead_id=linked_lead["id"] if linked_lead is not None else None,
-                    clinician_user_id=slot_assignment["clinician_user_id"],
-                    location_id=location_id,
-                    booking_policy=booking_policy,
-                    starts_at=appointment_at_parsed,
-                    expires_at=expires_at,
-                )
-            if linked_lead is not None:
-                db.execute(
-                    """
-                    UPDATE leads
-                    SET status = 'invited',
-                        invitation_id = ?,
-                        updated_at = ?
-                    WHERE id = ?
-                    """,
-                    (created_invitation["id"], now, linked_lead["id"]),
-                )
-            db.commit()
-            flash("Invitation created from the lead request." if linked_lead is not None else "Invitation created.", "success")
+        result = process_staff_invitation_request(invite_prefill, linked_lead, g.user["id"])
+        if result["ok"]:
+            created_invitation = result["created_invitation"]
+            created_slot_hold = result["created_slot_hold"]
+            flash(result["message"], "success")
         else:
-            flash(error, "error")
+            flash(result["error"], "error")
 
-    return render_template(
-        "invite_form.html",
+    workspace = staff_invitation_workspace_payload(
+        lead_id,
+        source_values=request.values,
         created_invitation=created_invitation,
-        created_slot_hold=build_slot_hold_item(created_slot_hold),
-        invite_prefill=invite_prefill,
-        linked_lead=build_lead_item(linked_lead) if linked_lead is not None else None,
+        created_slot_hold=created_slot_hold,
     )
+    return render_template("invite_form.html", **workspace)
 
 
 @bp.route("/staff/calendar")
@@ -6643,7 +7714,7 @@ def update_staff_settings():
     else:
         flash(error, "error")
 
-    return redirect(url_for("main.staff_settings", section="scheduling"))
+    return redirect(settings_redirect_url("scheduling"))
 
 
 @bp.post("/staff/settings/preferences/<section_key>")
@@ -6795,7 +7866,7 @@ def update_staff_settings_section(section_key: str):
     else:
         flash(error, "error")
 
-    return redirect(url_for("main.staff_settings", section=section_key))
+    return redirect(settings_redirect_url(section_key))
 
 
 @bp.post("/staff/settings/chiropractors")
@@ -6869,7 +7940,7 @@ def create_staff_chiropractor():
     else:
         flash(error, "error")
 
-    return redirect(url_for("main.staff_settings", section="security"))
+    return redirect(settings_redirect_url("security"))
 
 
 @bp.post("/staff/settings/chiropractors/<int:user_id>/status")
@@ -6911,7 +7982,7 @@ def update_staff_chiropractor_status(user_id: int):
     elif error is not None:
         flash(error, "error")
 
-    return redirect(url_for("main.staff_settings", section="security"))
+    return redirect(settings_redirect_url("security"))
 
 
 @bp.get("/staff/settings/database-backup")
@@ -6954,58 +8025,133 @@ def staff_schedule_availability():
     return jsonify(serialize_schedule_availability(availability))
 
 
-@bp.post("/staff/schedule-windows")
-@staff_required
-def create_staff_schedule_window():
-    clinician_user_id = int_or_none(request.form.get("clinician_user_id"))
-    location_id = selected_location_id(request.form.get("location_id"))
-    weekday = int_or_none(request.form.get("weekday"))
-    window_type = request.form.get("window_type", "").strip()
-    starts_time = request.form.get("starts_time", "").strip()
-    ends_time = request.form.get("ends_time", "").strip()
-    label = request.form.get("label", "").strip()
+def validate_schedule_window_request(values) -> tuple[dict | None, str | None]:
+    raw_clinician = str(values.get("clinician_user_id", "") or "").strip()
+    raw_location = str(values.get("location_id", "") or "").strip()
+    raw_weekday = str(values.get("weekday", "") or "").strip()
+    window_type = str(values.get("window_type", "") or "").strip()
+    starts_time = str(values.get("starts_time", "") or "").strip()
+    ends_time = str(values.get("ends_time", "") or "").strip()
+    label = str(values.get("label", "") or "").strip()
 
-    error = None
+    clinician_user_id = int_or_none(raw_clinician)
+    location_id = int_or_none(raw_location)
+    weekday = int_or_none(raw_weekday)
+
     clinician_ids = {option["value"] for option in clinician_options()}
     location_ids = {option["value"] for option in location_options()}
-    if clinician_user_id in ("", None):
+
+    error = None
+    if raw_clinician:
+        if not isinstance(clinician_user_id, int) or clinician_user_id not in clinician_ids:
+            error = "Choose a valid chiropractor for the recurring availability block."
+    else:
         clinician_user_id = None
-    elif not isinstance(clinician_user_id, int) or clinician_user_id not in clinician_ids:
-        error = "Choose a valid chiropractor for the schedule template."
+
     if error is None and (not isinstance(location_id, int) or location_id not in location_ids):
-        error = "Choose a valid location."
+        error = "Choose a valid clinic location."
     if error is None and (not isinstance(weekday, int) or weekday < 0 or weekday > 6):
         error = "Choose a valid weekday."
     elif error is None and window_type not in SCHEDULE_WINDOW_TYPE_META:
-        error = "Choose a valid schedule type."
+        error = "Choose a valid availability type."
     elif error is None:
         start_time = time_from_value(starts_time)
         end_time = time_from_value(ends_time)
         if start_time is None or end_time is None:
-            error = "Shift times must use valid hour and minute values."
+            error = "Availability must use a valid start and end time."
         elif datetime.combine(date.today(), end_time) <= datetime.combine(date.today(), start_time):
-            error = "Shift end time must be after the start time."
+            error = "Availability end time must be after the start time."
 
-    if error is None:
-        now = iso_now()
-        get_db().execute(
-            """
-            INSERT INTO schedule_windows (
-                clinician_user_id,
-                location_id,
-                weekday,
-                window_type,
-                starts_time,
-                ends_time,
-                label,
-                created_at,
-                updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (clinician_user_id, location_id, weekday, window_type, starts_time, ends_time, label, now, now),
+    if error is not None:
+        return None, error
+
+    return (
+        {
+            "clinician_user_id": clinician_user_id,
+            "location_id": location_id,
+            "weekday": weekday,
+            "window_type": window_type,
+            "starts_time": starts_time,
+            "ends_time": ends_time,
+            "label": label,
+        },
+        None,
+    )
+
+
+def create_schedule_window_record(values) -> tuple[dict | None, str | None]:
+    normalized, error = validate_schedule_window_request(values)
+    if error is not None or normalized is None:
+        return None, error
+
+    now = iso_now()
+    cursor = get_db().execute(
+        """
+        INSERT INTO schedule_windows (
+            clinician_user_id,
+            location_id,
+            weekday,
+            window_type,
+            starts_time,
+            ends_time,
+            label,
+            created_at,
+            updated_at
         )
-        get_db().commit()
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            normalized["clinician_user_id"],
+            normalized["location_id"],
+            normalized["weekday"],
+            normalized["window_type"],
+            normalized["starts_time"],
+            normalized["ends_time"],
+            normalized["label"],
+            now,
+            now,
+        ),
+    )
+    get_db().commit()
+    detail_row = get_schedule_window_detail(cursor.lastrowid)
+    return (build_schedule_window_item(detail_row) if detail_row is not None else None), None
+
+
+def remove_schedule_window_record(window_id: int) -> tuple[dict | None, str | None]:
+    detail_row = get_schedule_window_detail(window_id)
+    if detail_row is None:
+        return None, "Availability block not found."
+    get_db().execute("DELETE FROM schedule_windows WHERE id = ?", (window_id,))
+    get_db().commit()
+    return build_schedule_window_item(detail_row), None
+
+
+def update_booking_service_duration_record(service_id: int, duration_minutes: int) -> tuple[dict | None, str | None]:
+    existing = get_appointment_service(service_id)
+    if existing is None:
+        return None, "Booking service not found."
+    if not isinstance(duration_minutes, int) or not duration_is_supported(duration_minutes):
+        return None, "Choose a supported appointment duration."
+
+    get_db().execute(
+        """
+        UPDATE appointment_services
+        SET duration_minutes = ?,
+            updated_at = ?
+        WHERE id = ?
+        """,
+        (duration_minutes, iso_now(), service_id),
+    )
+    get_db().commit()
+    refreshed = get_appointment_service(service_id)
+    return (build_appointment_service_item(refreshed) if refreshed is not None else None), None
+
+
+@bp.post("/staff/schedule-windows")
+@staff_required
+def create_staff_schedule_window():
+    _window_item, error = create_schedule_window_record(request.form)
+    if error is None:
         flash("Schedule template saved.", "success")
     else:
         flash(error, "error")
@@ -7016,11 +8162,9 @@ def create_staff_schedule_window():
 @bp.post("/staff/schedule-windows/<int:window_id>/delete")
 @staff_required
 def delete_staff_schedule_window(window_id: int):
-    window = get_schedule_window(window_id)
-    if window is None:
+    _window_item, error = remove_schedule_window_record(window_id)
+    if error is not None:
         abort(404)
-    get_db().execute("DELETE FROM schedule_windows WHERE id = ?", (window_id,))
-    get_db().commit()
     flash("Schedule template removed.", "success")
     return redirect(settings_redirect_url())
 
@@ -7222,85 +8366,25 @@ def staff_reminders():
 @bp.post("/staff/appointments/<int:appointment_id>/send-reminder")
 @staff_required
 def send_staff_appointment_reminder(appointment_id: int):
-    appointment_row = get_appointment_with_people(appointment_id)
-    if appointment_row is None:
-        abort(404)
-
-    appointment = build_appointment_item(appointment_row)
-    appointment = decorate_appointment_contacts(appointment)
-    if not appointment["is_upcoming"]:
-        flash("Only future scheduled appointments can receive reminders.", "error")
-        return redirect(reminder_redirect_target())
-
-    requested_channel = request.form.get("channel", "").strip().lower()
-    channels = ["email", "sms"] if requested_channel == "both" else [requested_channel]
-    valid_channels = [channel for channel in channels if channel in REMINDER_CHANNEL_META]
-    if not valid_channels:
-        flash("Choose a valid reminder channel.", "error")
-        return redirect(reminder_redirect_target())
-    for channel in valid_channels:
-        if not reminder_channel_enabled(channel):
-            flash(f"{reminder_channel_meta(channel)['label']} reminders are disabled in settings.", "error")
-            return redirect(reminder_redirect_target())
-
-    allow_resend = request.form.get("allow_resend", "").strip() == "1"
-    outcomes = {"logged": 0, "sent": 0, "failed": 0, "skipped": 0}
-    skipped_labels: list[str] = []
-    db = get_db()
-
-    for channel in valid_channels:
-        payload = reminder_preview_payload(appointment, channel)
-        if not payload["recipient"]:
-            outcomes["skipped"] += 1
-            skipped_labels.append(f"{reminder_channel_meta(channel)['label']} missing contact details")
-            continue
-
-        bucket = appointment["reminder_bucket"] or "manual"
-        if not allow_resend and existing_appointment_reminder(appointment_id, channel, bucket) is not None:
-            outcomes["skipped"] += 1
-            skipped_labels.append(f"{reminder_channel_meta(channel)['label']} already sent for this reminder window")
-            continue
-
-        try:
-            status, delivery_mode, error_message = deliver_reminder(current_app.config, payload)
-        except Exception as exc:  # pragma: no cover - only hit on transport errors
-            status = "failed"
-            delivery_mode = current_app.config.get(
-                "REMINDER_EMAIL_MODE" if channel == "email" else "REMINDER_SMS_MODE",
-                "outbox",
-            )
-            error_message = str(exc)
-
-        log_appointment_reminder(
-            appointment,
-            channel,
-            payload,
-            status=status,
-            delivery_mode=delivery_mode,
-            error_message=error_message,
-        )
-        outcomes[status] += 1
-
-    db.commit()
-
-    messages = []
-    if outcomes["sent"]:
-        messages.append(f"{outcomes['sent']} sent")
-    if outcomes["logged"]:
-        messages.append(f"{outcomes['logged']} logged to outbox")
-    if outcomes["failed"]:
-        messages.append(f"{outcomes['failed']} failed")
-    if outcomes["skipped"]:
-        messages.append(f"{outcomes['skipped']} skipped")
-
-    if outcomes["sent"] or outcomes["logged"]:
-        flash(f"Reminder processing complete: {', '.join(messages)}.", "success")
-    elif outcomes["failed"]:
-        flash(f"Reminder processing failed: {', '.join(messages)}.", "error")
-    else:
-        flash(", ".join(skipped_labels) or "No reminders were processed.", "error")
-
+    payload, _status_code = process_staff_appointment_reminder(
+        appointment_id,
+        request.form.get("channel", "").strip().lower(),
+        allow_resend=request.form.get("allow_resend", "").strip() == "1",
+    )
+    flash(payload["message"], "success" if payload["level"] == "success" else "error")
     return redirect(reminder_redirect_target())
+
+
+@bp.post("/api/staff/appointments/<int:appointment_id>/send-reminder")
+@staff_required
+def api_staff_send_appointment_reminder(appointment_id: int):
+    payload = request.get_json(silent=True) or {}
+    result, status_code = process_staff_appointment_reminder(
+        appointment_id,
+        str(payload.get("channel", "")).strip().lower(),
+        allow_resend=str(payload.get("allow_resend", "")).strip() in {"1", "true", "True"},
+    )
+    return jsonify(result), status_code
 
 
 @bp.post("/staff/patients/<int:user_id>/care-plan")
@@ -8852,6 +9936,109 @@ def api_staff_dashboard():
     return jsonify({"ok": True, **payload})
 
 
+@bp.get("/api/staff/calendar")
+@staff_required
+def api_staff_calendar():
+    return jsonify({"ok": True, **staff_calendar_api_payload(request.args.get("month"))})
+
+
+@bp.get("/api/staff/reminders")
+@staff_required
+def api_staff_reminders():
+    return jsonify({"ok": True, "reminders": staff_reminders_api_payload()})
+
+
+@bp.get("/api/staff/settings")
+@staff_required
+def api_staff_settings():
+    return jsonify({"ok": True, "settings": staff_settings_api_payload()})
+
+
+@bp.post("/api/staff/schedule-windows")
+@staff_required
+def api_create_staff_schedule_window():
+    payload = request.get_json(silent=True) or {}
+    window_item, error = create_schedule_window_record(payload)
+    if error is not None or window_item is None:
+        return jsonify({"ok": False, "error": error or "Availability block could not be saved."}), 400
+    return jsonify(
+        {
+            "ok": True,
+            "message": "Recurring weekly availability saved.",
+            "window": window_item,
+            "schedule_templates": build_weekly_schedule_context(),
+        }
+    ), 201
+
+
+@bp.post("/api/staff/schedule-windows/<int:window_id>/delete")
+@staff_required
+def api_delete_staff_schedule_window(window_id: int):
+    window_item, error = remove_schedule_window_record(window_id)
+    if error is not None or window_item is None:
+        return jsonify({"ok": False, "error": error or "Availability block could not be removed."}), 404
+    return jsonify(
+        {
+            "ok": True,
+            "message": "Recurring weekly availability removed.",
+            "window": window_item,
+            "schedule_templates": build_weekly_schedule_context(),
+        }
+    )
+
+
+@bp.post("/api/staff/booking-services/<int:service_id>/duration")
+@staff_required
+def api_update_staff_booking_service_duration(service_id: int):
+    payload = request.get_json(silent=True) or {}
+    duration_minutes = int_or_none(str(payload.get("duration_minutes", "")).strip())
+    service_item, error = update_booking_service_duration_record(service_id, duration_minutes if isinstance(duration_minutes, int) else None)
+    if error is not None or service_item is None:
+        return jsonify({"ok": False, "error": error or "Service duration could not be updated."}), 400
+    return jsonify(
+        {
+            "ok": True,
+            "message": "Appointment duration updated.",
+            "service": service_item,
+            "service_inventory": appointment_service_options(active_only=False),
+        }
+    )
+
+
+@bp.get("/api/staff/invitations/new")
+@staff_required
+def api_staff_new_invitation():
+    lead_id = int_or_none(request.args.get("lead_id"))
+    return jsonify({"ok": True, **staff_invitation_workspace_payload(lead_id, source_values=request.args)})
+
+
+@bp.post("/api/staff/invitations")
+@staff_required
+def api_staff_create_invitation():
+    payload = request.get_json(silent=True) or {}
+    lead_id = int_or_none(str(payload.get("lead_id", "")).strip())
+    linked_lead = get_lead(lead_id) if isinstance(lead_id, int) else None
+    invite_prefill = {
+        "lead_id": str(lead_id) if isinstance(lead_id, int) else "",
+        "first_name": str(payload.get("first_name", "")).strip(),
+        "last_name": str(payload.get("last_name", "")).strip(),
+        "email": str(payload.get("email", "")).strip().lower(),
+        "appointment_at": str(payload.get("appointment_at", "")).strip(),
+        "note": str(payload.get("note", "")).strip(),
+    }
+    result = process_staff_invitation_request(invite_prefill, linked_lead, g.user["id"])
+    if not result["ok"]:
+        workspace = staff_invitation_workspace_payload(lead_id, source_values=invite_prefill)
+        return jsonify({"ok": False, "error": result["error"], **workspace}), 400
+    workspace = staff_invitation_workspace_payload(
+        lead_id,
+        source_values=invite_prefill,
+        created_invitation=result["created_invitation"],
+        created_slot_hold=result["created_slot_hold"],
+    )
+    return jsonify({"ok": True, "message": result["message"], **workspace}), 201
+
+
 @bp.get("/api/client/dashboard")
 @client_required
 def api_client_dashboard():
@@ -8864,12 +10051,15 @@ def api_client_dashboard():
 def api_client_appointments_context():
     schedule = build_patient_schedule_context(g.user["id"], request.args.get("month"))
     booking = patient_portal_booking_context(g.user["id"])
+    dashboard_context = build_client_dashboard_context(g.user["id"], request.args.get("month"))
     booking_disabled_reason = None
     if not online_booking_enabled():
         booking_disabled_reason = "Online booking is disabled in clinic settings. Contact the clinic to schedule a visit."
     return jsonify(
         {
             "ok": True,
+            "journey_state": dashboard_context["journey_state"],
+            "journey_summary": dashboard_context["journey_summary"],
             "appointments": {
                 "schedule": schedule,
                 "care_plan": booking["care_plan"],
@@ -8896,7 +10086,15 @@ def api_client_appointments_context():
 @bp.get("/api/client/care-plan")
 @client_required
 def api_client_care_plan():
-    return jsonify({"ok": True, "care_plan": build_care_plan_context(g.user["id"])})
+    dashboard_context = build_client_dashboard_context(g.user["id"])
+    return jsonify(
+        {
+            "ok": True,
+            "care_plan": dashboard_context["care_plan"],
+            "journey_state": dashboard_context["journey_state"],
+            "journey_summary": dashboard_context["journey_summary"],
+        }
+    )
 
 
 @bp.get("/api/client/messages")
@@ -8951,6 +10149,8 @@ def api_client_results():
             }
         ), 409
 
+    dashboard_context = build_client_dashboard_context(g.user["id"])
+
     return jsonify(
         {
             "ok": True,
@@ -8967,6 +10167,8 @@ def api_client_results():
                     "updated_at": context["submission"]["updated_at"],
                 },
             },
+            "journey_state": dashboard_context["journey_state"],
+            "journey_summary": dashboard_context["journey_summary"],
         }
     )
 
@@ -9000,6 +10202,19 @@ def api_availability():
     appointment_type = request.args.get("appointment_type", "").strip()
     duration_minutes = int_or_none(request.args.get("duration_minutes", "30"))
     booking_policy = resolve_booking_policy(selected_service, appointment_type, duration_minutes if isinstance(duration_minutes, int) else None)
+    care_plan_visit_id = int_or_none(request.args.get("care_plan_visit_id"))
+    care_plan_visit = get_care_plan_visit(care_plan_visit_id) if isinstance(care_plan_visit_id, int) else None
+    if care_plan_visit is not None:
+        if not is_staff(g.user) and care_plan_visit["patient_user_id"] != g.user["id"]:
+            return jsonify({"ok": False, "error": "That care-plan visit could not be loaded."}), 404
+        booking_policy = care_plan_visit_policy(
+            booking_policy,
+            {
+                "visit_kind": care_plan_visit["visit_kind"],
+                "duration_minutes": care_plan_visit["duration_minutes"] or booking_policy["duration_minutes"],
+            },
+        )
+        booking_policy["service_label"] = care_plan_visit["label"] or booking_policy["service_label"]
     clinician_user_id = requested_clinician_user_id(
         request.args.get("clinician_user_id"),
         allow_any=booking_policy["routing_mode"] == "team_round_robin",

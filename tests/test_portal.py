@@ -1073,6 +1073,86 @@ class PortalFlowTestCase(unittest.TestCase):
         self.assertIn("Upcoming visits", html)
         self.assertIn("Report of Findings", html)
 
+        response = self.client.get("/api/client/dashboard")
+        self.assertEqual(response.status_code, 200)
+        dashboard_payload = response.get_json()["dashboard"]
+        self.assertEqual(dashboard_payload["journey_state"], "plan_review")
+        self.assertEqual(dashboard_payload["journey_summary"]["stage_label"], "Review recommendations")
+        self.assertEqual(dashboard_payload["journey_summary"]["primary_action_url"], "/app/appointments")
+        self.assertEqual(dashboard_payload["journey_summary"]["secondary_action_url"], "/app/results")
+
+        response = self.client.get("/api/client/care-plan")
+        self.assertEqual(response.status_code, 200)
+        care_plan_payload = response.get_json()
+        self.assertTrue(care_plan_payload["ok"])
+        self.assertEqual(care_plan_payload["journey_state"], "plan_review")
+        self.assertEqual(care_plan_payload["journey_summary"]["primary_action_label"], "Book next visit")
+
+        response = self.client.get("/api/client/results")
+        self.assertEqual(response.status_code, 200)
+        results_payload = response.get_json()
+        self.assertTrue(results_payload["ok"])
+        self.assertEqual(results_payload["journey_state"], "plan_review")
+        self.assertEqual(results_payload["journey_summary"]["secondary_action_url"], "/app/results")
+
+    def test_client_dashboard_first_visit_journey_state(self) -> None:
+        staff_id = self.create_staff_user()
+        patient_id = self.create_client_user()
+        initial_consult_start, initial_consult_end = self.appointment_slot(days_from_now=2, hour=9, minute=15)
+
+        with self.app.app_context():
+            db = get_db()
+            main_location_id = db.execute(
+                "SELECT id FROM locations WHERE slug = 'main-clinic'"
+            ).fetchone()["id"]
+            now = iso_now()
+            db.execute(
+                """
+                INSERT INTO appointments (
+                    patient_user_id,
+                    clinician_user_id,
+                    location_id,
+                    appointment_type,
+                    status,
+                    starts_at,
+                    ends_at,
+                    booking_channel,
+                    service_label_snapshot,
+                    booking_source,
+                    created_at,
+                    updated_at
+                )
+                VALUES (?, ?, ?, 'initial_consult', 'scheduled', ?, ?, 'portal', 'Initial Consultation', 'patient_portal', ?, ?)
+                """,
+                (
+                    patient_id,
+                    staff_id,
+                    main_location_id,
+                    initial_consult_start,
+                    initial_consult_end,
+                    now,
+                    now,
+                ),
+            )
+            db.commit()
+
+        self.login_client()
+
+        response = self.client.get("/api/client/dashboard")
+        self.assertEqual(response.status_code, 200)
+        dashboard_payload = response.get_json()["dashboard"]
+        self.assertEqual(dashboard_payload["journey_state"], "booked_first_visit")
+        self.assertEqual(dashboard_payload["journey_summary"]["primary_action_url"], "/app/intake")
+        self.assertEqual(dashboard_payload["journey_summary"]["secondary_action_url"], "/app/appointments")
+        self.assertEqual(dashboard_payload["journey_summary"]["checklist"][0]["value"], "Initial Consultation")
+
+        response = self.client.get("/api/client/appointments/context")
+        self.assertEqual(response.status_code, 200)
+        appointments_payload = response.get_json()
+        self.assertTrue(appointments_payload["ok"])
+        self.assertEqual(appointments_payload["journey_state"], "booked_first_visit")
+        self.assertEqual(appointments_payload["journey_summary"]["primary_action_label"], "Start intake")
+
     def test_staff_care_plan_calendar_sync(self) -> None:
         staff_id = self.create_staff_user()
         self.login_staff()
@@ -1260,7 +1340,7 @@ class PortalFlowTestCase(unittest.TestCase):
         self.assertGreaterEqual(booking_date, date.today().isoformat())
 
         response = self.client.get(
-            f"/api/availability?date={booking_date}&clinician_user_id={staff_id}&location_id={main_location_id}&service_id={care_plan_service_id}&appointment_type=care_plan&duration_minutes=15"
+            f"/api/availability?date={booking_date}&clinician_user_id={staff_id}&location_id={main_location_id}&service_id={care_plan_service_id}&appointment_type=care_plan&duration_minutes={overdue_visit['duration_minutes']}&care_plan_visit_id={overdue_visit['id']}"
         )
         self.assertEqual(response.status_code, 200)
         availability_payload = response.get_json()
@@ -1276,7 +1356,7 @@ class PortalFlowTestCase(unittest.TestCase):
                 "clinician_user_id": str(staff_id),
                 "location_id": str(main_location_id),
                 "appointment_date": booking_date,
-                "duration_minutes": "15",
+                "duration_minutes": str(overdue_visit["duration_minutes"]),
                 "slot_start": selected_slot,
                 "patient_details": "Booked from the portal as the next care-plan step.",
                 "care_plan_visit_id": str(overdue_visit["id"]),
@@ -1407,6 +1487,463 @@ class PortalFlowTestCase(unittest.TestCase):
         self.assertIn("embedded-frame", embedded_html)
         self.assertNotIn("app-sidebar", embedded_html)
 
+    def test_react_staff_messaging_api_and_portal(self) -> None:
+        self.create_staff_user()
+        with self.app.app_context():
+            db = get_db()
+            db.execute(
+                """
+                INSERT INTO users (first_name, last_name, email, password_hash, role, created_at)
+                VALUES (?, ?, ?, ?, 'client', ?)
+                """,
+                ("Mila", "Hart", "mila@example.com", generate_password_hash("patientpass123", method="pbkdf2:sha256"), iso_now()),
+            )
+            patient_user_id = db.execute(
+                "SELECT id FROM users WHERE email = ?",
+                ("mila@example.com",),
+            ).fetchone()["id"]
+            db.execute(
+                """
+                INSERT INTO patient_messages (
+                    patient_user_id,
+                    sender_user_id,
+                    sender_role,
+                    topic,
+                    body,
+                    read_by_staff_at,
+                    read_by_patient_at,
+                    created_at
+                )
+                VALUES (?, ?, 'client', 'symptoms', ?, NULL, ?, ?)
+                """,
+                (
+                    patient_user_id,
+                    patient_user_id,
+                    "Morning stiffness is worse after long drives.",
+                    iso_now(),
+                    iso_now(),
+                ),
+            )
+            db.commit()
+
+        self.login_staff()
+
+        response = self.client.get("/staff/app/messaging")
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("react-portal-root", html)
+        self.assertIn("/api/staff/messages", html)
+
+        response = self.client.get(f"/api/staff/messages?patient_id={patient_user_id}")
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["selected_patient"]["full_name"], "Mila Hart")
+        self.assertEqual(payload["unread_before_open"], 1)
+        self.assertEqual(payload["threads"][0]["unread_for_staff"], 0)
+        self.assertIn("Morning stiffness is worse after long drives.", payload["messages"][0]["body"])
+
+        response = self.client.post(
+            f"/api/staff/messages/{patient_user_id}",
+            json={"topic": "appointment", "body": "Please book your reassessment for next week."},
+        )
+        self.assertEqual(response.status_code, 201)
+        post_payload = response.get_json()
+        self.assertTrue(post_payload["ok"])
+        self.assertEqual(post_payload["message"], "Message sent to patient.")
+        self.assertTrue(any(item["body"] == "Please book your reassessment for next week." for item in post_payload["messages"]))
+
+    def test_react_staff_calendar_api_and_reminder_actions(self) -> None:
+        staff_id = self.create_staff_user()
+        with self.app.app_context():
+            db = get_db()
+            patient_id = db.execute(
+                """
+                INSERT INTO users (first_name, last_name, email, password_hash, role, created_at)
+                VALUES (?, ?, ?, ?, 'client', ?)
+                """,
+                (
+                    "Liam",
+                    "Shore",
+                    "liam@example.com",
+                    generate_password_hash("patientpass123", method="pbkdf2:sha256"),
+                    iso_now(),
+                ),
+            ).lastrowid
+            main_location_id = db.execute(
+                "SELECT id FROM locations WHERE slug = 'main-clinic'"
+            ).fetchone()["id"]
+            start_at, end_at = self.appointment_slot(days_from_now=2, hour=10, minute=0)
+            appointment_id = db.execute(
+                """
+                INSERT INTO appointments (
+                    patient_user_id,
+                    clinician_user_id,
+                    location_id,
+                    appointment_type,
+                    status,
+                    starts_at,
+                    ends_at,
+                    note,
+                    patient_details,
+                    booking_channel,
+                    service_label_snapshot,
+                    booking_source,
+                    created_at,
+                    updated_at
+                )
+                VALUES (?, ?, ?, 'report_of_findings', 'scheduled', ?, ?, ?, ?, 'staff', 'Report of Findings', 'staff_portal', ?, ?)
+                """,
+                (
+                    patient_id,
+                    staff_id,
+                    main_location_id,
+                    start_at,
+                    end_at,
+                    "Discuss findings and confirm next stage of care.",
+                    "Patient requested the earliest available review.",
+                    iso_now(),
+                    iso_now(),
+                ),
+            ).lastrowid
+            db.commit()
+
+        self.login_staff()
+
+        response = self.client.get("/staff/app/calendar")
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("react-portal-root", html)
+        self.assertIn("/api/staff/calendar", html)
+
+        response = self.client.get(f"/api/staff/calendar?month={start_at[:7]}")
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["calendar"]["month_value"], start_at[:7])
+        self.assertTrue(any(item["patient_name"] == "Liam Shore" for item in payload["upcoming"]))
+        self.assertTrue(any(item["id"] == appointment_id for item in payload["reminders"]))
+
+        response = self.client.post(
+            f"/api/staff/appointments/{appointment_id}/send-reminder",
+            json={"channel": "email"},
+        )
+        self.assertEqual(response.status_code, 200)
+        reminder_payload = response.get_json()
+        self.assertTrue(reminder_payload["ok"])
+        self.assertIn("Reminder processing complete", reminder_payload["message"])
+
+        response = self.client.post(
+            f"/api/staff/appointments/{appointment_id}/send-reminder",
+            json={"channel": "email"},
+        )
+        self.assertEqual(response.status_code, 400)
+        duplicate_payload = response.get_json()
+        self.assertFalse(duplicate_payload["ok"])
+        self.assertIn("already sent for this reminder window", duplicate_payload["message"])
+
+    def test_react_staff_reminders_api_and_portal(self) -> None:
+        staff_id = self.create_staff_user()
+        with self.app.app_context():
+            db = get_db()
+            patient_id = db.execute(
+                """
+                INSERT INTO users (first_name, last_name, email, password_hash, role, created_at)
+                VALUES (?, ?, ?, ?, 'client', ?)
+                """,
+                (
+                    "Ava",
+                    "North",
+                    "ava@example.com",
+                    generate_password_hash("patientpass123", method="pbkdf2:sha256"),
+                    iso_now(),
+                ),
+            ).lastrowid
+            main_location_id = db.execute(
+                "SELECT id FROM locations WHERE slug = 'main-clinic'"
+            ).fetchone()["id"]
+            start_at, end_at = self.appointment_slot(days_from_now=1, hour=15, minute=0)
+            appointment_id = db.execute(
+                """
+                INSERT INTO appointments (
+                    patient_user_id,
+                    clinician_user_id,
+                    location_id,
+                    appointment_type,
+                    status,
+                    starts_at,
+                    ends_at,
+                    note,
+                    patient_details,
+                    booking_channel,
+                    service_label_snapshot,
+                    booking_source,
+                    created_at,
+                    updated_at
+                )
+                VALUES (?, ?, ?, 'care_plan', 'scheduled', ?, ?, ?, ?, 'staff', 'Care Plan Visit', 'staff_portal', ?, ?)
+                """,
+                (
+                    patient_id,
+                    staff_id,
+                    main_location_id,
+                    start_at,
+                    end_at,
+                    "Recheck mobility and continue plan cadence.",
+                    "Patient prefers afternoon slots.",
+                    iso_now(),
+                    iso_now(),
+                ),
+            ).lastrowid
+            db.commit()
+
+        self.login_staff()
+
+        response = self.client.get("/staff/app/reminders")
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("react-portal-root", html)
+        self.assertIn("/api/staff/reminders", html)
+
+        response = self.client.get("/api/staff/reminders")
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["reminders"]["routes"]["spa_root"], "/staff/app/reminders")
+        self.assertTrue(any(item["id"] == appointment_id for item in payload["reminders"]["due_reminders"]))
+
+        response = self.client.post(
+            f"/api/staff/appointments/{appointment_id}/send-reminder",
+            json={"channel": "email"},
+        )
+        self.assertEqual(response.status_code, 200)
+        reminder_payload = response.get_json()
+        self.assertTrue(reminder_payload["ok"])
+
+        response = self.client.get("/api/staff/reminders")
+        self.assertEqual(response.status_code, 200)
+        refreshed_payload = response.get_json()
+        self.assertTrue(
+            any(item["appointment_id"] == appointment_id for item in refreshed_payload["reminders"]["recent_deliveries"])
+        )
+        self.assertGreaterEqual(
+            refreshed_payload["reminders"]["delivery_counts"]["logged"] + refreshed_payload["reminders"]["delivery_counts"]["sent"],
+            1,
+        )
+
+    def test_staff_recurring_availability_and_duration_controls_drive_patient_slots(self) -> None:
+        staff_id = self.create_staff_user()
+        self.login_staff()
+
+        with self.app.app_context():
+            db = get_db()
+            location_id = db.execute(
+                """
+                INSERT INTO locations (name, slug, address, phone, timezone, active, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+                """,
+                (
+                    "Booking Test Clinic",
+                    "booking-test-clinic",
+                    "1 Test Street",
+                    "555-0606",
+                    "Europe/London",
+                    iso_now(),
+                    iso_now(),
+                ),
+            ).lastrowid
+            service_id = db.execute(
+                "SELECT id FROM appointment_services WHERE service_key = 'follow_up_15' LIMIT 1"
+            ).fetchone()["id"]
+            target_date = date.today() + timedelta(days=3)
+            db.commit()
+
+        response = self.client.post(
+            "/api/staff/schedule-windows",
+            json={
+                "clinician_user_id": staff_id,
+                "location_id": location_id,
+                "weekday": target_date.weekday(),
+                "window_type": "shift",
+                "starts_time": "09:00",
+                "ends_time": "10:00",
+                "label": "Morning clinic",
+            },
+        )
+        self.assertEqual(response.status_code, 201)
+        availability_payload = response.get_json()
+        self.assertTrue(availability_payload["ok"])
+        self.assertEqual(availability_payload["window"]["clinician_user_id"], staff_id)
+
+        response = self.client.get(
+            f"/api/availability?date={target_date.isoformat()}&clinician_user_id={staff_id}&location_id={location_id}&service_id={service_id}"
+        )
+        self.assertEqual(response.status_code, 200)
+        availability_before = response.get_json()["availability"]
+        self.assertEqual(len(availability_before["available_slots"]), 2)
+
+        response = self.client.post(
+            f"/api/staff/booking-services/{service_id}/duration",
+            json={"duration_minutes": 30},
+        )
+        self.assertEqual(response.status_code, 200)
+        duration_payload = response.get_json()
+        self.assertTrue(duration_payload["ok"])
+        self.assertEqual(duration_payload["service"]["duration_minutes"], 30)
+
+        response = self.client.get(
+            f"/api/availability?date={target_date.isoformat()}&clinician_user_id={staff_id}&location_id={location_id}&service_id={service_id}"
+        )
+        self.assertEqual(response.status_code, 200)
+        availability_after = response.get_json()["availability"]
+        self.assertEqual(len(availability_after["available_slots"]), 1)
+
+        response = self.client.post(
+            f"/api/staff/schedule-windows/{availability_payload['window']['id']}/delete",
+            json={},
+        )
+        self.assertEqual(response.status_code, 200)
+        removed_payload = response.get_json()
+        self.assertTrue(removed_payload["ok"])
+
+        response = self.client.get(
+            f"/api/availability?date={target_date.isoformat()}&clinician_user_id={staff_id}&location_id={location_id}&service_id={service_id}"
+        )
+        self.assertEqual(response.status_code, 200)
+        availability_removed = response.get_json()["availability"]
+        self.assertEqual(len(availability_removed["available_slots"]), 0)
+
+    def test_react_staff_settings_api_and_return_redirect(self) -> None:
+        self.create_staff_user()
+        self.login_staff()
+
+        response = self.client.get("/staff/app/settings")
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("react-portal-root", html)
+        self.assertIn("/api/staff/settings", html)
+
+        response = self.client.get("/api/staff/settings")
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        self.assertIn("app_settings", payload["settings"])
+        self.assertEqual(payload["settings"]["routes"]["spa_root"], "/staff/app/settings")
+
+        response = self.client.post(
+            "/staff/settings/preferences/appearance",
+            data={
+                "return_to": "react_settings",
+                "section": "appearance",
+                "appearance_theme": "light",
+                "appearance_brand_color": "#2f6f4f",
+                "appearance_font_style": "clean",
+                "appearance_show_portal_branding": "on",
+            },
+            follow_redirects=False,
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response.headers["Location"].endswith("/staff/app/settings?section=appearance"))
+
+        with self.app.app_context():
+            stored = get_db().execute(
+                "SELECT setting_value FROM app_settings WHERE setting_key = 'appearance_brand_color'"
+            ).fetchone()
+            self.assertEqual(stored["setting_value"], "#2f6f4f")
+
+    def test_react_staff_invitation_api_and_portal(self) -> None:
+        staff_id = self.create_staff_user()
+        with self.app.app_context():
+            db = get_db()
+            main_location_id = db.execute(
+                "SELECT id FROM locations WHERE slug = 'main-clinic'"
+            ).fetchone()["id"]
+            initial_service_id = db.execute(
+                "SELECT id FROM appointment_services WHERE service_key = 'new_patient_30'"
+            ).fetchone()["id"]
+            requested_start, _requested_end = self.appointment_slot(days_from_now=3, hour=11, minute=15)
+            lead_id = db.execute(
+                """
+                INSERT INTO leads (
+                    first_name,
+                    last_name,
+                    email,
+                    phone,
+                    source,
+                    preferred_service_id,
+                    preferred_location_id,
+                    preferred_clinician_user_id,
+                    requested_starts_at,
+                    reason,
+                    notes,
+                    status,
+                    created_at,
+                    updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?, ?)
+                """,
+                (
+                    "Eva",
+                    "North",
+                    "eva@example.com",
+                    "555-0171",
+                    "website",
+                    initial_service_id,
+                    main_location_id,
+                    staff_id,
+                    requested_start,
+                    "Neck pain after commuting.",
+                    "",
+                    iso_now(),
+                    iso_now(),
+                ),
+            ).lastrowid
+            db.commit()
+
+        self.login_staff()
+
+        response = self.client.get("/staff/app/new-invite")
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("react-portal-root", html)
+        self.assertIn("/api/staff/invitations/new", html)
+
+        response = self.client.get(f"/api/staff/invitations/new?lead_id={lead_id}")
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["linked_lead"]["full_name"], "Eva North")
+        self.assertEqual(payload["invite_prefill"]["appointment_at"], requested_start)
+        self.assertTrue(any(item["id"] == lead_id for item in payload["open_leads"]))
+
+        response = self.client.post(
+            "/api/staff/invitations",
+            json={
+                "lead_id": str(lead_id),
+                "first_name": "Eva",
+                "last_name": "North",
+                "email": "eva@example.com",
+                "appointment_at": requested_start,
+                "note": "Please arrive 10 minutes early.",
+            },
+        )
+        self.assertEqual(response.status_code, 201)
+        create_payload = response.get_json()
+        self.assertTrue(create_payload["ok"])
+        self.assertEqual(create_payload["message"], "Invitation created from the lead request.")
+        self.assertEqual(create_payload["created_invitation"]["email"], "eva@example.com")
+        self.assertIn("/invite/", create_payload["created_invitation"]["accept_url"])
+        self.assertIsNotNone(create_payload["created_slot_hold"])
+
+        with self.app.app_context():
+            db = get_db()
+            lead_row = db.execute(
+                "SELECT status, invitation_id FROM leads WHERE id = ?",
+                (lead_id,),
+            ).fetchone()
+            self.assertEqual(lead_row["status"], "invited")
+            self.assertIsNotNone(lead_row["invitation_id"])
+
     def test_api_appointments_books_care_plan_visit_for_react_portal(self) -> None:
         staff_id = self.create_staff_user()
         self.login_staff()
@@ -1501,13 +2038,15 @@ class PortalFlowTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         context_payload = response.get_json()
         self.assertTrue(context_payload["ok"])
+        self.assertEqual(context_payload["journey_state"], "at_risk")
+        self.assertEqual(context_payload["journey_summary"]["primary_action_label"], "Rebook overdue visit")
         appointments_context = context_payload["appointments"]
         self.assertEqual(appointments_context["selected_care_plan_visit"]["id"], overdue_visit["id"])
         booking_date = appointments_context["booking_date"]
         self.assertGreaterEqual(booking_date, date.today().isoformat())
 
         response = self.client.get(
-            f"/api/availability?date={booking_date}&clinician_user_id={staff_id}&location_id={main_location_id}&service_id={care_plan_service_id}&appointment_type=care_plan&duration_minutes=15"
+            f"/api/availability?date={booking_date}&clinician_user_id={staff_id}&location_id={main_location_id}&service_id={care_plan_service_id}&appointment_type=care_plan&duration_minutes={overdue_visit['duration_minutes']}&care_plan_visit_id={overdue_visit['id']}"
         )
         self.assertEqual(response.status_code, 200)
         availability_payload = response.get_json()
@@ -1522,7 +2061,7 @@ class PortalFlowTestCase(unittest.TestCase):
                 "clinician_user_id": str(staff_id),
                 "location_id": str(main_location_id),
                 "appointment_date": booking_date,
-                "duration_minutes": "15",
+                "duration_minutes": str(overdue_visit["duration_minutes"]),
                 "slot_start": selected_slot,
                 "patient_details": "Booked from the React portal API.",
                 "care_plan_visit_id": str(overdue_visit["id"]),
